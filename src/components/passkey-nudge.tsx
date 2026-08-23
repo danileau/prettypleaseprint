@@ -35,10 +35,10 @@ export function PasskeyNudge() {
   if (!show) return null;
 
   return (
-    <div className="border-b border-border bg-teal-200">
+    <div className="border-b-[3px] border-ink bg-aqua-wash">
       <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-[13.2px] px-[26.4px] py-[11px]">
-        <p className="m-0 flex-1 text-[14.5px] leading-[1.4] text-teal-800">
-          <strong className="font-semibold">
+        <p className="m-0 flex-1 text-[14.5px] leading-[1.4] text-ink">
+          <strong className="font-display text-[15px]">
             Tired of waiting for the sign-in email?
           </strong>{" "}
           Save a passkey and this device signs you in with a fingerprint —
@@ -46,7 +46,7 @@ export function PasskeyNudge() {
         </p>
         <Link
           href="/welcome"
-          className="rounded-[8px] bg-teal px-[17.6px] py-[8.8px] text-[14px] font-bold text-teal-100 hover:bg-teal-600"
+          className="stamp cursor-pointer rounded-chip border-[3px] border-ink bg-cherry-dk px-[17.6px] py-[7px] text-[13.5px] font-bold text-cream hover:bg-cherry"
         >
           Set it up — 30 seconds
         </Link>
@@ -60,7 +60,7 @@ export function PasskeyNudge() {
             }
             setShow(false);
           }}
-          className="rounded-[8px] px-[13.2px] py-[8.8px] text-[14px] font-semibold text-teal-700 hover:bg-teal-100"
+          className="cursor-pointer rounded-chip border-2 border-transparent px-[13.2px] py-[7px] text-[13.5px] font-bold text-ink-2 hover:border-ink hover:bg-porcelain"
         >
           Not now
         </button>

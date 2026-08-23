@@ -12,3 +12,4 @@ next-env.d.ts
 *.tsbuildinfo
 .prisma/
 /storage
+shots/

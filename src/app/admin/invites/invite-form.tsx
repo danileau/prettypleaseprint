@@ -29,12 +29,12 @@ export function InviteForm() {
     <form
       ref={formRef}
       action={formAction}
-      className="rounded-[14px] bg-teal-200 p-[22px]"
+      className="rounded-panel border-[3px] border-ink bg-aqua-wash p-[22px] shadow-stamp"
     >
-      <h2 className="m-0 mb-[4px] text-[19px] font-semibold tracking-[-0.012em]">
+      <h2 className="m-0 mb-[4px] font-display text-[22px] text-ink">
         Invite someone
       </h2>
-      <p className="m-0 mb-[17.6px] text-[14px] text-teal-800">
+      <p className="m-0 mb-[17.6px] text-[14.5px] text-ink-2">
         They get a link that works once and expires in a week. There is no other
         way in.
       </p>
@@ -66,7 +66,7 @@ export function InviteForm() {
       <div className="mt-[17.6px] flex flex-wrap items-center gap-[13.2px]">
         <Submit />
         {state.sent && (
-          <span className="text-[14px] font-semibold text-teal-700">
+          <span className="rounded-chip border-2 border-ink bg-mint px-[11px] py-[3px] font-mono text-[11.5px] font-bold uppercase text-ink">
             Sent · {state.sent} has been emailed a link
           </span>
         )}

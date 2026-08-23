@@ -69,7 +69,7 @@ export function SignInForm({ next }: { next: string }) {
         <button
           type="button"
           onClick={() => setPhase("idle")}
-          className="self-start text-[14px] font-semibold text-muted-2 hover:text-teal-700"
+          className="cursor-pointer self-start font-bold text-[14px] text-cherry-dk underline underline-offset-2 hover:text-cherry"
         >
           ← Use a different address
         </button>
@@ -85,9 +85,9 @@ export function SignInForm({ next }: { next: string }) {
             Sign in with a passkey
           </Button>
           <div className="flex items-center gap-[13.2px]">
-            <span className="h-px flex-1 bg-rule" />
-            <span className="text-[12.5px] font-semibold text-muted">or</span>
-            <span className="h-px flex-1 bg-rule" />
+            <span className="h-[3px] flex-1 rounded-full bg-ink" />
+            <span className="font-mono text-[11.5px] font-bold uppercase tracking-[0.14em] text-ink-3">or</span>
+            <span className="h-[3px] flex-1 rounded-full bg-ink" />
           </div>
         </>
       )}
@@ -106,14 +106,21 @@ export function SignInForm({ next }: { next: string }) {
             onChange={(e) => setEmail(e.target.value)}
           />
         </div>
-        <Button type="submit" disabled={phase === "sending"} className="w-full">
+        {/* Secondary on purpose: one primary per screen, and the passkey is
+            the path worth pushing people onto. */}
+        <Button
+          type="submit"
+          variant="secondary"
+          disabled={phase === "sending"}
+          className="w-full"
+        >
           {phase === "sending" ? "Sending…" : "Email me a link"}
         </Button>
       </form>
 
       {error && <Notice tone="warn">{error}</Notice>}
 
-      <p className="m-0 text-[13px] leading-[1.5] text-muted">
+      <p className="m-0 border-t-2 border-dashed border-rule pt-[13.2px] text-[13.5px] leading-[1.5] text-ink-2">
         Pretty Please Print is invite-only — there is no sign-up. If you have not
         been invited yet, ask whoever owns the printer for a link.
       </p>

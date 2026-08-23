@@ -52,12 +52,12 @@ export function ActivityMenu({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="true"
-        className="flex items-center gap-[8.8px] rounded-[8px] border border-border bg-card px-[17.6px] py-[8.8px] text-[14px] font-semibold hover:bg-teal-200"
+        className="stamp flex cursor-pointer items-center gap-[8px] rounded-chip border-[3px] border-ink bg-cream px-[15px] py-[6px] font-mono text-[12px] font-bold uppercase tracking-[0.08em] text-ink hover:bg-sun"
       >
         Activity
         <span
           className={`inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full px-[6px] text-[12px] font-bold tabular-nums ${
-            unread ? "bg-teal text-teal-100" : "bg-line text-muted-2"
+            unread ? "bg-cherry-dk text-cream" : "bg-chrome text-ink-2"
           }`}
         >
           {unread}
@@ -65,9 +65,9 @@ export function ActivityMenu({
       </button>
 
       {open && (
-        <div className="ppp-in absolute right-0 top-[46px] z-50 w-[360px] max-w-[84vw] rounded-[14px] border border-border bg-card p-[17.6px] shadow-lg">
+        <div className="ppp-in absolute right-0 top-[50px] z-50 w-[360px] max-w-[84vw] rounded-panel border-[3px] border-ink bg-porcelain p-[17.6px] shadow-stamp-lg">
           <div className="mb-[8.8px] flex items-baseline justify-between gap-[13.2px]">
-            <h2 className="m-0 text-[17px] font-semibold tracking-[-0.012em]">
+            <h2 className="m-0 font-display text-[17px]">
               {title}
             </h2>
             {unread > 0 && (
@@ -75,7 +75,7 @@ export function ActivityMenu({
                 type="button"
                 disabled={pending}
                 onClick={() => startTransition(() => void markAllRead())}
-                className="rounded-full px-[8.8px] py-[4.4px] text-[13px] font-semibold text-teal-700 hover:bg-teal-200 disabled:opacity-50"
+                className="cursor-pointer rounded-chip border-2 border-ink bg-cream-2 px-[10px] py-[2px] font-mono text-[11px] font-bold uppercase text-ink hover:bg-sun disabled:opacity-50"
               >
                 Mark all read
               </button>
@@ -84,7 +84,7 @@ export function ActivityMenu({
 
           <div className="flex max-h-[330px] flex-col gap-[4.4px] overflow-auto">
             {items.length === 0 && (
-              <p className="m-0 px-[4px] py-[11px] text-[13px] text-muted">
+              <p className="m-0 px-[4px] py-[11px] font-mono text-[12px] uppercase text-ink-3">
                 Nothing yet.
               </p>
             )}
@@ -95,21 +95,21 @@ export function ActivityMenu({
                 onClick={() => {
                   if (!item.read) startTransition(() => void markRead(item.id));
                 }}
-                className={`flex gap-[13.2px] rounded-[10px] px-[13.2px] py-[11px] text-left hover:bg-surface-2 ${
-                  item.read ? "bg-transparent" : "bg-teal-100"
+                className={`flex cursor-pointer gap-[13.2px] rounded-card border-2 border-transparent px-[13.2px] py-[11px] text-left hover:border-ink hover:bg-cream-2 ${
+                  item.read ? "bg-transparent" : "bg-sun-wash"
                 }`}
               >
                 <span
                   aria-hidden
                   className={`mt-[6px] h-[8px] w-[8px] flex-none rounded-full ${
-                    item.read ? "bg-line-2" : "bg-teal"
+                    item.read ? "bg-chrome" : "bg-cherry"
                   }`}
                 />
                 <span>
                   <span className="block text-[14px] leading-[1.35]">
                     {item.text}
                   </span>
-                  <span className="mt-[2px] block text-[12px] text-muted">
+                  <span className="mt-[2px] block font-mono text-[11px] text-ink-3">
                     {item.when}
                     {item.read ? "" : " · unread"}
                   </span>

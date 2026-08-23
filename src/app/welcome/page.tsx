@@ -22,7 +22,7 @@ export default async function WelcomePage() {
 
   return (
     <AuthShell>
-      <Kicker>You are in</Kicker>
+      <Kicker>You&rsquo;re in</Kicker>
       <H1>Welcome, {user.name.split(" ")[0]}</H1>
       <Lead>
         One last thing worth thirty seconds: save a passkey. It replaces the

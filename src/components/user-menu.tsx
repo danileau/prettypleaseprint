@@ -46,29 +46,29 @@ export function UserMenu({
         aria-expanded={open}
         aria-haspopup="true"
         aria-label={`Account menu for ${name}`}
-        className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-slate-300 text-[12.5px] font-extrabold text-slate-800 hover:bg-slate-400"
+        className="stamp flex h-[36px] w-[36px] cursor-pointer items-center justify-center rounded-full border-[3px] border-ink bg-aqua font-mono text-[12px] font-bold text-ink hover:bg-sun"
       >
         {initials}
       </button>
 
       {open && (
-        <div className="ppp-in absolute right-0 top-[44px] z-50 w-[260px] rounded-[14px] border border-border bg-card p-[17.6px] shadow-lg">
-          <p className="m-0 text-[15px] font-bold">{name}</p>
-          <p className="m-0 mt-[2px] text-[13px] text-muted">{email}</p>
-          <p className="m-0 mt-[8.8px] font-mono text-[11.5px] font-bold uppercase tracking-[0.06em] text-muted">
+        <div className="ppp-in absolute right-0 top-[50px] z-50 w-[264px] rounded-panel border-[3px] border-ink bg-porcelain p-[17.6px] shadow-stamp-lg">
+          <p className="m-0 font-display text-[17px] text-ink">{name}</p>
+          <p className="m-0 mt-[2px] font-mono text-[11.5px] text-ink-3">{email}</p>
+          <p className="m-0 mt-[8.8px] inline-block rounded-chip border-2 border-ink bg-cream-2 px-[8px] font-mono text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink">
             {role === "admin" ? "Printer owner" : "Invited member"}
           </p>
           {/* How you sign in, and a way to change it. Without this the only
               passkey prompt in the whole app is the one at invite time. */}
-          <div className="mt-[13.2px] border-t border-rule pt-[13.2px]">
-            <p className="m-0 text-[13px] text-muted">
+          <div className="mt-[13.2px] border-t-2 border-dashed border-rule pt-[13.2px]">
+            <p className="m-0 font-mono text-[11.5px] uppercase text-ink-3">
               {passkeyCount === 0
                 ? "Signing in by emailed link"
                 : `${passkeyCount} passkey${passkeyCount === 1 ? "" : "s"} on this account`}
             </p>
             <a
               href="/welcome"
-              className="mt-[6px] inline-block text-[14px] font-semibold text-teal-700 hover:text-teal-600"
+              className="mt-[6px] inline-block font-bold text-[14px] text-cherry-dk underline underline-offset-2 hover:text-cherry"
             >
               {passkeyCount === 0 ? "Add a passkey →" : "Add another →"}
             </a>
@@ -80,7 +80,7 @@ export function UserMenu({
               await authClient.signOut();
               window.location.assign("/signin");
             }}
-            className="mt-[13.2px] w-full rounded-[8px] border border-border bg-transparent px-[17.6px] py-[10px] text-[14px] font-semibold hover:bg-surface-2"
+            className="stamp mt-[13.2px] w-full cursor-pointer rounded-chip border-[3px] border-ink bg-cream-2 px-[17.6px] py-[9px] text-[14px] font-bold text-ink hover:bg-cherry-wash"
           >
             Sign out
           </button>

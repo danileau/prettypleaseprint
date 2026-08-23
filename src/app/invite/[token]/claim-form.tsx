@@ -37,7 +37,7 @@ export function ClaimForm({
         {/* Fixed: the invite is bound to this address. Showing it disabled is
             clearer than hiding it — people want to know which inbox they are. */}
         <Input id="email" value={email} disabled readOnly />
-        <p className="mt-[6px] text-[13px] text-muted">
+        <p className="mt-[6px] font-mono text-[11.5px] uppercase tracking-[0.04em] text-ink-3">
           The invite is tied to this address and cannot be moved to another.
         </p>
       </div>

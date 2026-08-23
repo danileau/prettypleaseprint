@@ -75,7 +75,7 @@ export function PasskeyPrompt({ deviceHint }: { deviceHint: string }) {
       <button
         type="button"
         onClick={() => router.push("/")}
-        className="self-center text-[14px] font-semibold text-muted-2 hover:text-teal-700"
+        className="cursor-pointer self-center text-[13.5px] font-bold text-ink-2 underline underline-offset-2 hover:text-cherry-dk"
       >
         Not now — keep using emailed links
       </button>

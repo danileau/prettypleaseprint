@@ -32,6 +32,17 @@ function probe(id: string, title: string, secure: boolean, detail = "") {
 }
 const section = (t: string) => console.info(`\n── ${t} ${"─".repeat(Math.max(0, 58 - t.length))}`);
 
+/**
+ * Is this response an authenticated page?
+ *
+ * Keyed on a data attribute the app shell sets, not on a piece of copy. The
+ * previous version looked for "Signed in as", which stopped being rendered
+ * when the home screen was replaced — so three probes had been passing
+ * because the string could never appear, whether or not the session was
+ * valid. A negative assertion against copy is only as good as the copy.
+ */
+const isAuthenticated = (html: string) => html.includes('data-authenticated="true"');
+
 /** A real 12-triangle binary STL, so upload probes exercise the happy path. */
 function stlBox(x: number, y: number, z: number): Uint8Array {
   const p = [[0,0,0],[x,0,0],[x,y,0],[0,y,0],[0,0,z],[x,0,z],[x,y,z],[0,y,z]];
@@ -151,6 +162,14 @@ async function main() {
   // =====================================================================
   section("A01 Broken Access Control");
 
+  // Positive control. Without it, the three "not authenticated" probes below
+  // could all pass simply because the marker was never rendered — which is
+  // exactly how the previous copy-based version quietly went hollow.
+  const realPage = await (await client.go(`${APP}/board`)).text();
+  probe("A01-marker", "a real session does render the authenticated marker",
+        isAuthenticated(realPage),
+        "marker missing — every negative auth probe below is vacuous");
+
   for (const path of ["/admin/invites", "/admin/audit"]) {
     const r = await client.go(APP + path);
     probe(`A01-page ${path}`, `${path} refuses a client with 404`,
@@ -255,7 +274,7 @@ async function main() {
   const forgedRes = await forged.go(`${APP}/`);
   const forgedBody = await forgedRes.text();
   probe("A01-forge", "a forged session cookie grants nothing",
-        !forgedBody.includes("Signed in as"),
+        !isAuthenticated(forgedBody),
         "forged cookie reached an authenticated page");
 
   // =====================================================================
@@ -414,7 +433,7 @@ async function main() {
   await second.go(once!);
   const secondBody = await (await second.go(`${APP}/`)).text();
   probe("A07-replay", "a magic link cannot be redeemed twice",
-        !secondBody.includes("Signed in as"),
+        !isAuthenticated(secondBody),
         "the same link minted a second session");
 
   // Open redirect through the API's callbackURL.
@@ -460,7 +479,7 @@ async function main() {
   for (const [k, v] of stolen) thief.jar.set(k, v);
   const afterOut = await (await thief.go(`${APP}/`)).text();
   probe("A07-logout", "every captured cookie is dead after sign-out",
-        !afterOut.includes("Signed in as"),
+        !isAuthenticated(afterOut),
         "a captured cookie still authenticates after sign-out — check that " +
         "session.cookieCache is off, or revocation lags by its lifetime");
 

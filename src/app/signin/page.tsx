@@ -33,11 +33,11 @@ export default async function SignInPage({
 
   return (
     <AuthShell>
-      <Kicker>Invite only</Kicker>
-      <H1>Sign in</H1>
+      <Kicker>Members only · ask at the counter</Kicker>
+      <H1>What&rsquo;ll it be?</H1>
       <Lead>
-        No passwords here. Use the passkey on this device, or have a one-time
-        link sent to your inbox.
+        No passwords on this menu. Use the passkey on this device, or have a
+        one-time link sent to your inbox.
       </Lead>
 
       {error && (

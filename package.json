@@ -21,7 +21,8 @@
     "verify:upload": "tsx scripts/verify-upload.ts",
     "verify:passkey": "tsx scripts/verify-passkey.ts",
     "check:secrets": "tsx scripts/check-secrets.ts",
-    "hooks:install": "git config core.hooksPath .githooks && echo \"pre-commit hook active\""
+    "hooks:install": "git config core.hooksPath .githooks && echo \"pre-commit hook active\"",
+    "shots": "tsx scripts/screenshot.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

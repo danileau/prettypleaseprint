@@ -9,22 +9,21 @@ import { UserMenu } from "@/components/user-menu";
 import { PasskeyNudge } from "@/components/passkey-nudge";
 
 /**
- * The one header, on every screen. Handoff §1.
+ * The sign over the counter, on every screen.
  *
- * Nav differs by role: the client gets Backlog / Upload / My prints, the
- * admin gets Queue / Board / their own prints. Routes that are not built yet
- * are omitted rather than rendered as dead links.
+ * Dark ground, lit wordmark, chrome trim, and a checkerboard hairline where it
+ * meets the room. `data-authenticated` is a stable hook for the test suites so
+ * they assert on "there is a signed-in shell here" rather than on a piece of
+ * copy that a redesign can move — which is exactly what went wrong before.
  */
 const NAV: Record<Actor["role"], Array<{ label: string; href: string }>> = {
   client: [
-    { label: "Backlog", href: "/board" },
-    { label: "Upload", href: "/upload" },
+    { label: "The rail", href: "/board" },
+    { label: "Order up", href: "/upload" },
   ],
   admin: [
-    { label: "Board", href: "/board" },
+    { label: "The rail", href: "/board" },
     { label: "Guest list", href: "/admin/invites" },
-    // "Audit", not "Activity" — the Activity button beside it is the
-    // notification feed, and two things called Activity is one too many.
     { label: "Audit", href: "/admin/audit" },
   ],
 };
@@ -55,50 +54,57 @@ export async function AppHeader({
   const unread = items.filter((i) => !i.read).length;
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-bg/90 backdrop-blur-[8px]">
-      <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-[26.4px] px-[26.4px] py-[14px]">
-        <Link href="/board" aria-label="Pretty Please Print, home" className="text-ink">
-          <Brand size={34} />
-        </Link>
+    <header data-authenticated="true" className="sticky top-0 z-40">
+      <div className="layers border-b-[3px] border-ink bg-ink">
+        <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-[22px] px-[26.4px] py-[13.2px]">
+          <Link href="/board" aria-label="Pretty Please Print, home">
+            {/* On the dark bar the script reads cream, not cherry. */}
+            <span className="[&_span]:text-cream">
+              <Brand size={34} />
+            </span>
+          </Link>
 
-        <nav className="flex flex-wrap items-center gap-[4.4px]">
-          {NAV[user.role].map((item) => {
-            const current = item.href === active;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={current ? "page" : undefined}
-                className={`rounded-[8px] px-[17.6px] py-[8.8px] text-[15px] ${
-                  current
-                    ? "bg-teal font-bold text-teal-100"
-                    : "font-semibold text-muted-3 hover:bg-teal-200 hover:text-teal-700"
-                }`}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+          <nav className="flex flex-wrap items-center gap-[6px]">
+            {NAV[user.role].map((item) => {
+              const current = item.href === active;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={current ? "page" : undefined}
+                  className={`rounded-chip border-2 px-[15px] py-[7px] font-mono text-[12.5px] font-bold uppercase tracking-[0.08em] transition-colors ${
+                    current
+                      ? "border-ink bg-sun text-ink"
+                      : "border-transparent text-cream hover:border-ink hover:bg-cream-2 hover:text-ink"
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
 
-        <div className="flex-1" />
+          <div className="flex-1" />
 
-        <ActivityMenu
-          items={items}
-          unread={unread}
-          title={user.role === "admin" ? "New from the group" : "Updates on your prints"}
-        />
-        <UserMenu
-          name={user.name}
-          initials={user.initials}
-          email={user.email}
-          role={user.role}
-          passkeyCount={passkeyCount}
-        />
+          <ActivityMenu
+            items={items}
+            unread={unread}
+            title={user.role === "admin" ? "New from the group" : "Updates on your prints"}
+          />
+          <UserMenu
+            name={user.name}
+            initials={user.initials}
+            email={user.email}
+            role={user.role}
+            passkeyCount={passkeyCount}
+          />
+        </div>
       </div>
 
-      {/* Only for people still on emailed links. Gone for good once a
-          passkey exists. */}
+      {/* Chrome trim, then the checkerboard floor line. */}
+      <div className="h-[5px] bg-chrome" aria-hidden />
+      <div className="checker h-[8px] border-b-[3px] border-ink" aria-hidden />
+
       {passkeyCount === 0 && <PasskeyNudge />}
     </header>
   );

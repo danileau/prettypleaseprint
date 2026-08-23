@@ -37,12 +37,12 @@ export default async function InvitePage({
     const { title, body } = REJECTIONS[check.reason];
     return (
       <AuthShell>
-        <Kicker>Invitation</Kicker>
+        <Kicker>Your table is ready</Kicker>
         <H1>{title}</H1>
         <Lead>{body}</Lead>
         <Link
           href="/signin"
-          className="text-[15px] font-semibold text-teal-700 hover:text-teal-600"
+          className="font-bold text-[15px] text-cherry-dk underline underline-offset-2 hover:text-cherry"
         >
           Go to sign in →
         </Link>
@@ -57,7 +57,7 @@ export default async function InvitePage({
 
   return (
     <AuthShell>
-      <Kicker>You have been invited</Kicker>
+      <Kicker>Your table is ready</Kicker>
       <H1>{inviter?.name ?? "Someone"} will print things for you</H1>
       <Lead>
         Upload an <span className="font-mono">.stl</span> or{" "}

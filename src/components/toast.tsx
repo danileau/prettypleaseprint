@@ -21,7 +21,7 @@ export function Toast({ children }: { children: React.ReactNode }) {
     <div
       role="status"
       aria-live="polite"
-      className="ppp-toast fixed bottom-[30px] left-1/2 z-[60] max-w-[90vw] -translate-x-1/2 rounded-[10px] bg-near-black px-[26.4px] py-[14px] text-center text-[15px] font-semibold text-white shadow-lg"
+      className="ppp-toast fixed bottom-[30px] left-1/2 z-[60] max-w-[90vw] -translate-x-1/2 rounded-chip border-[3px] border-ink bg-sun px-[26.4px] py-[13px] text-center font-mono text-[13.5px] font-bold uppercase tracking-[0.08em] text-ink shadow-stamp-lg"
     >
       {children}
     </div>

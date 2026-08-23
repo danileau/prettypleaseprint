@@ -46,7 +46,7 @@ function Segmented<T extends string | number>({
     <div
       role="radiogroup"
       aria-label={label}
-      className="flex gap-[4.4px] rounded-[8px] border border-border bg-surface-2 p-[3px]"
+      className="flex flex-wrap gap-[6px]"
     >
       {options.map((option) => {
         const active = option === value;
@@ -57,9 +57,11 @@ function Segmented<T extends string | number>({
             role="radio"
             aria-checked={active}
             onClick={() => onChange(option)}
-            className={`flex-1 rounded-[6px] px-[4px] py-[10px] text-[13.5px] font-bold transition-colors ${
-              mono ? "font-mono" : ""
-            } ${active ? "bg-teal text-teal-100" : "text-muted-3 hover:bg-teal-200 hover:text-teal-700"}`}
+            className={`flex-1 cursor-pointer rounded-chip border-[3px] border-ink px-[10px] py-[8px] font-mono text-[12.5px] font-bold uppercase tracking-[0.06em] transition-colors ${
+              active
+                ? "bg-cherry-dk text-cream"
+                : "bg-porcelain text-ink hover:bg-sun"
+            }`}
           >
             {option}
           </button>
@@ -182,10 +184,10 @@ export function UploadForm({ owner }: { owner: string }) {
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
-        className={`block cursor-pointer rounded-[14px] border-2 border-dashed px-[26.4px] py-[35.2px] text-center transition-colors ${
+        className={`block cursor-pointer rounded-panel border-[3px] border-dashed px-[26.4px] py-[35.2px] text-center transition-colors ${
           dragging
-            ? "border-teal bg-teal-100"
-            : "border-line-2 bg-card hover:border-teal hover:bg-teal-100"
+            ? "border-ink bg-sun"
+            : "border-ink-3 bg-porcelain hover:border-ink hover:bg-sun-wash"
         }`}
       >
         <input
@@ -198,12 +200,12 @@ export function UploadForm({ owner }: { owner: string }) {
         />
         <span
           aria-hidden
-          className="mx-auto mb-[13.2px] block h-[56px] w-[56px] rounded-full bg-teal-200"
+          className="mx-auto mb-[13.2px] block h-[56px] w-[56px] rounded-full border-[3px] border-ink bg-aqua"
         />
-        <span className="block text-[17px] font-bold">
+        <span className="block font-display text-[19px] text-ink">
           {file ? file.name : "Drop your .stl or .3mf here"}
         </span>
-        <span className="mt-[4px] block text-[13.5px] text-muted">
+        <span className="mt-[6px] block font-mono text-[12px] uppercase tracking-[0.04em] text-ink-3">
           {busy
             ? `Uploading… ${phase.percent}%`
             : file
@@ -212,9 +214,9 @@ export function UploadForm({ owner }: { owner: string }) {
         </span>
 
         {busy && (
-          <span className="mt-[13.2px] block h-[6px] overflow-hidden rounded-full bg-surface-2">
+          <span className="mt-[13.2px] block h-[10px] overflow-hidden rounded-full border-[3px] border-ink bg-cream-2">
             <span
-              className="block h-full rounded-full bg-teal transition-[width] duration-200"
+              className="block h-full bg-cherry transition-[width] duration-200"
               style={{ width: `${phase.percent}%` }}
             />
           </span>
@@ -237,7 +239,7 @@ export function UploadForm({ owner }: { owner: string }) {
             onChange={(e) => setTitle(e.target.value)}
             maxLength={120}
             placeholder="Hook for the monitor arm"
-            className="w-full rounded-[8px] border border-border bg-card px-[17.6px] py-[13.2px] text-[15px] text-ink placeholder:text-line-3"
+            className="w-full rounded-card border-[3px] border-ink bg-porcelain px-[15px] py-[12px] text-[16px] text-ink placeholder:text-ink-3"
           />
         </div>
         <div>
@@ -262,7 +264,7 @@ export function UploadForm({ owner }: { owner: string }) {
           onChange={setQuantity}
         />
         <div className="mt-[8.8px] flex items-center gap-[8.8px]">
-          <label htmlFor="quantity-other" className="text-[13px] text-muted">
+          <label htmlFor="quantity-other" className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-ink-3">
             or type a number
           </label>
           <input
@@ -272,14 +274,14 @@ export function UploadForm({ owner }: { owner: string }) {
             max={24}
             value={quantity}
             onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
-            className="w-[76px] rounded-[8px] border border-border bg-card px-[11px] py-[7px] font-mono text-[14px] tabular-nums"
+            className="w-[80px] rounded-card border-[3px] border-ink bg-porcelain px-[10px] py-[6px] font-mono text-[14px] font-bold tabular-nums text-ink"
           />
         </div>
       </div>
 
       {/* ---- colour ---- */}
       <fieldset className="mt-[22px] border-0 p-0">
-        <legend className="mb-[8.8px] text-[13.5px] font-bold">
+        <legend className="mb-[8.8px] font-mono text-[12px] font-bold uppercase tracking-[0.1em] text-ink-2">
           Colour you&rsquo;re hoping for
         </legend>
         <div className="flex flex-wrap gap-[13.2px]">
@@ -293,21 +295,18 @@ export function UploadForm({ owner }: { owner: string }) {
                 aria-checked={active}
                 aria-label={`${c.name} filament`}
                 onClick={() => setColor(c.name)}
-                className="flex w-[78px] flex-col items-center gap-[6px] border-0 bg-transparent p-0"
+                className="flex w-[80px] cursor-pointer flex-col items-center gap-[7px] border-0 bg-transparent p-0"
               >
                 <span
                   aria-hidden
-                  className="h-[46px] w-[46px] rounded-full"
-                  style={{
-                    background: c.hex,
-                    boxShadow: active
-                      ? "0 0 0 3px #12645f, inset 0 0 0 1px rgba(20,24,28,0.2)"
-                      : "inset 0 0 0 1px rgba(20,24,28,0.2)",
-                  }}
+                  className={`h-[48px] w-[48px] rounded-full border-[3px] border-ink transition-transform ${
+                    active ? "scale-110 ring-[4px] ring-cherry-dk ring-offset-2 ring-offset-cream" : ""
+                  }`}
+                  style={{ background: c.hex }}
                 />
                 <span
-                  className={`text-[12.5px] font-semibold ${
-                    active ? "text-teal-700" : "text-muted-2"
+                  className={`font-mono text-[11px] font-bold uppercase tracking-[0.04em] ${
+                    active ? "text-cherry-dk" : "text-ink-2"
                   }`}
                 >
                   {c.name}
@@ -316,22 +315,29 @@ export function UploadForm({ owner }: { owner: string }) {
             );
           })}
         </div>
-        <p className="mt-[8.8px] text-[13px] text-muted">
+        <p className="mt-[11px] font-mono text-[11.5px] uppercase tracking-[0.04em] text-ink-3">
           {owner} confirms what&rsquo;s actually on the spool.
         </p>
       </fieldset>
 
-      {/* ---- tip ---- */}
-      <fieldset className="mt-[26.4px] rounded-[14px] border-0 bg-slate-200 p-[22px]">
-        <legend className="float-left w-full">
-          <span className="mb-[4px] block text-[19px] font-semibold tracking-[-0.012em]">
-            And what&rsquo;s in it for {owner}?
-          </span>
-          <span className="mb-[13.2px] block text-[14px] text-slate-800">
-            Optional. Nobody is counting. {owner} is counting a little.
-          </span>
-        </legend>
-        <div className="flex flex-wrap gap-[8.8px] pt-[4px]">
+      {/* ---- the tip jar ---- */}
+      {/*
+        A fieldset with a floated full-width legend broke the layout here: the
+        float took the whole row and squeezed the pills into a vertical stack.
+        A labelled radiogroup does the same job for assistive tech without
+        fighting the box model.
+      */}
+      <section
+        aria-labelledby="tip-heading"
+        className="mt-[26.4px] rounded-panel border-[3px] border-ink bg-aqua-wash p-[22px] shadow-stamp"
+      >
+        <h2 id="tip-heading" className="m-0 mb-[4px] font-display text-[22px] text-ink">
+          And what&rsquo;s in it for {owner}?
+        </h2>
+        <p className="m-0 mb-[15px] text-[14.5px] text-ink-2">
+          Optional. Nobody is counting. {owner} is counting a little.
+        </p>
+        <div role="radiogroup" aria-labelledby="tip-heading" className="flex flex-wrap gap-[8.8px]">
           {TIPS.map((t) => {
             const active = t === tip;
             return (
@@ -341,10 +347,8 @@ export function UploadForm({ owner }: { owner: string }) {
                 role="radio"
                 aria-checked={active}
                 onClick={() => setTip(t)}
-                className={`rounded-[8px] border px-[20px] py-[11px] text-[14.5px] font-bold transition-colors ${
-                  active
-                    ? "border-slate bg-slate text-slate-100"
-                    : "border-border bg-transparent text-slate-800 hover:bg-slate-100"
+                className={`stamp cursor-pointer rounded-chip border-[3px] border-ink px-[18px] py-[9px] text-[14px] font-bold transition-colors ${
+                  active ? "bg-cherry-dk text-cream" : "bg-porcelain text-ink hover:bg-sun"
                 }`}
               >
                 {t}
@@ -352,11 +356,12 @@ export function UploadForm({ owner }: { owner: string }) {
             );
           })}
         </div>
-      </fieldset>
+      </section>
 
       {/* ---- note ---- */}
       <div className="mt-[22px]">
-        <Label htmlFor="note">Anything he should know</Label>
+        {/* Named, not "he" — the printer owner is a role anyone can hold. */}
+        <Label htmlFor="note">Anything {owner} should know</Label>
         <textarea
           id="note"
           rows={3}
@@ -364,7 +369,7 @@ export function UploadForm({ owner }: { owner: string }) {
           onChange={(e) => setNote(e.target.value)}
           maxLength={2000}
           placeholder="No rush — needs to survive a bit of pulling."
-          className="w-full resize-y rounded-[10px] border border-border bg-card px-[17.6px] py-[13.2px] text-[15px] text-ink placeholder:text-line-3"
+          className="w-full resize-y rounded-card border-[3px] border-ink bg-porcelain px-[15px] py-[12px] text-[16px] text-ink placeholder:text-ink-3"
         />
       </div>
 
@@ -377,7 +382,7 @@ export function UploadForm({ owner }: { owner: string }) {
           Cancel
         </Button>
         {!file && (
-          <span className="text-[13px] text-muted">Pick a file to continue.</span>
+          <span className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-ink-3">Pick a file to continue.</span>
         )}
       </div>
     </form>
