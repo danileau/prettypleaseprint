@@ -38,7 +38,6 @@ set -euo pipefail
 PROJECT_DIR="${PPP_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 [ -f "$PROJECT_DIR/deploy.conf" ] && . "$PROJECT_DIR/deploy.conf"
 
-COMPOSE_FILES="${PPP_COMPOSE_FILES:--f docker-compose.prod.yml -f docker-compose.cf.yml}"
 HEALTH_URL="${PPP_HEALTH_URL:-https://ppp.danileau.com/api/health}"
 REGISTRY_OWNER="${PPP_REGISTRY_OWNER:-danileau}"
 REPO="${PPP_REPO:-danileau/ppp}"
@@ -79,6 +78,59 @@ docker compose version >/dev/null 2>&1 || die "the docker compose plugin is requ
 CURRENT="$(sed -n 's/^PPP_TAG="\{0,1\}\([^"]*\)"\{0,1\}.*/\1/p' "$PROJECT_DIR/.env.docker" | head -1)"
 [ -n "$CURRENT" ] || die "PPP_TAG not found in .env.docker"
 
+# ----- which compose files? -------------------------------------------------
+# Asked of the running stack, not assumed. Guessing here is not a cosmetic
+# error: bringing the project up with a different overlay set silently changes
+# its topology — drop the overlay that publishes a host port and a proxy
+# forwarding to that port gets a connection refused, which surfaces as a 502
+# with nothing wrong in the app's own logs. `docker compose ls` reports the
+# exact files a project was raised with, so use those.
+discover_compose_files() {
+  docker compose ls --all --format json 2>/dev/null | python3 -c '
+import json, os, sys
+target = os.path.realpath(sys.argv[1])
+try:
+    projects = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for p in projects if isinstance(projects, list) else []:
+    files = [f for f in (p.get("ConfigFiles") or "").split(",") if f]
+    # Absolute only. dirname("docker-compose.yml") is "", and realpath("") is
+    # the CURRENT directory — so a stale project entry holding a relative path
+    # would match whatever directory you happen to be standing in, and hand
+    # back an unrelated overlay set.
+    if not files or not os.path.isabs(files[0]):
+        continue
+    if os.path.realpath(os.path.dirname(files[0])) == target:
+        print(" ".join("-f " + os.path.basename(f) for f in files))
+        break
+' "$PROJECT_DIR" 2>/dev/null || true
+}
+
+if [ -n "${PPP_COMPOSE_FILES:-}" ]; then
+  COMPOSE_FILES="$PPP_COMPOSE_FILES"
+  COMPOSE_SOURCE="PPP_COMPOSE_FILES"
+else
+  COMPOSE_FILES="$(discover_compose_files)"
+  COMPOSE_SOURCE="the running stack"
+fi
+
+if [ -z "$COMPOSE_FILES" ]; then
+  # Nothing running and nothing configured. Refuse rather than pick: deploying
+  # with the wrong overlay set is exactly the failure this block exists to
+  # prevent, and it fails silently as a 502 rather than as an error.
+  echo "${RED}✗ cannot tell which compose files this deployment uses.${R}" >&2
+  echo "  Nothing is running here, so there is nothing to read it from." >&2
+  echo >&2
+  echo "  Overlays present in ${PROJECT_DIR}:" >&2
+  ls -1 "$PROJECT_DIR"/docker-compose*.yml 2>/dev/null | sed 's|.*/|      |' >&2 \
+    || echo "      (none)" >&2
+  echo >&2
+  echo "  Bring the stack up once by hand, or write deploy.conf:" >&2
+  echo "      PPP_COMPOSE_FILES=\"-f docker-compose.prod.yml -f docker-compose.nas.yml\"" >&2
+  exit 1
+fi
+
 echo "${B}ppp deploy wizard${R}  ${DIM}· ${PROJECT_DIR}${R}"
 hr
 
@@ -87,6 +139,7 @@ HEALTH="$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 "$HEALTH_URL" 2>/d
 if [ "$HEALTH" = "200" ]; then HSTR="${GRN}healthy (200)${R}"; else HSTR="${RED}not 200 (${HEALTH})${R}"; fi
 
 echo "${B}Currently deployed:${R} ${CYN}${CURRENT}${R}"
+echo "${B}Compose files:${R}      ${COMPOSE_FILES}  ${DIM}(from ${COMPOSE_SOURCE})${R}"
 echo "${B}Live health:${R}        ${HSTR}  ${DIM}${HEALTH_URL}${R}"
 printf "${B}Containers:${R}         "
 docker ps --filter 'name=ppp-' --format '{{.Names}} ({{.Status}})' \
@@ -207,6 +260,16 @@ TARGET="${IDX_SHA[$choice]}"
 [ "$TARGET" = "$CURRENT" ] && echo "${YLW}note: ${TARGET} is already live — this is a redeploy.${R}"
 
 echo
+if [ "$HEALTH" != "200" ]; then
+  echo "${YLW}⚠ ${HEALTH_URL} is already answering ${HEALTH}, before any change.${R}"
+  echo "  ${DIM}Whatever is wrong is not this image, and the automatic rollback"
+  echo "  cannot help — it rolls back to the version that is failing now."
+  echo "  Worth fixing the current breakage first.${R}"
+  printf "Deploy anyway? [y/N] "
+  read -r ans; case "$ans" in y|Y|yes|YES) ;; *) echo "aborted."; exit 0 ;; esac
+  echo
+fi
+
 if [ "$TARGET" = "$CURRENT" ]; then
   printf "Redeploy %s? [y/N] " "$TARGET"
 else
@@ -257,7 +320,12 @@ if ! compose pull; then
 fi
 
 echo "${DIM}→ starting…${R}"
-compose up -d
+if ! compose up -d; then
+  echo "${RED}✗ docker compose up failed — rolling the tag back to ${CURRENT}.${R}" >&2
+  ( cd "$PROJECT_DIR" && sed -i "s|^PPP_TAG=.*|PPP_TAG=\"$CURRENT\"|" .env.docker )
+  compose up -d || true
+  die "the stack was not swapped; .env.docker is back on ${CURRENT}"
+fi
 
 # ----- health, with automatic rollback --------------------------------------
 echo "${DIM}→ waiting for health (polling ${HEALTH_URL}, up to $((HEALTH_TIMEOUT/60)) min)…${R}"
