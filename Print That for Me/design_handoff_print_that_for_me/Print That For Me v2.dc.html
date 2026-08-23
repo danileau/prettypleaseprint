@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  html, body { margin: 0; padding: 0; background: #f4f5f6; color: #14181c; font-family: "IBM Plex Sans", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  * { box-sizing: border-box; }
+  button { font: inherit; cursor: pointer; }
+  input, textarea, select { font: inherit; }
+  a { color: #0b4340; text-decoration: none; }
+  a:hover { color: #0e5551; }
+  ::selection { background: #d9ebe9; }
+  :focus-visible { outline: 2px solid #12645f; outline-offset: 2px; }
+  @keyframes ptfm-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes ptfm-toast { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+</style>
+</helmet>
+
+<div style="min-height: 100vh; background: #f4f5f6; padding-bottom: 80px">
+
+  <div style="position: sticky; top: 0; z-index: 40; background: rgba(244,245,246,0.9); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(20,24,28,0.16)">
+    <div style="max-width: 1180px; margin: 0 auto; padding: 14px 26.4px; display: flex; align-items: center; gap: 26.4px; flex-wrap: wrap">
+      <div onClick="{{ goHome }}" style="display: flex; align-items: center; gap: 13.2px; cursor: pointer">
+        <div style="width: 34px; height: 34px; border-radius: 999px; background: #12645f; box-shadow: 0 3px 10px rgba(19,24,30,0.16)"></div>
+        <div style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.012em; font-size: 20px; line-height: 1; letter-spacing: -0.01em">print that for me</div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 4.4px; flex-wrap: wrap">
+        <sc-for list="{{ navItems }}" as="nav" hint-placeholder-count="3">
+          <button onClick="{{ nav.go }}" style="border: 0; border-radius: 8px; padding: 8.8px 17.6px; font-size: 15px; font-weight: {{ nav.weight }}; background: {{ nav.bg }}; color: {{ nav.fg }}" style-hover="background: #d9ebe9; color: #0b4340">{{ nav.label }}</button>
+        </sc-for>
+      </div>
+
+      <div style="flex: 1"></div>
+
+      <div style="position: relative">
+        <button onClick="{{ toggleBell }}" style="border: 1px solid rgba(20,24,28,0.16); background: #ffffff; border-radius: 8px; padding: 8.8px 17.6px; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8.8px" style-hover="background: #d9ebe9">
+          Activity
+          <span style="min-width: 22px; height: 22px; border-radius: 999px; background: {{ bellBg }}; color: {{ bellFg }}; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px">{{ unreadCount }}</span>
+        </button>
+        <sc-if value="{{ bellOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position: absolute; right: 0; top: 46px; width: 360px; max-width: 84vw; background: #ffffff; border: 1px solid rgba(20,24,28,0.16); border-radius: 14px; box-shadow: 0 12px 32px rgba(19,24,30,0.22); padding: 17.6px; animation: ptfm-in 160ms ease-out">
+            <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8.8px">
+              <div style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.012em; font-size: 17px">{{ feedTitle }}</div>
+              <button onClick="{{ markAllRead }}" style="border: 0; background: transparent; color: #0b4340; font-size: 13px; font-weight: 600; padding: 4.4px 8.8px; border-radius: 999px" style-hover="background: #d9ebe9">Mark all read</button>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4.4px; max-height: 330px; overflow: auto">
+              <sc-for list="{{ feed }}" as="ev" hint-placeholder-count="3">
+                <div onClick="{{ ev.open }}" style="display: flex; gap: 13.2px; padding: 11px 13.2px; border-radius: 10px; background: {{ ev.bg }}; cursor: pointer" style-hover="background: #eaecee">
+                  <div style="width: 8px; height: 8px; border-radius: 999px; margin-top: 6px; flex: none; background: {{ ev.dot }}"></div>
+                  <div>
+                    <div style="font-size: 14px; line-height: 1.35">{{ ev.text }}</div>
+                    <div style="font-size: 12px; color: #6b747c; margin-top: 2px">{{ ev.when }}</div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="display: flex; padding: 3px; gap: 3px; background: #eaecee; border-radius: 8px; border: 1px solid rgba(20,24,28,0.16)">
+        <button onClick="{{ beClient }}" style="border: 0; border-radius: 6px; padding: 7px 15px; font-size: 13.5px; font-weight: 600; background: {{ clientTabBg }}; color: {{ clientTabFg }}">Ayla (friend)</button>
+        <button onClick="{{ bePrinter }}" style="border: 0; border-radius: 6px; padding: 7px 15px; font-size: 13.5px; font-weight: 600; background: {{ printerTabBg }}; color: {{ printerTabFg }}">Ruben (printer)</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width: 1180px; margin: 0 auto; padding: 35.2px 26.4px 0">
+
+    <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ true }}">
+      <div>
+        <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 26.4px; flex-wrap: wrap; margin-bottom: 26.4px">
+          <div style="max-width: 620px">
+            <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; font-family: 'IBM Plex Mono', ui-monospace, monospace; text-transform: uppercase; color: #0b4340; margin-bottom: 8.8px">{{ boardKicker }}</div>
+            <h1 style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; font-size: 42px; line-height: 1.05; margin: 0 0 13.2px; letter-spacing: -0.02em">The backlog</h1>
+            <p style="margin: 0; font-size: 17px; line-height: 1.5; color: #333b42; text-wrap: pretty">{{ boardBlurb }}</p>
+          </div>
+          <button onClick="{{ goUpload }}" style="border: 0; border-radius: 8px; background: #12645f; color: #eef6f5; padding: 15px 28px; font-size: 16px; font-weight: 700; box-shadow: 0 3px 10px rgba(19,24,30,0.16)" style-hover="background: #0e5551" style-active="background: #0b4340">Upload a model</button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 17.6px; align-items: start">
+          <sc-for list="{{ columns }}" as="col" hint-placeholder-count="5">
+            <div style="background: {{ col.bg }}; border-radius: 14px; padding: 17.6px; min-height: 180px">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 13.2px">
+                <div style="font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: {{ col.fg }}">{{ col.label }}</div>
+                <div style="font-size: 13px; font-weight: 700; color: #6b747c">{{ col.count }}</div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 11px">
+                <sc-for list="{{ col.stories }}" as="s" hint-placeholder-count="2">
+                  <div onClick="{{ s.open }}" style="background: #ffffff; border-radius: 10px; padding: {{ cardPad }}; box-shadow: 0 1px 2px rgba(19,24,30,0.14); cursor: pointer" style-hover="box-shadow: 0 3px 10px rgba(19,24,30,0.16); transform: translateY(-1px)">
+                    <div style="display: flex; align-items: center; gap: 8.8px; margin-bottom: 8.8px">
+                      <div style="font-size: 11.5px; font-weight: 700; color: #6b747c; letter-spacing: 0.06em; font-family: 'IBM Plex Mono', ui-monospace, monospace">{{ s.ref }}</div>
+                      <sc-if value="{{ s.flagged }}" hint-placeholder-val="{{ false }}">
+                        <div style="font-size: 11px; font-weight: 700; color: #79541a; background: #f7ecd4; border-radius: 999px; padding: 2px 8px">needs a look</div>
+                      </sc-if>
+                    </div>
+                    <div style="display: flex; gap: 8.8px; align-items: baseline; margin-bottom: 8.8px">
+                      <div style="font-size: 15.5px; font-weight: 700; line-height: 1.25; flex: 1">{{ s.title }}</div>
+                      <sc-if value="{{ s.multi }}" hint-placeholder-val="{{ false }}">
+                        <div style="font-size: 12.5px; font-weight: 600; color: #0b4340; background: #d9ebe9; border-radius: 6px; padding: 2px 7px; font-family: 'IBM Plex Mono', ui-monospace, monospace">{{ s.qtyBadge }}</div>
+                      </sc-if>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4.4px; align-items: center">
+                      <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #333b42; background: #eaecee; border-radius: 999px; padding: 3px 9px">
+                        <span style="width: 10px; height: 10px; border-radius: 999px; background: {{ s.swatch }}; box-shadow: inset 0 0 0 1px rgba(20,24,28,0.2)"></span>
+                        {{ s.material }}
+                      </div>
+                      <sc-if value="{{ tipsOn }}" hint-placeholder-val="{{ true }}">
+                        <div style="font-size: 12px; font-weight: 600; color: #3e5069; background: #dde3ec; border-radius: 999px; padding: 3px 9px">{{ s.tip }}</div>
+                      </sc-if>
+                    </div>
+                    <sc-if value="{{ s.printing }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top: 11px; font-size: 11.5px; color: #6b747c; font-family: 'IBM Plex Mono', ui-monospace, monospace">{{ s.printingNote }}</div>
+                    </sc-if>
+                    <div style="display: flex; align-items: center; gap: 8.8px; margin-top: 11px; font-size: 12px; color: #6b747c">
+                      <span style="width: 20px; height: 20px; border-radius: 999px; background: #c3cddb; color: #2c3a4d; font-size: 10.5px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center">{{ s.initials }}</span>
+                      {{ s.footer }}
+                    </div>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-size: 13px; color: #6b747c; padding: 11px 4px">Nothing here.</div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isQueue }}" hint-placeholder-val="{{ false }}">
+      <div>
+        <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; font-family: 'IBM Plex Mono', ui-monospace, monospace; text-transform: uppercase; color: #0b4340; margin-bottom: 8.8px">Printer view — Prusa MK4, desk by the window</div>
+        <h1 style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; font-size: 42px; line-height: 1.05; margin: 0 0 8.8px; letter-spacing: -0.02em">Your queue</h1>
+        <p style="margin: 0 0 26.4px; font-size: 17px; color: #333b42">{{ queueBlurb }}</p>
+
+        <sc-if value="{{ hasIncoming }}" hint-placeholder-val="{{ true }}">
+          <div style="background: #d9ebe9; border-radius: 14px; padding: 22px; margin-bottom: 26.4px">
+            <div style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.012em; font-size: 19px; margin-bottom: 13.2px">Waiting on you</div>
+            <div style="display: flex; flex-direction: column; gap: 11px">
+              <sc-for list="{{ incoming }}" as="s" hint-placeholder-count="2">
+                <div style="background: #ffffff; border-radius: 10px; padding: 17.6px; display: flex; gap: 17.6px; align-items: center; flex-wrap: wrap">
+                  <div style="flex: 1 1 260px; min-width: 220px">
+                    <div style="font-size: 11.5px; font-weight: 700; color: #6b747c; letter-spacing: 0.06em; font-family: 'IBM Plex Mono', ui-monospace, monospace; margin-bottom: 4px">{{ s.ref }} · {{ s.filename }}</div>
+                    <div onClick="{{ s.open }}" style="font-size: 18px; font-weight: 700; cursor: pointer" style-hover="color: #0b4340">{{ s.title }}</div>
+                    <div style="font-size: 13.5px; color: #4d565e; margin-top: 4px">{{ s.wish }}</div>
+                  </div>
+                  <div style="display: flex; gap: 8.8px; flex-wrap: wrap">
+                    <button onClick="{{ s.accept }}" style="border: 0; border-radius: 8px; background: #12645f; color: #eef6f5; padding: 11px 22px; font-size: 14.5px; font-weight: 700" style-hover="background: #0e5551">Accept</button>
+                    <button onClick="{{ s.flag }}" style="border: 1px solid rgba(20,24,28,0.16); border-radius: 8px; background: transparent; color: #333b42; padding: 11px 18px; font-size: 14.5px; font-weight: 600" style-hover="background: #eaecee">Flag the model</button>
+                    <button onClick="{{ s.decline }}" style="border: 0; border-radius: 8px; background: transparent; color: #4d565e; padding: 11px 15px; font-size: 14.5px; font-weight: 600" style-hover="background: #eaecee">Decline</button>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <div style="background: #ffffff; border-radius: 14px; padding: 8.8px 22px 22px; box-shadow: 0 1px 2px rgba(19,24,30,0.14)">
+          <div style="display: flex; flex-direction: column">
+            <sc-for list="{{ queueRows }}" as="r" hint-placeholder-count="4">
+              <div style="display: flex; gap: 17.6px; align-items: center; flex-wrap: wrap; padding: 17.6px 0; border-bottom: 1px solid rgba(20,24,28,0.1)">
+                <div style="width: 44px; height: 44px; border-radius: 999px; flex: none; background: {{ r.swatch }}; box-shadow: inset 0 0 0 1px rgba(20,24,28,0.2)"></div>
+                <div style="flex: 1 1 240px; min-width: 190px">
+                  <div onClick="{{ r.open }}" style="font-size: 16.5px; font-weight: 700; cursor: pointer" style-hover="color: #0b4340">{{ r.title }}</div>
+                  <div style="font-size: 13px; color: #6b747c; margin-top: 3px">{{ r.sub }}</div>
+                </div>
+                <div style="font-size: 12.5px; font-weight: 700; border-radius: 999px; padding: 5px 12px; background: {{ r.chipBg }}; color: {{ r.chipFg }}">{{ r.status }}</div>
+                <sc-if value="{{ tipsOn }}" hint-placeholder-val="{{ true }}">
+                  <div style="font-size: 13px; font-weight: 600; color: #3e5069; width: 110px">{{ r.tip }}</div>
+                </sc-if>
+                <sc-if value="{{ r.canAdvance }}" hint-placeholder-val="{{ true }}">
+                  <button onClick="{{ r.advance }}" style="border: 1px solid #12645f; border-radius: 8px; background: transparent; color: #0b4340; padding: 9px 18px; font-size: 14px; font-weight: 700" style-hover="background: #d9ebe9">{{ r.nextLabel }}</button>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isUpload }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width: 780px">
+        <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; font-family: 'IBM Plex Mono', ui-monospace, monospace; text-transform: uppercase; color: #0b4340; margin-bottom: 8.8px">New request</div>
+        <h1 style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; font-size: 42px; line-height: 1.05; margin: 0 0 13.2px; letter-spacing: -0.02em">Print that for me</h1>
+        <p style="margin: 0 0 26.4px; font-size: 17px; color: #333b42; text-wrap: pretty">Drop an .stl or .3mf. Ruben gets a ping, and your request shows up in the backlog as a story you can follow.</p>
+
+        <label style="display: block; border: 2px dashed #b6bcc2; border-radius: 14px; background: #ffffff; padding: 35.2px 26.4px; text-align: center; cursor: pointer" style-hover="border-color: #12645f; background: #eef6f5">
+          <input type="file" onChange="{{ onFile }}" style="display: none" />
+          <div style="width: 56px; height: 56px; border-radius: 999px; background: #d9ebe9; margin: 0 auto 13.2px"></div>
+          <div style="font-size: 17px; font-weight: 700">{{ fileLabel }}</div>
+          <div style="font-size: 13.5px; color: #6b747c; margin-top: 4px">{{ fileHint }}</div>
+        </label>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 22px; margin-top: 26.4px">
+          <div>
+            <div style="font-size: 13.5px; font-weight: 700; margin-bottom: 6px">What is it?</div>
+            <input value="{{ draftTitle }}" onChange="{{ onTitle }}" placeholder="Hook for the monitor arm" style="width: 100%; border: 1px solid rgba(20,24,28,0.16); border-radius: 8px; background: #ffffff; padding: 13.2px 17.6px; font-size: 15px; color: #14181c" />
+          </div>
+          <div>
+            <div style="font-size: 13.5px; font-weight: 700; margin-bottom: 6px">Material you'd like</div>
+            <div style="display: flex; gap: 4.4px; padding: 3px; background: #eaecee; border-radius: 8px; border: 1px solid rgba(20,24,28,0.16)">
+              <sc-for list="{{ materialOpts }}" as="m" hint-placeholder-count="4">
+                <button onClick="{{ m.pick }}" style="flex: 1; border: 0; border-radius: 6px; padding: 10px 4px; font-size: 13.5px; font-weight: 700; background: {{ m.bg }}; color: {{ m.fg }}">{{ m.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 22px; max-width: 320px">
+          <div style="font-size: 13.5px; font-weight: 700; margin-bottom: 6px">How many do you need?</div>
+          <div style="display: flex; gap: 4.4px; padding: 3px; background: #eaecee; border-radius: 8px; border: 1px solid rgba(20,24,28,0.16)">
+            <sc-for list="{{ qtyOpts }}" as="q" hint-placeholder-count="5">
+              <button onClick="{{ q.pick }}" style="flex: 1; border: 0; border-radius: 6px; padding: 10px 4px; font-size: 13.5px; font-weight: 700; font-family: 'IBM Plex Mono', ui-monospace, monospace; background: {{ q.bg }}; color: {{ q.fg }}">{{ q.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="margin-top: 22px">
+          <div style="font-size: 13.5px; font-weight: 700; margin-bottom: 8.8px">Colour you're hoping for</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 13.2px">
+            <sc-for list="{{ colorOpts }}" as="c" hint-placeholder-count="5">
+              <button onClick="{{ c.pick }}" style="border: 0; background: transparent; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 78px">
+                <span style="width: 46px; height: 46px; border-radius: 999px; background: {{ c.hex }}; box-shadow: {{ c.ring }}"></span>
+                <span style="font-size: 12.5px; font-weight: 600; color: {{ c.fg }}">{{ c.label }}</span>
+              </button>
+            </sc-for>
+          </div>
+          <div style="font-size: 13px; color: #6b747c; margin-top: 8.8px">Ruben confirms what's actually on the spool.</div>
+        </div>
+
+        <sc-if value="{{ tipsOn }}" hint-placeholder-val="{{ true }}">
+          <div style="margin-top: 26.4px; background: #dde3ec; border-radius: 14px; padding: 22px">
+            <div style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.012em; font-size: 19px; margin-bottom: 4px">And what's in it for Ruben?</div>
+            <div style="font-size: 14px; color: #2c3a4d; margin-bottom: 13.2px">Optional. Nobody is counting. Ruben is counting a little.</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8.8px">
+              <sc-for list="{{ tipOpts }}" as="t" hint-placeholder-count="5">
+                <button onClick="{{ t.pick }}" style="border: 1px solid {{ t.border }}; border-radius: 999px; background: {{ t.bg }}; color: {{ t.fg }}; padding: 11px 20px; font-size: 14.5px; font-weight: 700">{{ t.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <div style="margin-top: 22px">
+          <div style="font-size: 13.5px; font-weight: 700; margin-bottom: 6px">Anything he should know</div>
+          <textarea value="{{ draftNote }}" onChange="{{ onNote }}" rows="3" placeholder="No rush — needs to survive a bit of pulling." style="width: 100%; border: 1px solid rgba(20,24,28,0.16); border-radius: 10px; background: #ffffff; padding: 13.2px 17.6px; font-size: 15px; color: #14181c; resize: vertical"></textarea>
+        </div>
+
+        <div style="display: flex; gap: 13.2px; align-items: center; margin-top: 26.4px; flex-wrap: wrap">
+          <button onClick="{{ submitDraft }}" style="border: 0; border-radius: 8px; background: #12645f; color: #eef6f5; padding: 15px 30px; font-size: 16px; font-weight: 700; box-shadow: 0 3px 10px rgba(19,24,30,0.16)" style-hover="background: #0e5551" style-active="background: #0b4340">Send it to Ruben</button>
+          <button onClick="{{ goHome }}" style="border: 0; border-radius: 8px; background: transparent; color: #4d565e; padding: 15px 20px; font-size: 15px; font-weight: 600" style-hover="background: #eaecee">Cancel</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isStory }}" hint-placeholder-val="{{ false }}">
+      <div>
+        <button onClick="{{ goBack }}" style="border: 0; background: transparent; color: #4d565e; font-size: 14px; font-weight: 600; padding: 6px 13.2px 6px 0" style-hover="color: #0b4340">← Back to {{ backLabel }}</button>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 26.4px; margin-top: 13.2px; align-items: start">
+
+          <div>
+            <div style="border-radius: 14px; overflow: hidden; background: #eceef0; box-shadow: 0 3px 10px rgba(19,24,30,0.16); position: relative">
+              <div ref="{{ viewerRef }}" style="height: 380px; width: 100%; cursor: grab"></div>
+              <div style="position: absolute; left: 17.6px; bottom: 13.2px; font-size: 12px; font-weight: 600; color: #4d565e; background: rgba(255,255,255,0.88); border-radius: 999px; padding: 5px 12px">drag to rotate · {{ current.filename }}</div>
+            </div>
+            <div style="display: flex; gap: 17.6px; flex-wrap: wrap; margin-top: 13.2px; font-size: 13.5px; color: #4d565e">
+              <div>{{ current.dims }}</div>
+              <div>{{ current.filesize }}</div>
+              <div>{{ current.est }}</div>
+            </div>
+
+            <div style="margin-top: 26.4px">
+              <div style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.012em; font-size: 20px; margin-bottom: 13.2px">Conversation</div>
+              <div style="display: flex; flex-direction: column; gap: 11px">
+                <sc-for list="{{ current.comments }}" as="c" hint-placeholder-count="2">
+                  <div style="display: flex; gap: 13.2px; align-items: flex-start">
+                    <span style="width: 30px; height: 30px; flex: none; border-radius: 999px; background: {{ c.avBg }}; color: {{ c.avFg }}; font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center">{{ c.initials }}</span>
+                    <div style="background: #ffffff; border-radius: 10px; padding: 13.2px 17.6px; box-shadow: 0 1px 2px rgba(19,24,30,0.14); flex: 1">
+                      <div style="font-size: 13px; font-weight: 700; color: #333b42; margin-bottom: 3px">{{ c.who }} <span style="font-weight: 500; color: #6b747c">· {{ c.when }}</span></div>
+                      <div style="font-size: 15px; line-height: 1.45; text-wrap: pretty">{{ c.text }}</div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display: flex; gap: 8.8px; margin-top: 13.2px; flex-wrap: wrap">
+                <input value="{{ commentDraft }}" onChange="{{ onComment }}" placeholder="{{ commentPlaceholder }}" style="flex: 1 1 220px; border: 1px solid rgba(20,24,28,0.16); border-radius: 8px; background: #ffffff; padding: 13.2px 17.6px; font-size: 15px; color: #14181c" />
+                <button onClick="{{ sendComment }}" style="border: 0; border-radius: 8px; background: #4a5d78; color: #eef1f5; padding: 13.2px 24px; font-size: 15px; font-weight: 700" style-hover="background: #556982">Send</button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style="display: flex; align-items: center; gap: 8.8px; flex-wrap: wrap; margin-bottom: 8.8px">
+              <div style="font-size: 12px; font-weight: 700; color: #6b747c; letter-spacing: 0.06em; font-family: 'IBM Plex Mono', ui-monospace, monospace">{{ current.ref }}</div>
+              <div style="font-size: 12.5px; font-weight: 700; border-radius: 999px; padding: 4px 12px; background: {{ current.chipBg }}; color: {{ current.chipFg }}">{{ current.status }}</div>
+              <sc-if value="{{ current.flagged }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size: 12.5px; font-weight: 700; border-radius: 999px; padding: 4px 12px; background: #f7ecd4; color: #79541a">flagged: thin walls</div>
+              </sc-if>
+            </div>
+            <h1 style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; font-size: 32px; line-height: 1.1; margin: 0 0 13.2px; letter-spacing: -0.02em">{{ current.title }}</h1>
+            <p style="margin: 0 0 22px; font-size: 16px; line-height: 1.5; color: #333b42; text-wrap: pretty">{{ current.note }}</p>
+
+            <div style="background: #ffffff; border-radius: 14px; padding: 22px; box-shadow: 0 1px 2px rgba(19,24,30,0.14)">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 17.6px">
+                <div>
+                  <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; font-family: 'IBM Plex Mono', ui-monospace, monospace; text-transform: uppercase; color: #6b747c; margin-bottom: 5px">Asked by</div>
+                  <div style="font-size: 15.5px; font-weight: 700">{{ current.uploader }}</div>
+                </div>
+                <div>
+                  <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; font-family: 'IBM Plex Mono', ui-monospace, monospace; text-transform: uppercase; color: #6b747c; margin-bottom: 5px">Quantity</div>
+                  <div style="font-size: 15.5px; font-weight: 700">{{ current.qtyText }}</div>
+                </div>
+                <div>
+                  <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; font-family: 'IBM Plex Mono', ui-monospace, monospace; text-transform: uppercase; color: #6b747c; margin-bottom: 5px">Material</div>
+                  <div style="font-size: 15.5px; font-weight: 700">{{ current.material }}</div>
+                </div>
+                <div>
+                  <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; font-family: 'IBM Plex Mono', ui-monospace, monospace; text-transform: uppercase; color: #6b747c; margin-bottom: 5px">Colour wish</div>
+                  <div style="display: flex; align-items: center; gap: 8.8px">
+                    <span style="width: 18px; height: 18px; border-radius: 999px; background: {{ current.swatch }}; box-shadow: inset 0 0 0 1px rgba(20,24,28,0.2)"></span>
+                    <span style="font-size: 15.5px; font-weight: 700">{{ current.colorName }}</span>
+                  </div>
+                </div>
+                <sc-if value="{{ tipsOn }}" hint-placeholder-val="{{ true }}">
+                  <div>
+                    <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; font-family: 'IBM Plex Mono', ui-monospace, monospace; text-transform: uppercase; color: #6b747c; margin-bottom: 5px">On offer</div>
+                    <div style="font-size: 15.5px; font-weight: 700; color: #3e5069">{{ current.tip }}</div>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+
+            <div style="margin-top: 26.4px">
+              <div style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.012em; font-size: 20px; margin-bottom: 13.2px">Progress</div>
+              <div style="display: flex; flex-direction: column; gap: 0">
+                <sc-for list="{{ current.steps }}" as="st" hint-placeholder-count="5">
+                  <div style="display: flex; gap: 13.2px; align-items: flex-start">
+                    <div style="display: flex; flex-direction: column; align-items: center; flex: none">
+                      <span style="width: 18px; height: 18px; border-radius: 999px; background: {{ st.dotBg }}; box-shadow: {{ st.dotRing }}"></span>
+                      <span style="width: 2px; flex: 1; min-height: {{ st.lineH }}; background: {{ st.lineBg }}"></span>
+                    </div>
+                    <div style="padding-bottom: 17.6px">
+                      <div style="font-size: 15.5px; font-weight: 700; color: {{ st.fg }}">{{ st.label }}</div>
+                      <div style="font-size: 13px; color: #6b747c; margin-top: 2px">{{ st.when }}</div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <sc-if value="{{ showPrinterActions }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top: 8.8px; background: #d9ebe9; border-radius: 14px; padding: 22px">
+                <div style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.012em; font-size: 18px; margin-bottom: 13.2px">{{ printerActionTitle }}</div>
+                <div style="display: flex; gap: 8.8px; flex-wrap: wrap">
+                  <sc-if value="{{ canAdvanceCurrent }}" hint-placeholder-val="{{ true }}">
+                    <button onClick="{{ advanceCurrent }}" style="border: 0; border-radius: 8px; background: #12645f; color: #eef6f5; padding: 13.2px 24px; font-size: 15px; font-weight: 700" style-hover="background: #0e5551">{{ advanceLabel }}</button>
+                  </sc-if>
+                  <button onClick="{{ flagCurrent }}" style="border: 1px solid rgba(20,24,28,0.16); border-radius: 8px; background: transparent; color: #333b42; padding: 13.2px 20px; font-size: 15px; font-weight: 600" style-hover="background: #ffffff">Flag a model problem</button>
+                  <sc-if value="{{ canDeclineCurrent }}" hint-placeholder-val="{{ false }}">
+                    <button onClick="{{ declineCurrent }}" style="border: 0; border-radius: 8px; background: transparent; color: #4d565e; padding: 13.2px 17.6px; font-size: 15px; font-weight: 600" style-hover="background: #ffffff">Decline</button>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isProfile }}" hint-placeholder-val="{{ false }}">
+      <div>
+        <div style="display: flex; gap: 26.4px; align-items: center; flex-wrap: wrap; margin-bottom: 35.2px">
+          <div style="width: 96px; height: 96px; border-radius: 999px; background: #c3cddb; color: #2c3a4d; font-size: 32px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{ meInitials }}</div>
+          <div>
+            <h1 style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; font-size: 38px; line-height: 1.05; margin: 0 0 6px; letter-spacing: -0.02em">{{ meName }}</h1>
+            <div style="font-size: 15.5px; color: #4d565e">{{ meSub }}</div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 17.6px; margin-bottom: 35.2px">
+          <sc-for list="{{ stats }}" as="k" hint-placeholder-count="4">
+            <div style="background: {{ k.bg }}; border-radius: 14px; padding: 22px">
+              <div style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.012em; font-size: 40px; line-height: 1; color: {{ k.fg }}">{{ k.value }}</div>
+              <div style="font-size: 14px; font-weight: 600; color: #333b42; margin-top: 8.8px">{{ k.label }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.012em; font-size: 24px; margin-bottom: 13.2px">{{ mineTitle }}</div>
+        <div style="background: #ffffff; border-radius: 14px; padding: 8.8px 22px 22px; box-shadow: 0 1px 2px rgba(19,24,30,0.14)">
+          <sc-for list="{{ mine }}" as="s" hint-placeholder-count="3">
+            <div style="display: flex; gap: 17.6px; align-items: center; flex-wrap: wrap; padding: 17.6px 0; border-bottom: 1px solid rgba(20,24,28,0.1)">
+              <div style="width: 40px; height: 40px; border-radius: 999px; flex: none; background: {{ s.swatch }}; box-shadow: inset 0 0 0 1px rgba(20,24,28,0.2)"></div>
+              <div style="flex: 1 1 220px; min-width: 180px">
+                <div onClick="{{ s.open }}" style="font-size: 16.5px; font-weight: 700; cursor: pointer" style-hover="color: #0b4340">{{ s.title }}</div>
+                <div style="font-size: 13px; color: #6b747c; margin-top: 3px">{{ s.sub }}</div>
+              </div>
+              <div style="font-size: 12.5px; font-weight: 700; border-radius: 999px; padding: 5px 12px; background: {{ s.chipBg }}; color: {{ s.chipFg }}">{{ s.status }}</div>
+              <sc-if value="{{ tipsOn }}" hint-placeholder-val="{{ true }}">
+                <div style="font-size: 13px; font-weight: 600; color: #3e5069; width: 110px">{{ s.tip }}</div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; left: 50%; transform: translateX(-50%); bottom: 30px; z-index: 60; background: #1b2126; color: #ffffff; border-radius: 10px; padding: 14px 26.4px; font-size: 15px; font-weight: 600; box-shadow: 0 12px 32px rgba(19,24,30,0.22); animation: ptfm-toast 200ms ease-out; max-width: 90vw; text-align: center">{{ toast }}</div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;startView&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;board&quot;,&quot;queue&quot;,&quot;upload&quot;,&quot;profile&quot;],&quot;default&quot;:&quot;board&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;tipsEnabled&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;boardDensity&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;comfortable&quot;,&quot;compact&quot;],&quot;default&quot;:&quot;comfortable&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;}}">
+const FLOW = ["Requested", "Accepted", "Printing", "Done", "Delivery"];
+
+const CHIP = {
+  Requested: { bg: "#eaecee", fg: "#4d565e" },
+  Accepted: { bg: "#dde3ec", fg: "#2c3a4d" },
+  Printing: { bg: "#f7ecd4", fg: "#79541a" },
+  Done: { bg: "#d9ebe9", fg: "#0b4340" },
+  Delivery: { bg: "#e2e6ea", fg: "#1b2126" },
+  Declined: { bg: "#e2e6ea", fg: "#6b747c" }
+};
+
+const COLORS = [
+  { label: "Teal", hex: "#12645f" },
+  { label: "Slate", hex: "#4a5d78" },
+  { label: "Bone white", hex: "#eaecee" },
+  { label: "Graphite", hex: "#1b2126" },
+  { label: "Whatever's on", hex: "#b6bcc2" }
+];
+
+const TIPS = ["A beer", "A coffee", "A spool of filament", "Nerd stuff", "Nothing, sorry"];
+const MATERIALS = ["PLA", "PETG", "TPU", "Resin"];
+
+const SEED = [
+  { id: 4, title: "Hook for the monitor arm", filename: "monitor-hook-v3.stl", uploader: "Ayla", initials: "AY", status: "Requested", material: "PETG", color: "#4a5d78", colorName: "Slate", tip: "A beer", note: "Clips onto the round arm tube, holds a headset. No rush.", qty: 1, when: "12 minutes ago", flagged: false, progress: 0, geo: 0, filesize: "2.4 MB", dims: "78 × 40 × 22 mm", est: "~1 h 10 m",
+    comments: [{ who: "Ayla", role: "client", initials: "AY", text: "Slate if you have it, otherwise anything dark.", when: "12 min ago" }] },
+  { id: 3, title: "Cable comb, 6 slots", filename: "cable-comb-6.3mf", uploader: "Jonas", initials: "JO", status: "Accepted", material: "PLA", color: "#1b2126", colorName: "Graphite", tip: "A coffee", note: "For the standing desk cable mess. Six slots, 5 mm each.", qty: 4, when: "yesterday", flagged: true, progress: 0, geo: 1, filesize: "0.8 MB", dims: "120 × 18 × 12 mm", est: "~35 m",
+    comments: [{ who: "Ruben", role: "printer", initials: "RU", text: "Walls are 0.6 mm in two spots — it'll snap. Can you thicken them?", when: "3 h ago" }, { who: "Jonas", role: "client", initials: "JO", text: "Reuploading tonight.", when: "2 h ago" }] },
+  { id: 2, title: "Replacement knob, coffee grinder", filename: "grinder-knob.stl", uploader: "Ayla", initials: "AY", status: "Printing", material: "PETG", color: "#12645f", colorName: "Teal", tip: "A spool of filament", note: "The original cracked. Same thread, 8 mm.", qty: 2, when: "2 days ago", flagged: false, progress: 62, geo: 2, filesize: "1.1 MB", dims: "44 × 44 × 26 mm", est: "~50 m",
+    comments: [{ who: "Ruben", role: "printer", initials: "RU", text: "On the bed now, layer 84.", when: "40 min ago" }] },
+  { id: 1, title: "Desk sign for the meeting room", filename: "room-sign.3mf", uploader: "Sanne", initials: "SA", status: "Done", material: "PLA", color: "#eaecee", colorName: "Bone white", tip: "Nerd stuff", note: "Two-part, letters snap in. Print the plate first.", qty: 1, when: "4 days ago", flagged: false, progress: 100, geo: 3, filesize: "3.6 MB", dims: "160 × 60 × 8 mm", est: "~2 h",
+    comments: [{ who: "Ruben", role: "printer", initials: "RU", text: "Done, letters came out crisp. On my desk.", when: "yesterday" }] },
+  { id: 0, title: "Gridfinity bin, 2×1", filename: "gridfinity-2x1.stl", uploader: "Kwame", initials: "KW", status: "Delivery", material: "PLA", color: "#4a5d78", colorName: "Slate", tip: "A beer", note: "Standard bin, no scoop.", qty: 6, when: "a week ago", flagged: false, progress: 100, geo: 4, filesize: "0.5 MB", dims: "84 × 42 × 42 mm", est: "~40 m",
+    comments: [{ who: "Kwame", role: "client", initials: "KW", text: "Grabbing it Thursday. Beer is in the fridge.", when: "2 days ago" }] }
+];
+
+class Component extends DCLogic {
+  state = {
+    role: "client",
+    view: this.props.startView || "board",
+    storyId: null,
+    stories: SEED.map(s => Object.assign({}, s)),
+    nextId: 5,
+    feed: [
+      { id: 1, text: "Ruben started printing “Replacement knob, coffee grinder”.", when: "40 minutes ago", for: "client", storyId: 2, read: false },
+      { id: 2, text: "Ruben flagged thin walls on “Cable comb, 6 slots”.", when: "3 hours ago", for: "client", storyId: 3, read: false },
+      { id: 3, text: "Ayla uploaded “Hook for the monitor arm”.", when: "12 minutes ago", for: "printer", storyId: 4, read: false },
+      { id: 4, text: "Jonas replied on “Cable comb, 6 slots”.", when: "2 hours ago", for: "printer", storyId: 3, read: false }
+    ],
+    nextEvent: 5,
+    bellOpen: false,
+    toast: "",
+    draft: { title: "", file: "", material: "PETG", color: "#4a5d78", colorName: "Slate", tip: "A beer", note: "", qty: 1 },
+    commentDraft: "",
+    back: "board"
+  };
+
+  componentDidMount() {
+    import("https://esm.sh/three@0.160.0").then(m => { this.THREE = m; this.mountViewer(); });
+  }
+
+  componentWillUnmount() {
+    if (this.raf) cancelAnimationFrame(this.raf);
+  }
+
+  /* ---------- 3D viewer ---------- */
+
+  viewerRef = el => {
+    if (el === this.viewerEl) return;
+    this.viewerEl = el;
+    this.mountViewer();
+  };
+
+  mountViewer() {
+    const T = this.THREE, el = this.viewerEl;
+    if (this.raf) { cancelAnimationFrame(this.raf); this.raf = null; }
+    if (this.renderer) { this.renderer.dispose(); this.renderer = null; }
+    if (!T || !el) return;
+    el.innerHTML = "";
+    const story = this.currentStory() || this.state.stories[0];
+    const w = el.clientWidth || 480, h = el.clientHeight || 380;
+
+    const scene = new T.Scene();
+    scene.background = new T.Color("#eceef0");
+    const cam = new T.PerspectiveCamera(38, w / h, 0.1, 100);
+    cam.position.set(0, 1.4, 5.4);
+    const renderer = new T.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(w, h);
+    el.appendChild(renderer.domElement);
+    this.renderer = renderer;
+
+    scene.add(new T.HemisphereLight("#ffffff", "#6b747c", 1.1));
+    const key = new T.DirectionalLight("#ffffff", 1.5);
+    key.position.set(3, 5, 4);
+    scene.add(key);
+    const rim = new T.DirectionalLight("#dfe6ee", 0.6);
+    rim.position.set(-4, 1, -3);
+    scene.add(rim);
+
+    const geos = [
+      () => new T.TorusKnotGeometry(1.05, 0.34, 140, 20),
+      () => new T.BoxGeometry(2.6, 0.5, 0.5, 4, 2, 2),
+      () => new T.CylinderGeometry(1.1, 1.1, 0.8, 28),
+      () => new T.BoxGeometry(2.8, 1.1, 0.28),
+      () => new T.BoxGeometry(1.9, 1.0, 1.0)
+    ];
+    const geo = geos[(story.geo || 0) % geos.length]();
+    const mat = new T.MeshStandardMaterial({ color: new T.Color(story.color), roughness: 0.62, metalness: 0.05, flatShading: false });
+    const mesh = new T.Mesh(geo, mat);
+    const group = new T.Group();
+    group.add(mesh);
+    const edges = new T.LineSegments(new T.EdgesGeometry(geo, 28), new T.LineBasicMaterial({ color: "#14181c", transparent: true, opacity: 0.16 }));
+    group.add(edges);
+    scene.add(group);
+
+    const grid = new T.GridHelper(9, 18, "#b6bcc2", "#ced3d8");
+    grid.position.y = -1.5;
+    scene.add(grid);
+
+    let rx = 0.25, ry = 0.6, drag = false, px = 0, py = 0, spin = true;
+    const dom = renderer.domElement;
+    const down = e => { drag = true; spin = false; px = e.clientX; py = e.clientY; dom.style.cursor = "grabbing"; };
+    const move = e => { if (!drag) return; ry += (e.clientX - px) * 0.008; rx += (e.clientY - py) * 0.008; px = e.clientX; py = e.clientY; };
+    const up = () => { drag = false; dom.style.cursor = "grab"; };
+    dom.addEventListener("pointerdown", down);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    this.cleanupViewer = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+
+    const loop = () => {
+      if (spin) ry += 0.004;
+      group.rotation.x = rx;
+      group.rotation.y = ry;
+      renderer.render(scene, cam);
+      this.raf = requestAnimationFrame(loop);
+    };
+    loop();
+  }
+
+  /* ---------- helpers ---------- */
+
+  currentStory() {
+    return this.state.stories.find(s => s.id === this.state.storyId);
+  }
+
+  toast(text) {
+    this.setState({ toast: text });
+    clearTimeout(this.toastT);
+    this.toastT = setTimeout(() => this.setState({ toast: "" }), 3200);
+  }
+
+  push(text, who, storyId) {
+    this.setState(s => ({
+      feed: [{ id: s.nextEvent, text, when: "just now", for: who, storyId, read: false }].concat(s.feed),
+      nextEvent: s.nextEvent + 1
+    }));
+  }
+
+  patch(id, fn) {
+    this.setState(s => ({ stories: s.stories.map(st => st.id === id ? Object.assign({}, st, fn(st)) : st) }));
+  }
+
+  open = id => {
+    this.setState(s => ({ storyId: id, view: "story", bellOpen: false, back: s.view === "story" ? s.back : s.view, commentDraft: "" }));
+    setTimeout(() => this.mountViewer(), 60);
+  };
+
+  advance(id) {
+    const st = this.state.stories.find(x => x.id === id);
+    const i = FLOW.indexOf(st.status);
+    if (i < 0 || i >= FLOW.length - 1) return;
+    const next = FLOW[i + 1];
+    this.patch(id, () => ({ status: next, progress: next === "Printing" ? 4 : next === "Requested" ? 0 : 100 }));
+    this.push("Ruben moved “" + st.title + "” to " + next + ".", "client", id);
+    this.toast("“" + st.title + "” → " + next + " · " + st.uploader + " notified");
+  }
+
+  decline(id) {
+    const st = this.state.stories.find(x => x.id === id);
+    this.patch(id, () => ({ status: "Declined" }));
+    this.push("Ruben declined “" + st.title + "”.", "client", id);
+    this.toast("Declined · " + st.uploader + " notified");
+  }
+
+  flag(id) {
+    const st = this.state.stories.find(x => x.id === id);
+    this.patch(id, s => ({
+      flagged: true,
+      comments: s.comments.concat([{ who: "Ruben", role: "printer", initials: "RU", text: "Flagged: geometry needs a fix before I can print this.", when: "just now" }])
+    }));
+    this.push("Ruben flagged a model problem on “" + st.title + "”.", "client", id);
+    this.toast("Flagged · " + st.uploader + " notified");
+  }
+
+  storyChrome(s) {
+    const chip = CHIP[s.status] || CHIP.Requested;
+    return {
+      ref: "PTFM-" + String(100 + s.id),
+      title: s.title,
+      filename: s.filename,
+      material: s.material,
+      swatch: s.color,
+      colorName: s.colorName,
+      tip: s.tip,
+      status: s.status,
+      chipBg: chip.bg,
+      chipFg: chip.fg,
+      flagged: s.flagged,
+      initials: s.initials,
+      uploader: s.uploader,
+      printing: s.status === "Printing",
+      printingNote: "on the bed · est. " + s.est,
+      qty: s.qty,
+      qtyBadge: s.qty + "×",
+      multi: s.qty > 1,
+      qtyText: s.qty === 1 ? "1 print" : s.qty + " prints",
+      footer: this.state.role === "printer" ? s.uploader + " · " + s.when : s.when,
+      sub: s.filename + " · " + s.uploader + " · " + s.when,
+      open: () => this.open(s.id)
+    };
+  }
+
+  renderVals() {
+    const st = this.state;
+    const tipsOn = this.props.tipsEnabled !== false;
+    const dense = (this.props.boardDensity || "comfortable") === "compact";
+    const isPrinter = st.role === "printer";
+    const me = isPrinter ? "Ruben" : "Ayla";
+    const view = st.view;
+    const cur = this.currentStory();
+
+    const navDefs = isPrinter
+      ? [["Queue", "queue"], ["Board", "board"], ["Ruben's prints", "profile"]]
+      : [["Backlog", "board"], ["Upload", "upload"], ["My prints", "profile"]];
+
+    const feed = st.feed.filter(e => e.for === st.role).map(e => ({
+      text: e.text, when: e.when,
+      bg: e.read ? "transparent" : "#eef6f5",
+      dot: e.read ? "#b6bcc2" : "#12645f",
+      open: () => { this.setState(s => ({ feed: s.feed.map(x => x.id === e.id ? Object.assign({}, x, { read: true }) : x) })); this.open(e.storyId); }
+    }));
+    const unread = st.feed.filter(e => e.for === st.role && !e.read).length;
+
+    const visible = isPrinter ? st.stories : st.stories.filter(s => s.uploader === "Ayla");
+
+    const cols = FLOW.map((name, i) => {
+      const items = visible.filter(s => s.status === name).map(s => this.storyChrome(s));
+      return {
+        label: name, count: items.length, stories: items, empty: items.length === 0,
+        bg: i % 2 === 0 ? "#eceef0" : "#eaecee",
+        fg: name === "Printing" ? "#0b4340" : "#333b42"
+      };
+    });
+
+    const incoming = st.stories.filter(s => s.status === "Requested").map(s => {
+      const c = this.storyChrome(s);
+      c.wish = c.qtyText + " · " + s.material + " · " + s.colorName + (tipsOn ? " · offers " + s.tip : "");
+      c.accept = () => this.advance(s.id);
+      c.decline = () => this.decline(s.id);
+      c.flag = () => this.flag(s.id);
+      return c;
+    });
+
+    const queueRows = st.stories.filter(s => s.status !== "Requested").map(s => {
+      const c = this.storyChrome(s);
+      const i = FLOW.indexOf(s.status);
+      c.canAdvance = i >= 0 && i < FLOW.length - 1;
+      c.nextLabel = c.canAdvance ? "Move to " + FLOW[i + 1] : "";
+      c.advance = () => this.advance(s.id);
+      return c;
+    });
+
+    const mineList = st.stories.filter(s => isPrinter ? true : s.uploader === "Ayla").map(s => this.storyChrome(s));
+
+    const curVals = {};
+    if (cur) {
+      Object.assign(curVals, this.storyChrome(cur));
+      curVals.note = cur.note;
+      curVals.dims = cur.dims;
+      curVals.filesize = cur.filesize;
+      curVals.est = "est. " + cur.est;
+      curVals.comments = cur.comments.map(c => ({
+        who: c.who, when: c.when, text: c.text, initials: c.initials,
+        avBg: c.role === "printer" ? "#d9ebe9" : "#c3cddb",
+        avFg: c.role === "printer" ? "#0b4340" : "#2c3a4d"
+      }));
+      const ci = FLOW.indexOf(cur.status);
+      curVals.steps = FLOW.map((label, i) => {
+        const done = ci >= 0 && i < ci, now = i === ci;
+        return {
+          label,
+          when: now ? "now" : done ? "cleared" : "waiting",
+          dotBg: done ? "#4a5d78" : now ? "#12645f" : "#d7dbdf",
+          dotRing: now ? "0 0 0 5px #d9ebe9" : "none",
+          lineBg: done ? "#93a3b8" : "#d7dbdf",
+          lineH: i === FLOW.length - 1 ? "0px" : "26px",
+          fg: done || now ? "#14181c" : "#6b747c"
+        };
+      });
+    }
+
+    const ci = cur ? FLOW.indexOf(cur.status) : -1;
+
+    return {
+      tipsOn,
+      cardPad: dense ? "11px 13.2px" : "15px 17.6px",
+      isBoard: view === "board", isQueue: view === "queue", isUpload: view === "upload",
+      isStory: view === "story" && !!cur, isProfile: view === "profile",
+      goHome: () => this.setState(s => ({ view: s.role === "printer" ? "queue" : "board", bellOpen: false })),
+      goUpload: () => this.setState({ view: "upload", bellOpen: false }),
+      goBack: () => this.setState(s => ({ view: s.back || "board" })),
+      backLabel: st.back === "queue" ? "the queue" : st.back === "profile" ? "my prints" : "the backlog",
+
+      navItems: navDefs.map(([label, v]) => ({
+        label,
+        go: () => this.setState({ view: v, bellOpen: false }),
+        bg: view === v ? "#12645f" : "transparent",
+        fg: view === v ? "#eef6f5" : "#333b42",
+        weight: view === v ? 700 : 600
+      })),
+
+      beClient: () => this.setState({ role: "client", view: "board", bellOpen: false }),
+      bePrinter: () => this.setState({ role: "printer", view: "queue", bellOpen: false }),
+      clientTabBg: isPrinter ? "transparent" : "#ffffff",
+      clientTabFg: isPrinter ? "#4d565e" : "#14181c",
+      printerTabBg: isPrinter ? "#ffffff" : "transparent",
+      printerTabFg: isPrinter ? "#14181c" : "#4d565e",
+
+      bellOpen: st.bellOpen,
+      toggleBell: () => this.setState(s => ({ bellOpen: !s.bellOpen })),
+      markAllRead: () => this.setState(s => ({ feed: s.feed.map(e => e.for === s.role ? Object.assign({}, e, { read: true }) : e) })),
+      feed, unreadCount: unread,
+      bellBg: unread ? "#12645f" : "#d7dbdf",
+      bellFg: unread ? "#eef6f5" : "#4d565e",
+      feedTitle: isPrinter ? "New from the group" : "Updates on your prints",
+
+      boardKicker: isPrinter ? "Admin view · every request, with who asked" : "Private to you and Ruben",
+      boardBlurb: isPrinter
+        ? "Every story from the group, wherever it sits. Open one to comment or move it along."
+        : "Every request is a story. Only you and Ruben see yours — other people's requests stay theirs.",
+      columns: cols,
+
+      queueBlurb: incoming.length
+        ? incoming.length + " request" + (incoming.length === 1 ? "" : "s") + " waiting for a yes."
+        : "Nothing waiting. Enjoy the quiet.",
+      hasIncoming: incoming.length > 0,
+      incoming, queueRows,
+
+      fileLabel: st.draft.file || "Drop your .stl or .3mf here",
+      fileHint: st.draft.file ? "Looks fine — 1 shell, no open edges." : "or click to choose a file · 50 MB max",
+      onFile: e => { const f = e.target.files && e.target.files[0]; if (f) this.setState(s => ({ draft: Object.assign({}, s.draft, { file: f.name }) })); },
+      draftTitle: st.draft.title,
+      onTitle: e => { const v = e.target.value; this.setState(s => ({ draft: Object.assign({}, s.draft, { title: v }) })); },
+      qtyOpts: [1, 2, 3, 4, 6].map(n => ({
+        label: String(n),
+        bg: st.draft.qty === n ? "#12645f" : "transparent",
+        fg: st.draft.qty === n ? "#eef6f5" : "#333b42",
+        pick: () => this.setState(s => ({ draft: Object.assign({}, s.draft, { qty: n }) }))
+      })),
+      draftNote: st.draft.note,
+      onNote: e => { const v = e.target.value; this.setState(s => ({ draft: Object.assign({}, s.draft, { note: v }) })); },
+      materialOpts: MATERIALS.map(m => ({
+        label: m,
+        bg: st.draft.material === m ? "#12645f" : "transparent",
+        fg: st.draft.material === m ? "#eef6f5" : "#333b42",
+        pick: () => this.setState(s => ({ draft: Object.assign({}, s.draft, { material: m }) }))
+      })),
+      colorOpts: COLORS.map(c => ({
+        label: c.label, hex: c.hex,
+        ring: st.draft.color === c.hex ? "0 0 0 3px #12645f, inset 0 0 0 1px rgba(20,24,28,0.2)" : "inset 0 0 0 1px rgba(20,24,28,0.2)",
+        fg: st.draft.color === c.hex ? "#0b4340" : "#4d565e",
+        pick: () => this.setState(s => ({ draft: Object.assign({}, s.draft, { color: c.hex, colorName: c.label }) }))
+      })),
+      tipOpts: TIPS.map(t => ({
+        label: t,
+        bg: st.draft.tip === t ? "#4a5d78" : "transparent",
+        fg: st.draft.tip === t ? "#eef1f5" : "#2c3a4d",
+        border: st.draft.tip === t ? "#4a5d78" : "rgba(20,24,28,0.16)"
+      })).map((o, i) => Object.assign(o, { pick: () => this.setState(s => ({ draft: Object.assign({}, s.draft, { tip: TIPS[i] }) })) })),
+
+      submitDraft: () => {
+        const d = st.draft;
+        const title = d.title || d.file || "Untitled model";
+        const id = st.nextId;
+        const story = {
+          id, title, filename: d.file || "upload.stl", uploader: "Ayla", initials: "AY",
+          status: "Requested", material: d.material, color: d.color, colorName: d.colorName,
+          tip: d.tip, note: d.note || "No notes.", qty: d.qty, when: "just now", flagged: false, progress: 0,
+          geo: id % 5, filesize: "1.9 MB", dims: "—", est: "~45 m", comments: []
+        };
+        this.setState(s => ({
+          stories: [story].concat(s.stories),
+          nextId: s.nextId + 1,
+          draft: { title: "", file: "", material: "PETG", color: "#4a5d78", colorName: "Slate", tip: "A beer", note: "", qty: 1 },
+          storyId: id, view: "story", back: "board"
+        }));
+        this.push("Ayla uploaded “" + title + "”.", "printer", id);
+        this.toast("Sent · Ruben has been notified");
+        setTimeout(() => this.mountViewer(), 80);
+      },
+
+      viewerRef: this.viewerRef,
+      current: curVals,
+      commentDraft: st.commentDraft,
+      commentPlaceholder: isPrinter ? "Ask a question or say what you changed…" : "Reply to Ruben…",
+      onComment: e => { const v = e.target.value; this.setState({ commentDraft: v }); },
+      sendComment: () => {
+        if (!st.commentDraft.trim() || !cur) return;
+        const text = st.commentDraft.trim();
+        this.patch(cur.id, s => ({ comments: s.comments.concat([{ who: me, role: st.role, initials: isPrinter ? "RU" : "AY", text, when: "just now" }]) }));
+        this.setState({ commentDraft: "" });
+        this.push(me + " commented on “" + cur.title + "”.", isPrinter ? "client" : "printer", cur.id);
+        this.toast("Sent · " + (isPrinter ? cur.uploader : "Ruben") + " notified");
+      },
+
+      showPrinterActions: isPrinter && !!cur,
+      printerActionTitle: cur && cur.status === "Requested" ? "This one needs a yes" : "Move it along",
+      canAdvanceCurrent: ci >= 0 && ci < FLOW.length - 1,
+      canDeclineCurrent: !!cur && cur.status === "Requested",
+      advanceLabel: ci >= 0 && ci < FLOW.length - 1 ? (cur.status === "Requested" ? "Accept it" : "Move to " + FLOW[ci + 1]) : "",
+      advanceCurrent: () => cur && this.advance(cur.id),
+      declineCurrent: () => cur && this.decline(cur.id),
+      flagCurrent: () => cur && this.flag(cur.id),
+
+      meName: isPrinter ? "Ruben" : "Ayla Berg",
+      meInitials: isPrinter ? "RU" : "AY",
+      meSub: isPrinter ? "Admin · owns the printer, sees every story" : "Invited by Ruben · sees only her own stories",
+      mineTitle: isPrinter ? "Everything the group has sent you" : "Your requests",
+      mine: mineList,
+      stats: isPrinter
+        ? [
+            { value: String(st.stories.filter(s => s.status === "Done" || s.status === "Delivery").length), label: "Printed for the group", bg: "#dde3ec", fg: "#2c3a4d" },
+            { value: String(st.stories.filter(s => s.status === "Requested").length), label: "Waiting on you", bg: "#d9ebe9", fg: "#0b4340" },
+            { value: "31 h", label: "Printer time given", bg: "#eceef0", fg: "#333b42" },
+            { value: "6", label: "Beers owed to you", bg: "#eaecee", fg: "#333b42" }
+          ]
+        : [
+            { value: String(mineList.length), label: "Requests made", bg: "#dde3ec", fg: "#2c3a4d" },
+            { value: String(st.stories.filter(s => s.uploader === "Ayla" && (s.status === "Done" || s.status === "Delivery")).length), label: "In your hands", bg: "#c3cddb", fg: "#1c2733" },
+            { value: "2", label: "Beers owed to Ruben", bg: "#d9ebe9", fg: "#0b4340" },
+            { value: "PETG", label: "Your usual material", bg: "#eaecee", fg: "#333b42" }
+          ],
+
+      toast: st.toast
+    };
+  }
+}
+
+</script>
+</body>
+</html>

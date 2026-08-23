@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens, verbatim from the handoff. These are the contract with the
+ * design — component code references the token, never a raw hex.
+ */
+@theme {
+  /* --- neutrals --- */
+  --color-bg: #f4f5f6;
+  --color-surface: #eceef0;
+  --color-surface-2: #eaecee;
+  --color-card: #ffffff;
+  --color-line: #d7dbdf;
+  --color-line-2: #b6bcc2;
+  --color-line-3: #8f979e;
+  --color-muted: #6b747c;
+  --color-muted-2: #4d565e;
+  --color-muted-3: #333b42;
+  --color-near-black: #1b2126;
+  --color-ink: #14181c;
+
+  /* --- teal (primary) --- */
+  --color-teal-100: #eef6f5;
+  --color-teal-200: #d9ebe9;
+  --color-teal-300: #b6d8d5;
+  --color-teal-400: #6aa9a4;
+  --color-teal-500: #2c807a;
+  --color-teal: #12645f;
+  --color-teal-600: #0e5551;
+  --color-teal-700: #0b4340;
+  --color-teal-800: #08322f;
+  --color-teal-900: #062220;
+
+  /* --- slate (secondary) --- */
+  --color-slate-100: #eef1f5;
+  --color-slate-200: #dde3ec;
+  --color-slate-300: #c3cddb;
+  --color-slate-400: #93a3b8;
+  --color-slate-500: #6b7f99;
+  --color-slate: #4a5d78;
+  --color-slate-600: #556982;
+  --color-slate-700: #3e5069;
+  --color-slate-800: #2c3a4d;
+  --color-slate-900: #1c2733;
+
+  /* --- amber: warning / in-progress only --- */
+  --color-amber-fill: #f7ecd4;
+  --color-amber-text: #79541a;
+
+  /* --- borders --- */
+  --color-border: rgba(20, 24, 28, 0.16);
+  --color-rule: rgba(20, 24, 28, 0.1);
+
+  /* --- spacing scale (4.4px base) --- */
+  --spacing-1: 4.4px;
+  --spacing-2: 8.8px;
+  --spacing-3: 13.2px;
+  --spacing-4: 17.6px;
+  --spacing-5: 22px;
+  --spacing-6: 26.4px;
+  --spacing-7: 35.2px;
+  --spacing-8: 80px;
+
+  /* --- radii --- */
+  --radius-control: 6px;
+  --radius-button: 8px;
+  --radius-card: 10px;
+  --radius-panel: 14px;
+
+  /* --- shadows --- */
+  --shadow-sm: 0 1px 2px rgba(19, 24, 30, 0.14);
+  --shadow-md: 0 3px 10px rgba(19, 24, 30, 0.16);
+  --shadow-lg: 0 12px 32px rgba(19, 24, 30, 0.22);
+
+  /* --- type --- */
+  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+@layer base {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: var(--color-bg);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: var(--color-teal-200);
+  }
+
+  /* Handoff: focus ring is 2px teal at 2px offset, on everything. */
+  :focus-visible {
+    outline: 2px solid var(--color-teal);
+    outline-offset: 2px;
+  }
+}
+
+/*
+ * The handoff allows exactly three motions: a 160ms panel, a 200ms toast,
+ * and the 1px card hover lift. Nothing else moves.
+ */
+@keyframes ppp-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ppp-toast {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.ppp-in {
+  animation: ppp-in 160ms ease-out;
+}
+
+.ppp-toast {
+  animation: ppp-toast 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ppp-in,
+  .ppp-toast {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
+}

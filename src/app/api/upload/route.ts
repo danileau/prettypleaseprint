@@ -1,0 +1,161 @@
+import { NextResponse } from "next/server";
+
+import { db } from "@/lib/db";
+import { currentUser, notify, printerOwner, storyRef } from "@/lib/authz";
+import { record } from "@/lib/audit";
+import { WishSchema, hexForColor } from "@/lib/catalog";
+import {
+  MAX_BYTES,
+  REJECTION_COPY,
+  extensionOf,
+  inspectModel,
+  safeFilename,
+} from "@/lib/models";
+import { MIME_FOR, ensureBucket, putModel, storageKeyFor } from "@/lib/storage";
+
+/**
+ * Model upload.
+ *
+ * A route handler rather than a server action, for one reason: the browser
+ * can watch a real XHR upload progress bar against this, and a 50 MB file
+ * over office wifi is long enough that a spinner is not good enough.
+ *
+ * Order matters here. Nothing is written to storage until the bytes have
+ * been inspected, and no story row exists until the object is in place — so
+ * a rejected file leaves nothing behind, and a story never points at an
+ * object that was not stored.
+ */
+
+export const runtime = "nodejs";
+/** The whole file is buffered to measure its bounding box; do not cache. */
+export const dynamic = "force-dynamic";
+
+let bucketReady: Promise<void> | null = null;
+
+const bad = (status: number, error: string) =>
+  NextResponse.json({ error }, { status });
+
+export async function POST(request: Request) {
+  const user = await currentUser();
+  if (!user) return bad(401, "Sign in first.");
+
+  // Cheap rejection before reading a single byte of the body.
+  const declared = Number(request.headers.get("content-length") ?? 0);
+  if (declared > MAX_BYTES * 1.1) {
+    return bad(413, REJECTION_COPY.too_large);
+  }
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return bad(400, "That upload did not arrive intact. Try again.");
+  }
+
+  const file = form.get("file");
+  if (!(file instanceof File)) return bad(400, "No file was attached.");
+  if (file.size > MAX_BYTES) return bad(413, REJECTION_COPY.too_large);
+
+  const wish = WishSchema.safeParse({
+    title: form.get("title") ?? "",
+    material: form.get("material"),
+    colorName: form.get("colorName"),
+    quantity: form.get("quantity"),
+    tip: form.get("tip"),
+    note: form.get("note") ?? "",
+  });
+  if (!wish.success) {
+    return bad(400, wish.error.issues[0]?.message ?? "Check the form.");
+  }
+
+  const filename = safeFilename(file.name);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+
+  // Authoritative check. Whatever the browser allowed through, this is what
+  // decides — extension, size and actual content all have to agree.
+  const inspection = inspectModel(filename, bytes);
+  if (!inspection.ok) {
+    // A refused upload creates no story, so it gets its own verb. Repeated
+    // rejections from one account are worth being able to see.
+    await record({
+      action: "upload.rejected",
+      actor: user,
+      subject: filename,
+      detail: { reason: inspection.reason, bytes: bytes.length },
+    });
+    return bad(422, REJECTION_COPY[inspection.reason]);
+  }
+
+  const extension = extensionOf(filename);
+  const key = storageKeyFor(extension);
+
+  try {
+    bucketReady ??= ensureBucket();
+    await bucketReady;
+    await putModel(key, bytes, MIME_FOR[extension] ?? "application/octet-stream");
+  } catch (error) {
+    bucketReady = null; // let the next attempt retry the bucket check
+    console.error("[upload] storage write failed", error);
+    return bad(502, "The file could not be stored. Try again in a moment.");
+  }
+
+  const title = wish.data.title || filename.replace(/\.(stl|3mf)$/i, "");
+
+  let story;
+  try {
+    story = await db.story.create({
+      data: {
+        title,
+        uploaderId: user.id,
+        status: "Requested",
+        quantity: wish.data.quantity,
+        material: wish.data.material,
+        colorName: wish.data.colorName,
+        colorHex: hexForColor(wish.data.colorName),
+        tip: wish.data.tip,
+        note: wish.data.note,
+        filename,
+        fileSize: bytes.length,
+        mimeType: MIME_FOR[extension] ?? "application/octet-stream",
+        storageKey: key,
+        dims: inspection.dims,
+      },
+    });
+  } catch (error) {
+    console.error("[upload] story insert failed", error);
+    return bad(500, "The request could not be saved. Try again.");
+  }
+
+  // "every upload notifies the admin"
+  const admin = await printerOwner();
+  if (admin) {
+    await notify({
+      recipientId: admin.id,
+      storyId: story.id,
+      text: `${user.name} uploaded “${title}”.`,
+    });
+  }
+
+  await record({
+    action: "story.created",
+    actor: user,
+    subject: storyRef(story.id),
+    detail: {
+      title,
+      filename,
+      bytes: bytes.length,
+      format: inspection.format,
+      triangles: inspection.triangles,
+      dims: inspection.dims,
+      material: wish.data.material,
+      quantity: wish.data.quantity,
+    },
+  });
+
+  return NextResponse.json({
+    id: story.id,
+    ref: storyRef(story.id),
+    title,
+    dims: inspection.dims,
+  });
+}

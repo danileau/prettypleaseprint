@@ -1,0 +1,305 @@
+// Pretty Please Print — schema
+//
+// Two groups of models:
+//   * Auth      — owned by Better Auth (User/Session/Account/Verification/Passkey).
+//                 Shapes are dictated by the library; verify with
+//                 `npx @better-auth/cli generate` after changing plugins.
+//   * Domain    — Invite/Story/Comment/Notification, from the handoff data model.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+// Auth
+// ===========================================================================
+
+enum Role {
+  client
+  admin
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  /// Avatar fallback, e.g. "AY". Derived from `name` on create. The default is
+  /// a safety net only — `databaseHooks.user.create.before` always sets it.
+  initials String @default("??")
+
+  /// Exactly one `admin` exists; enforced by the partial unique index
+  /// `user_single_admin`, added in the enforce_single_admin migration.
+  role Role @default(client)
+
+  /// Who invited this user. Null for the seeded admin only.
+  invitedById  String?
+  invitedBy    User?   @relation("Invitations", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedUsers User[]  @relation("Invitations")
+
+  // --- admin plugin ---
+  banned     Boolean?  @default(false)
+  banReason  String?
+  banExpires DateTime?
+
+  sessions Session[]
+  accounts Account[]
+  passkeys Passkey[]
+
+  invitesSent   Invite[]       @relation("InviteAuthor")
+  auditEvents   AuditEvent[]   @relation("AuditActor")
+  stories       Story[]
+  comments      Comment[]
+  notifications Notification[]
+
+  @@index([role])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // --- admin plugin ---
+  impersonatedBy String?
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  /// Unused: this app has no password login at all.
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("account")
+}
+
+/// Better Auth's generic token store. Backs magic links, which are configured
+/// with `storeToken: "hashed"` — a database reader cannot replay them.
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+/// WebAuthn credential. `publicKey` is a public key — safe at rest — and the
+/// private half never leaves the authenticator.
+model Passkey {
+  id           String    @id @default(cuid())
+  name         String?
+  publicKey    String
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialID String
+  counter      Int
+  deviceType   String
+  backedUp     Boolean
+  transports   String?
+  createdAt    DateTime? @default(now())
+  aaguid       String?
+
+  @@index([userId])
+  @@index([credentialID])
+  @@map("passkey")
+}
+
+/// Backs `rateLimit: { storage: "database" }` in src/lib/auth.ts. Shape is
+/// dictated by Better Auth: `key` unique, `lastRequest` an epoch-millisecond
+/// bigint. Rows are disposable — truncating it only resets the counters.
+model RateLimit {
+  id          String @id @default(cuid())
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+
+  @@map("rateLimit")
+}
+
+// ===========================================================================
+// Domain
+// ===========================================================================
+
+/// An invitation to join. There is no public sign-up: a `User` row can only
+/// come into existence when a matching pending invite exists (enforced in
+/// `src/lib/auth.ts` via `user.validateUserInfo`).
+model Invite {
+  id    String @id @default(cuid())
+  email String
+
+  /// SHA-256 of the invite token. The raw token exists only inside the
+  /// emailed link — a database dump does not let anyone accept an invite.
+  tokenHash String @unique
+
+  /// Display name the admin suggested; the invitee can override it on claim.
+  name String?
+  role Role    @default(client)
+
+  invitedById String
+  invitedBy   User   @relation("InviteAuthor", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  /// Last time the link was (re)sent, for throttling resends in the UI.
+  sentAt DateTime @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
+  @@map("invite")
+}
+
+/// Append-only record of who did what. Closes the A09 gap from SECURITY.md.
+///
+/// Deliberately denormalised: `actorEmail` and `subject` are copied in at
+/// write time so the trail still reads correctly after the user or the story
+/// it refers to has been deleted. Nothing in the app ever updates a row here.
+model AuditEvent {
+  id     String   @id @default(cuid())
+  at     DateTime @default(now())
+  /// Dotted verb, e.g. "invite.sent", "story.status_changed".
+  action String
+
+  actorId    String?
+  actor      User?   @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  /// Kept even if the account is later removed.
+  actorEmail String?
+
+  /// What was acted on, in human terms: "PPP-104", "ayla@office.example".
+  subject String?
+
+  ip        String?
+  userAgent String?
+  /// Anything else worth keeping. Never put a token or a raw file in here.
+  detail    Json?
+
+  @@index([at])
+  @@index([action, at])
+  @@index([actorId])
+  @@map("auditEvent")
+}
+
+enum StoryStatus {
+  Requested
+  Accepted
+  Printing
+  Done
+  Delivery
+  Declined
+}
+
+enum Material {
+  PLA
+  PETG
+  TPU
+  Resin
+}
+
+model Story {
+  /// Autoincrement so the display ref stays "PPP-" + (100 + id).
+  id     Int         @id @default(autoincrement())
+  title  String
+  status StoryStatus @default(Requested)
+
+  uploaderId String
+  uploader   User   @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+
+  quantity  Int      @default(1)
+  material  Material @default(PETG)
+  colorName String
+  colorHex  String
+  tip       String
+  note      String   @default("")
+
+  flagged    Boolean @default(false)
+  flagReason String?
+
+  // --- uploaded asset. Bytes live in object storage, never the web root. ---
+  filename   String
+  fileSize   Int
+  mimeType   String
+  storageKey String
+
+  // --- measured from the mesh at upload time, display only ---
+  //
+  // There is deliberately no `estimate` column. A print time derived from the
+  // bounding box is a guess dressed as a measurement, and the handoff's
+  // definition of done rules out claiming to know what the printer will do.
+  // A real slicer integration would add one back — see src/lib/models.ts.
+  dims String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  comments      Comment[]
+  notifications Notification[]
+
+  @@index([uploaderId])
+  @@index([status])
+  @@map("story")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  storyId   Int
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([storyId])
+  @@map("comment")
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  recipientId String
+  recipient   User     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  storyId     Int?
+  story       Story?   @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  text        String
+  read        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([recipientId, read])
+  @@map("notification")
+}

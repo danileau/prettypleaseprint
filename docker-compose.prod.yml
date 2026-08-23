@@ -1,0 +1,121 @@
+# Pretty Please Print — the whole stack in containers.
+#
+# This file alone publishes NO host ports: on its own the stack is running but
+# unreachable. That is deliberate — every context adds only the ports it needs.
+#
+#   Local, everything included and reachable (Mailpit catches the mail):
+#     cp .env.docker.example .env.docker
+#     docker compose --env-file .env.docker \
+#       -f docker-compose.prod.yml -f docker-compose.test.yml \
+#       --profile mailcatcher up -d --build
+#
+#   TrueNAS behind Nginx Proxy Manager:
+#     docker compose --env-file .env.docker \
+#       -f docker-compose.prod.yml -f docker-compose.truenas.yml up -d
+#
+# --env-file is not optional: compose reads .env for ${...} interpolation, and
+# .env here belongs to the host-side dev workflow. Without it the stack builds
+# with the wrong database password, or refuses to start.
+#
+#   TrueNAS SCALE: set DATA_ROOT to a dataset, point APP_URL at your real
+#   https:// hostname, give SMTP_URL a real server, and leave the mailcatcher
+#   profile off. See the deployment section of README.md.
+#
+# Storage is bind-mounted rather than named-volumed so TrueNAS snapshots and
+# replication see the data as ordinary files on a dataset.
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  # Applies migrations and upserts the admin, then exits. The app waits for it
+  # to finish, so a deploy can never serve against an unmigrated schema.
+  migrate:
+    build:
+      context: .
+      target: migrator
+    container_name: ppp-migrate
+    env_file: [.env.docker]
+    environment:
+      DATABASE_URL: postgresql://ppp:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/ppp?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runner
+    container_name: ppp-app
+    <<: *restart
+    env_file: [.env.docker]
+    environment:
+      DATABASE_URL: postgresql://ppp:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/ppp?schema=public
+      S3_ENDPOINT: http://minio:9000
+      # Better Auth derives cookie scope, magic-link URLs and the WebAuthn
+      # relying party from this. It must match what the browser actually sees,
+      # including scheme and port.
+      BETTER_AUTH_URL: ${APP_URL:-http://localhost:3000}
+      # Forwarded client addresses are only believed when a proxy is genuinely
+      # the only way in — see docker-compose.truenas.yml and src/lib/audit.ts.
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
+    # No ports are published here on purpose. A deployment puts a reverse proxy
+    # in front (docker-compose.truenas.yml); local testing publishes them with
+    # docker-compose.test.yml. Nothing is reachable by default.
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  db:
+    image: postgres:17-alpine
+    container_name: ppp-db
+    <<: *restart
+    environment:
+      POSTGRES_USER: ppp
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      POSTGRES_DB: ppp
+    volumes:
+      - ${DATA_ROOT:-./data}/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ppp -d ppp"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Model files. Never exposed to the internet — the app fetches from it
+  # server-side and hands out short-lived signed URLs.
+  minio:
+    image: minio/minio:latest
+    container_name: ppp-minio
+    <<: *restart
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-ppp}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+    volumes:
+      - ${DATA_ROOT:-./data}/models:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Development and staging only. Catches every outgoing email so invitations
+  # and sign-in links can be clicked without a real mail server.
+  # Enable with:  --profile mailcatcher
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: ppp-mailpit
+    <<: *restart
+    profiles: ["mailcatcher"]

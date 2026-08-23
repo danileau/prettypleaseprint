@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+data/
+storage/
+*.log
+*.tsbuildinfo
+README.md
+SECURITY.md
+# The design handoff is reference material, not application source.
+Print That for Me/

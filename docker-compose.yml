@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: ppp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ppp
+      POSTGRES_PASSWORD: ppp
+      POSTGRES_DB: ppp
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ppp -d ppp"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Model files (.stl/.3mf) live here, never in the web root. Served only
+  # through signed URLs gated by the ownership check in src/lib/authz.ts.
+  minio:
+    image: minio/minio:latest
+    container_name: ppp-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ppp
+      MINIO_ROOT_PASSWORD: ppp-secret
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["miniodata:/data"]
+
+  # Catches every outbound email in dev. Web UI on http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: ppp-mailpit
+    restart: unless-stopped
+    ports: ["8025:8025", "1025:1025"]
+
+volumes:
+  pgdata:
+  miniodata:

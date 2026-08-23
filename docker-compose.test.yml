@@ -1,0 +1,27 @@
+# Local overlay. Publishes what the plain production stack deliberately does
+# not, so the app is reachable in a browser and the verification suites on the
+# host can inspect what the containerised app actually wrote.
+#
+#   docker compose --env-file .env.docker \
+#     -f docker-compose.prod.yml -f docker-compose.test.yml \
+#     --profile mailcatcher up -d --build
+#
+# Never apply this on a deployed host. Postgres and MinIO are internal
+# services, and the app should only ever be reached through the proxy.
+services:
+  app:
+    ports:
+      - "${APP_PORT:-3000}:3000"
+  db:
+    ports:
+      - "5432:5432"
+  minio:
+    ports:
+      - "9000:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+  mailpit:
+    ports:
+      # 8025 is the web UI where invitations and sign-in links show up;
+      # 1025 is SMTP, which the host-side suites post to directly.
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+      - "1025:1025"

@@ -1,0 +1,5 @@
+# Pretty Please Print is invite-only. There is no public surface worth
+# indexing, and the sign-in page appearing in search results would only ever
+# be an invitation to try the door.
+User-agent: *
+Disallow: /

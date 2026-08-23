@@ -1,0 +1,58 @@
+{
+  "name": "pretty-please-print",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts",
+    "auth:generate": "better-auth generate --config src/lib/auth.ts",
+    "verify:auth": "tsx scripts/verify-auth.ts",
+    "probe:security": "tsx scripts/security-probe.ts",
+    "verify:models": "tsx scripts/verify-models.ts",
+    "verify:upload": "tsx scripts/verify-upload.ts",
+    "verify:passkey": "tsx scripts/verify-passkey.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1116.0",
+    "@aws-sdk/s3-request-presigner": "^3.1116.0",
+    "@better-auth/passkey": "1.7.1",
+    "@prisma/client": "6.19.3",
+    "better-auth": "1.7.1",
+    "fflate": "^0.8.3",
+    "next": "15.5.23",
+    "nodemailer": "9.0.5",
+    "react": "19.0.8",
+    "react-dom": "19.0.8",
+    "resend": "6.22.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "22.14.0",
+    "@types/nodemailer": "7.0.4",
+    "@types/react": "19.0.8",
+    "@types/react-dom": "19.0.3",
+    "prisma": "6.19.3",
+    "puppeteer-core": "^25.8.0",
+    "tailwindcss": "4.3.3",
+    "tsx": "^4.23.12",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.26",
+    "sharp": "^0.35.3",
+    "deepmerge-ts": "^8.0.2"
+  }
+}

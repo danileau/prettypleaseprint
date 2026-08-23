@@ -1,0 +1,56 @@
+# TrueNAS SCALE + Nginx Proxy Manager overlay.
+#
+#   docker compose --env-file .env.docker \
+#     -f docker-compose.prod.yml -f docker-compose.truenas.yml up -d
+#
+# What this changes versus the plain production stack:
+#
+#   * The app joins a shared Docker network so Nginx Proxy Manager can reach it
+#     by container name. Still no published ports, so nothing on the LAN can
+#     bypass the proxy and talk to the app in cleartext.
+#   * Forwarded client addresses become trustworthy, because now there is
+#     genuinely a proxy in front — see TRUST_PROXY_HEADERS in src/lib/audit.ts.
+#
+# One-time setup on the NAS, before the first `up`:
+#
+#   docker network create npm-proxy
+#   # then attach your Nginx Proxy Manager container to it:
+#   docker network connect npm-proxy <your-npm-container>
+#
+# Then in Nginx Proxy Manager, add a Proxy Host:
+#
+#   Domain Names      print.example.org
+#   Scheme            http
+#   Forward Hostname  ppp-app          <- the container name, not an IP
+#   Forward Port      3000
+#   Block Common Exploits   on
+#   Websockets Support      off        <- this app opens no websockets
+#   SSL  ->  request a Let's Encrypt certificate
+#            Force SSL           on
+#            HTTP/2 Support      on
+#            HSTS Enabled        off   <- the app already sends its own HSTS
+#
+# And in .env.docker:
+#
+#   APP_URL=https://print.example.org
+#   PASSKEY_RP_ID=print.example.org      # permanent — see README
+#   TRUST_PROXY_HEADERS=true
+#   DATA_ROOT=/mnt/tank/ppp
+#   SMTP_URL=smtp://user:pass@mail.example.org:587
+
+services:
+  app:
+    # The production stack publishes no ports, so there is nothing to undo:
+    # joining the proxy network is all that is needed to make the app reachable
+    # by Nginx Proxy Manager and by nothing else.
+    networks:
+      - default
+      - npm-proxy
+    environment:
+      # Only true because the app is unreachable except through the proxy,
+      # which is what makes X-Forwarded-For worth believing.
+      TRUST_PROXY_HEADERS: "true"
+
+networks:
+  npm-proxy:
+    external: true
