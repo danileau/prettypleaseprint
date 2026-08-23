@@ -1,0 +1,46 @@
+# Behind a reverse proxy — the overlay a deployment actually uses.
+#
+#   docker compose --env-file .env.docker \
+#     -f docker-compose.prod.yml -f docker-compose.proxy.yml up -d
+#
+# It does one thing: put the app on a network your proxy can reach it by name
+# on, while it still publishes no host port. Nothing on the LAN can bypass the
+# proxy and talk to the app in cleartext, and there is no port to forward.
+#
+# It deliberately does NOT set TRUST_PROXY_HEADERS. That used to live here,
+# hard-coded to "true", and it was a trap: a service-level `environment:` beats
+# `env_file:`, so editing .env.docker silently did nothing. Worse, "true" is
+# only correct for a proxy that REPLACES X-Forwarded-For. Put Cloudflare in
+# front — which appends instead — and the left-most entry becomes whatever the
+# client sent, so an overlay forcing "true" was quietly turning the audit
+# trail into fiction.
+#
+# Which header to believe is a property of your deployment, not of this file.
+# Say it once, in .env.docker:
+#
+#     TRUST_PROXY_HEADERS=false        nothing trusted (default)
+#     TRUST_PROXY_HEADERS=true         a proxy that replaces X-Forwarded-For
+#     TRUST_PROXY_HEADERS=cloudflare   CF-Connecting-IP
+#
+# The network is external and must already exist. With Nginx Proxy Manager:
+#
+#     docker network create npm-proxy
+#     docker network connect npm-proxy <your-proxy-container>
+#
+# Then point the proxy at `ppp-app` on port 3000 — the container name, not an
+# IP. If your proxy's network is called something else, set PPP_PROXY_NETWORK.
+#
+# Note that a managed proxy (a TrueNAS app, say) loses this attachment every
+# time it is updated and recreated, which surfaces as a 502 with nothing wrong
+# in the app's own logs. Reconnecting is one command; knowing that in advance
+# is the hard part.
+services:
+  app:
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: ${PPP_PROXY_NETWORK:-npm-proxy}
