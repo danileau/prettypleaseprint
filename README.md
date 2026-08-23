@@ -175,9 +175,21 @@ zfs snapshot -r storage/applications/ppp@$(date +%F)
 ```
 
 That snapshot is *crash-consistent*, not clean — Postgres replays its WAL on
-start and recovers, which is fine and is what it is designed for. If you want a
-backup that can be restored into any Postgres rather than only onto this data
-directory, take a logical dump alongside it:
+start and recovers, which is fine and is what it is designed for.
+
+**Without ZFS, do the file copy from inside a container.** The Postgres data
+directory is mode `700` owned by uid `70`, so a `tar` or `cp -a` as your own
+user cannot even read it, and one run with `sudo` that loses ownership produces
+an archive Postgres will refuse to start from:
+
+```bash
+docker compose --env-file .env.docker -f docker-compose.prod.yml down
+docker run --rm -v "$DATA_ROOT:/data:ro" -v "$PWD:/backup" alpine \
+  tar czf /backup/ppp-$(date +%F).tgz -C /data .
+```
+
+Either way, take a logical dump alongside it — it restores into *any* Postgres,
+not only back onto this data directory, and it needs no root:
 
 ```bash
 docker exec ppp-db pg_dump -U ppp -Fc ppp > ppp-$(date +%F).dump
@@ -189,32 +201,54 @@ docker exec ppp-db pg_dump -U ppp -Fc ppp > ppp-$(date +%F).dump
 # 1. stop the stack — never restore under a running Postgres
 docker compose --env-file .env.docker -f docker-compose.prod.yml down
 
-# 2. put the data back (ZFS rollback, or copy the files)
+# 2. put the data back (ZFS rollback, or extract the archive)
 zfs rollback storage/applications/ppp/data/db@2026-08-23
 zfs rollback storage/applications/ppp/data/models@2026-08-23
+#   without ZFS, from the container-made archive:
+#   docker run --rm -v "$DATA_ROOT:/data" -v "$PWD:/backup:ro" alpine \
+#     sh -c 'rm -rf /data/db /data/models && tar xzf /backup/ppp-2026-08-23.tgz -C /data'
 
 # 3. bring it up; the migrator applies any pending migrations
 docker compose --env-file .env.docker -f docker-compose.prod.yml up -d
 docker compose --env-file .env.docker -f docker-compose.prod.yml ps
 ```
 
-Two things that will bite if you do not know them:
-
-- **`DB_PASSWORD` must be the one the restored data was created with.** Postgres
-  stores the password inside the data directory. Restore `db/` from an old
-  backup while `.env.docker` holds a newly generated password and the app
-  cannot connect, with an authentication error that looks like a config typo.
-  This is the main reason `.env.docker` belongs in the backup.
-- **`BETTER_AUTH_SECRET` is not recoverable.** Lose it and every session is
-  invalidated — nobody is locked out permanently, everyone simply signs in
-  again. Passwords and passkeys are unaffected.
-
-Restore into a *different* host, or from a `pg_dump`, needs the database
-recreated first:
+Restoring from a logical dump instead, onto a running stack:
 
 ```bash
 docker exec -i ppp-db pg_restore -U ppp -d ppp --clean --if-exists < ppp-2026-08-23.dump
 ```
+
+### When it goes wrong
+
+Both of these were confirmed by actually doing it, not by reasoning about it.
+
+**`DB_PASSWORD` must be the one the restored data was created with.** Postgres
+stores the password inside the data directory and ignores `POSTGRES_PASSWORD`
+once that directory exists. Get it wrong and the symptoms point everywhere
+except the cause:
+
+| what you see | |
+| --- | --- |
+| `ppp-db` | **healthy** — this is the misleading part |
+| `ppp-app` | never starts, so it logs nothing at all |
+| `ppp-migrate` | `Error: P1000: Authentication failed against database server` |
+
+So look in the **migrator's** logs, which is the one place nobody thinks to
+check because it is the container that is supposed to exit:
+
+```bash
+docker compose --env-file .env.docker -f docker-compose.prod.yml logs migrate
+```
+
+Nothing is damaged by getting this wrong — the wrong password is refused, not
+destructive. Put the right one back and everything returns. This is the main
+reason `.env.docker` belongs in the backup.
+
+**`BETTER_AUTH_SECRET` is not recoverable, and costs one sign-in.** Restore
+without it and every existing session cookie stops validating — a held cookie
+goes from `200` to a `307` back to the sign-in page. Nobody is locked out:
+passwords and passkeys are untouched, and everyone simply signs in again.
 
 ## Troubleshooting
 

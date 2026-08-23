@@ -283,6 +283,33 @@ and a successful one kills it.
   `password.reset_requested` / `password.reset_completed` and a link that sets
   a password and nothing more.
 
+## Restore, exercised
+
+The backup and restore procedure used to be documented from reasoning. It has
+now been executed against a running stack: both paths taken, the data destroyed
+in between, and the result compared row for row.
+
+- **File-level restore** — stack down, data directory deleted outright,
+  archive extracted, stack up. Users, stories, comments, invitations and the
+  audit trail all returned identical, including a canary story and its comment
+  planted specifically to detect a partial restore.
+- **Logical restore** — a row deleted, then `pg_restore --clean --if-exists`
+  from a `pg_dump`, which brought it back with exit 0 and no errors.
+- **`DB_PASSWORD` mismatch** — confirmed to refuse rather than damage. The
+  documentation now names where the error actually surfaces, because the
+  obvious places are all silent: the database reports healthy, the app never
+  starts so logs nothing, and the only message is `P1000` in the migrator.
+- **`BETTER_AUTH_SECRET` loss** — confirmed to cost exactly one sign-in. A
+  held session cookie went from 200 to a 307 at the sign-in page, and signing
+  in again worked immediately.
+
+One finding worth the exercise on its own: the Postgres data directory is mode
+`700` owned by uid `70`, so a file-level backup taken as an ordinary user
+cannot read it, and one taken with `sudo` that flattens ownership produces an
+archive Postgres refuses to start from. On ZFS a snapshot sidesteps this
+entirely; elsewhere the copy has to be made from inside a container, which the
+README now says.
+
 ## Open items
 
 - **Nothing alerts automatically.** `/admin/audit` surfaces refusals but
