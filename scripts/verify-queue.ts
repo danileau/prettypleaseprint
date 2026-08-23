@@ -364,6 +364,45 @@ async function main() {
         "raw markup from a comment reached the page");
 
   // ------------------------------------------------------------------
+  section("re-issuing access when someone loses their passkey");
+
+  const guestList = await (await ruben.go(`${APP}/admin/invites`)).text();
+  check("members are listed with a recovery control",
+        rendered(guestList).includes("Ayla Berg") && guestList.includes("Lost access?"));
+
+  const reissueIdx = formIndexContaining(guestList, `value="${ayla.id}"`);
+  check("the control targets the right member", reissueIdx >= 0);
+  const reissued = await ruben.submit(`${APP}/admin/invites`, guestList, reissueIdx, {});
+  const reissuedBody = await reissued.text();
+  const linkMatch = /http:\/\/[^\s"'<\\]+\/api\/auth\/magic-link\/verify[^\s"'<\\]*/.exec(reissuedBody);
+  check("a sign-in link comes back for the admin to hand over", linkMatch !== null,
+        reissuedBody.slice(0, 160));
+
+  check("and it is recorded loudly — it signs someone in as that person",
+        (await db.auditEvent.count({
+          where: { action: "access.reissued", actorId: admin.id },
+        })) === 1);
+
+  if (linkMatch) {
+    const recovered = new Browser();
+    await recovered.go(linkMatch[0].replace(/&amp;/g, "&"));
+    const landed = await (await recovered.go(`${APP}/board`)).text();
+    check("the link really signs that person in",
+          rendered(landed).includes("Private to you and"),
+          "the recovery link did not establish a session");
+    check("as the client, not the admin",
+          !rendered(landed).includes("Admin view"),
+          "the recovery link granted admin access");
+  }
+
+  const clientTry = new FormData();
+  clientTry.set("userId", admin.id);
+  await client.raw(`${APP}/admin/invites`, { method: "POST", body: clientTry });
+  check("a client cannot mint one for anybody",
+        (await db.auditEvent.count({ where: { action: "access.reissued" } })) === 1,
+        "a client re-issued access");
+
+  // ------------------------------------------------------------------
   section("the uploader sees what happened");
   const feed = await (await client.go(`${APP}/board`)).text();
   check("their Activity count is not zero", /Activity[\s\S]{0,200}[1-9]/.test(feed));

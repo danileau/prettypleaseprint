@@ -282,10 +282,20 @@ export const auth = betterAuth({
 export type Session = typeof auth.$Infer.Session;
 
 /**
- * Issue a magic-link URL without mailing it. Only invite acceptance may call
- * this — see the `directGrant` note above.
+ * Issue a magic-link URL without mailing it.
+ *
+ * Two callers, both deliberate:
+ *   - invite acceptance, which already proved control of the mailbox
+ *   - the admin re-issuing access for someone who lost their passkey and
+ *     cannot receive mail
+ *
+ * The second is effectively impersonation: the link signs the browser in AS
+ * that person. It is allowed because it grants the printer owner nothing they
+ * did not already have — they own the machine and the database — and an
+ * audited action is strictly better than a quiet `UPDATE`. It is recorded
+ * loudly for that reason.
  */
-export async function issueInviteSignInUrl(
+export async function issueSignInUrl(
   email: string,
   headers: Headers,
   callbackURL: string,
@@ -300,7 +310,7 @@ export async function issueInviteSignInUrl(
   );
 
   if (!box.url) {
-    throw new Error("Magic link was not issued for the accepted invite.");
+    throw new Error("No sign-in link was issued.");
   }
   return box.url;
 }

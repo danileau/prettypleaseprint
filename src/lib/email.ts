@@ -4,26 +4,41 @@ import nodemailer from "nodemailer";
 import { isBuildPhase } from "@/lib/runtime";
 
 /**
- * Transport is picked once, at module load, in this order:
+ * Where mail goes, if anywhere:
  *   RESEND_API_KEY -> Resend
- *   SMTP_URL       -> nodemailer (docker compose brings up Mailpit on :1025)
- *   neither        -> console (development only; refuses to start in prod)
+ *   SMTP_URL       -> nodemailer (compose brings up Mailpit on :1025)
+ *   neither        -> nowhere, and that is a supported mode
+ *
+ * Read per call rather than fixed at module load, so the answer cannot go
+ * stale against the environment and a test can flip it.
  */
-type Transport = "resend" | "smtp" | "console";
+type Transport = "resend" | "smtp" | "none";
 
-const transport: Transport = process.env.RESEND_API_KEY
-  ? "resend"
-  : process.env.SMTP_URL
-    ? "smtp"
-    : "console";
+export function mailTransport(): Transport {
+  if (process.env.RESEND_API_KEY) return "resend";
+  if (process.env.SMTP_URL) return "smtp";
+  return "none";
+}
 
-// A deployment with nowhere to send mail cannot invite anyone or sign anyone
-// in, so it refuses to start rather than failing silently at the worst moment.
-// The build is exempt: see src/lib/runtime.ts.
-if (transport === "console" && process.env.NODE_ENV === "production" && !isBuildPhase) {
-  throw new Error(
-    "No mail transport configured. Set RESEND_API_KEY or SMTP_URL — this app " +
-      "cannot deliver invitations or sign-in links without one.",
+/**
+ * Is there anywhere to send mail?
+ *
+ * Running without one is a supported mode, not a broken deployment. Mail here
+ * is only ever used for authentication — never for notifications, which are
+ * in-app — so with no transport the app hands the admin a link to pass on
+ * directly instead. For a group that shares an office that is arguably the
+ * better channel: a token in an inbox sits there indefinitely and can be
+ * forwarded; one handed over in person cannot.
+ *
+ * This used to throw in production. It no longer does — refusing to start was
+ * the wrong answer to a question the operator may have settled deliberately.
+ */
+export const mailConfigured = () => mailTransport() !== "none";
+
+if (!isBuildPhase && process.env.NODE_ENV === "production" && !mailConfigured()) {
+  console.info(
+    "[mail] No transport configured. Invitations and recovery links will be " +
+      "shown to the admin to hand over; sign-in is passkey-first.",
   );
 }
 
@@ -31,26 +46,25 @@ const from = process.env.MAIL_FROM ?? "Pretty Please Print <printer@example.org>
 
 export type Mail = { to: string; subject: string; html: string; text: string };
 
-export async function sendMail(mail: Mail): Promise<void> {
-  switch (transport) {
+/**
+ * Delivers, or reports that it could not. The caller decides what to do about
+ * it — for an invitation, that means showing the link to the admin instead.
+ */
+export async function sendMail(mail: Mail): Promise<boolean> {
+  switch (mailTransport()) {
     case "resend": {
       const resend = new Resend(process.env.RESEND_API_KEY!);
       const { error } = await resend.emails.send({ from, ...mail });
       if (error) throw new Error(`Resend refused the message: ${error.message}`);
-      return;
+      return true;
     }
     case "smtp": {
       const t = nodemailer.createTransport(process.env.SMTP_URL!);
       await t.sendMail({ from, ...mail });
-      return;
+      return true;
     }
-    case "console": {
-      // eslint-disable-next-line no-console
-      console.info(
-        `\n──────── mail (dev) ────────\nto:      ${mail.to}\nsubject: ${mail.subject}\n\n${mail.text}\n────────────────────────────\n`,
-      );
-      return;
-    }
+    case "none":
+      return false;
   }
 }
 

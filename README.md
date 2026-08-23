@@ -91,6 +91,35 @@ So there are three prompts now, and two tests holding them in place:
 
 All three disappear the moment a passkey exists.
 
+### Mail is optional
+
+**SMTP is used only for authentication, and not at all for notifications** —
+those are in-app, written by `notify()` and read by the Activity panel. Mail
+is called in exactly three places: sending an invitation, resending one, and
+the magic sign-in link.
+
+So the app runs without a mail server. With `SMTP_URL` or `RESEND_API_KEY`
+set, invitations are emailed as usual. With neither, the admin gets the link
+on screen to hand over directly, and the app boots normally rather than
+refusing to start. Same token, same single use, same expiry either way.
+
+For a group that shares an office, handing a link over is arguably the safer
+channel: a token in an inbox sits there indefinitely and can be forwarded,
+where one passed over in person cannot. When mail *is* configured the raw
+token is still withheld from the admin — it exists only inside the message —
+because that property is worth keeping wherever it can be kept.
+
+There is also **"Lost access?"** against each member on the guest list: it
+mints a single-use ten-minute sign-in link for someone who wiped the device
+their passkey lived on, and hands it to the admin. That is the answer when
+mail is down, which is exactly when you cannot email a link.
+
+It is impersonation-shaped — whoever holds the link is signed in as that
+person — and it is allowed because it grants the printer owner nothing they
+did not already have, owning the machine and the database. It is recorded
+loudly (`access.reissued`) for the same reason: an audited action beats a
+quiet `UPDATE`.
+
 ### Invite-only, enforced in one place
 
 A `User` row can only come into existence when a pending invite matches the

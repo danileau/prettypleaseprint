@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { issueInviteSignInUrl } from "@/lib/auth";
+import { issueSignInUrl } from "@/lib/auth";
 import { checkInviteToken } from "@/lib/invites";
 
 const ClaimSchema = z.object({
@@ -47,7 +47,7 @@ export async function acceptInvite(
     data: { name: parsed.data.name },
   });
 
-  const url = await issueInviteSignInUrl(
+  const url = await issueSignInUrl(
     check.invite.email,
     await headers(),
     "/welcome",

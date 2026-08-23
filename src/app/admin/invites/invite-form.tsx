@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 import { sendInviteAction, type InviteFormState } from "./actions";
 import { Button, Input, Label, Notice } from "@/components/ui";
+import { HandoverLink } from "@/components/handover-link";
 
 function Submit() {
   const { pending } = useFormStatus();
@@ -65,12 +66,21 @@ export function InviteForm() {
 
       <div className="mt-[17.6px] flex flex-wrap items-center gap-[13.2px]">
         <Submit />
-        {state.sent && (
+        {state.sent && !state.handoverUrl && (
           <span className="rounded-chip border-2 border-ink bg-mint px-[11px] py-[3px] font-mono text-[11.5px] font-bold uppercase text-ink">
             Sent · {state.sent} has been emailed a link
           </span>
         )}
+        {state.sent && state.handoverUrl && (
+          <span className="rounded-chip border-2 border-ink bg-sun px-[11px] py-[3px] font-mono text-[11.5px] font-bold uppercase text-ink">
+            Invite created for {state.sent}
+          </span>
+        )}
       </div>
+
+      {state.handoverUrl && (
+        <HandoverLink url={state.handoverUrl} note="works once, expires in 7 days" />
+      )}
 
       {state.error && (
         <div className="mt-[13.2px]">

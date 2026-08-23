@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/authz";
 import { INVITE_TTL_DAYS } from "@/lib/invites";
 import { Kicker, StatusChip } from "@/components/ui";
 import { InviteForm } from "./invite-form";
+import { ReissueAccess } from "@/components/reissue-access";
 import { resendInviteAction, revokeInviteAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -49,14 +50,19 @@ function relative(date: Date): string {
 export default async function InvitesPage() {
   await requireAdmin();
 
-  const [invites, members] = await Promise.all([
+  const [invites, memberList] = await Promise.all([
     db.invite.findMany({
       orderBy: { createdAt: "desc" },
       take: 100,
       include: { invitedBy: { select: { name: true } } },
     }),
-    db.user.count({ where: { role: "client" } }),
+    db.user.findMany({
+      where: { role: "client" },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, email: true, initials: true },
+    }),
   ]);
+  const members = memberList.length;
 
   const open = invites.filter((i) => stateOf(i) === "Pending");
 
@@ -75,8 +81,38 @@ export default async function InvitesPage() {
 
       <InviteForm />
 
+      {memberList.length > 0 && (
+        <>
+          <h2 className="mb-[13.2px] mt-[35.2px] font-display text-[26px] text-ink">
+            Who is in
+          </h2>
+          <div className="overflow-hidden rounded-panel border-[3px] border-ink bg-porcelain shadow-stamp">
+            {memberList.map((m, i) => (
+              <div
+                key={m.id}
+                className={`flex flex-wrap items-center gap-[15px] p-[15px] ${
+                  i < memberList.length - 1 ? "border-b-2 border-dashed border-rule" : ""
+                }`}
+              >
+                <span
+                  aria-hidden
+                  className="flex h-[36px] w-[36px] flex-none items-center justify-center rounded-full border-[3px] border-ink bg-aqua font-mono text-[12px] font-bold text-ink"
+                >
+                  {m.initials}
+                </span>
+                <div className="min-w-[180px] flex-[1_1_240px]">
+                  <p className="m-0 font-display text-[17px] text-ink">{m.name}</p>
+                  <p className="m-0 font-mono text-[11.5px] text-ink-3">{m.email}</p>
+                </div>
+                <ReissueAccess userId={m.id} name={m.name.split(" ")[0] ?? m.name} />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <h2 className="mb-[13.2px] mt-[35.2px] font-display text-[26px] text-ink">
-        Everyone invited
+        Invitations
       </h2>
 
       <div className="rounded-panel border-[3px] border-ink bg-porcelain px-[22px] pb-[22px] pt-[8.8px] shadow-stamp">

@@ -1,7 +1,7 @@
 import { Prisma, type Invite, type Role } from "@prisma/client";
 import { db } from "@/lib/db";
 import { generateToken, hashToken } from "@/lib/tokens";
-import { inviteEmail, sendMail } from "@/lib/email";
+import { inviteEmail, mailConfigured, sendMail } from "@/lib/email";
 
 export const INVITE_TTL_DAYS = 7;
 
@@ -79,16 +79,23 @@ export class InviteError extends Error {
 }
 
 /**
- * Mint an invite and email the link. Returns the invite row; the raw token is
- * deliberately not returned — it exists only inside the email, so not even the
- * admin who sent it can replay the link from the UI.
+ * What the caller gets back. `handoverUrl` is present only when the link could
+ * not be delivered, i.e. no mail transport is configured.
+ *
+ * When mail works, the raw token is still withheld: it exists only inside the
+ * message, so not even the admin who sent it can replay the link. That
+ * property is worth keeping wherever it can be kept — it just cannot be kept
+ * when there is nowhere to send the message, and refusing to work at all was
+ * the worse answer.
  */
+export type CreatedInvite = { invite: Invite; handoverUrl?: string };
+
 export async function createInvite(opts: {
   email: string;
   name?: string | null;
   role?: Role;
   invitedById: string;
-}): Promise<Invite> {
+}): Promise<CreatedInvite> {
   const email = normalizeEmail(opts.email);
 
   if (await db.user.findUnique({ where: { email } })) {
@@ -114,23 +121,24 @@ export async function createInvite(opts: {
     include: { invitedBy: { select: { name: true } } },
   });
 
-  await sendMail(
+  const url = inviteUrl(token);
+  const delivered = await sendMail(
     inviteEmail({
       to: email,
-      url: inviteUrl(token),
+      url,
       inviterName: invite.invitedBy.name,
       expiresInDays: INVITE_TTL_DAYS,
     }),
   );
 
-  return invite;
+  return delivered ? { invite } : { invite, handoverUrl: url };
 }
 
 /**
  * Rotate the token, push the expiry out and send again. Rotating means an
  * older email that has since leaked stops working the moment a resend happens.
  */
-export async function resendInvite(inviteId: string): Promise<Invite> {
+export async function resendInvite(inviteId: string): Promise<CreatedInvite> {
   const existing = await db.invite.findUnique({
     where: { id: inviteId },
     include: { invitedBy: { select: { name: true } } },
@@ -149,16 +157,17 @@ export async function resendInvite(inviteId: string): Promise<Invite> {
     },
   });
 
-  await sendMail(
+  const url = inviteUrl(token);
+  const delivered = await sendMail(
     inviteEmail({
       to: invite.email,
-      url: inviteUrl(token),
+      url,
       inviterName: existing.invitedBy.name,
       expiresInDays: INVITE_TTL_DAYS,
     }),
   );
 
-  return invite;
+  return delivered ? { invite } : { invite, handoverUrl: url };
 }
 
 export async function revokeInvite(inviteId: string): Promise<void> {
@@ -192,6 +201,8 @@ export async function purgeStaleInvites(): Promise<number> {
   });
   return count;
 }
+
+export { mailConfigured };
 
 export const isUniqueViolation = (e: unknown): boolean =>
   e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";

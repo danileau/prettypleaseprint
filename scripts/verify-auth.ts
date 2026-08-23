@@ -16,7 +16,7 @@
 import "./_env";
 import { PrismaClient } from "@prisma/client";
 import { db } from "../src/lib/db";
-import { createInvite } from "../src/lib/invites";
+import { createInvite, mailConfigured } from "../src/lib/invites";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 const MAILPIT = process.env.MAILPIT_URL ?? "http://localhost:8025";
@@ -270,6 +270,55 @@ async function main() {
         JSON.stringify({ role: bobRow?.role, initials: bobRow?.initials }));
 
   // ------------------------------------------------------------------------
+  section("mail is optional, not required");
+
+  // With a transport configured the raw token stays inside the message: the
+  // caller gets no handover URL, so the admin cannot replay the link.
+  const withMail = await createInvite({
+    email: "mailed@office.example",
+    invitedById: admin.id,
+  });
+  check("with mail configured, the link is emailed and withheld from the caller",
+        withMail.handoverUrl === undefined,
+        "the raw token was handed back even though it was delivered");
+  check("and it really was delivered",
+        (await mailLink("mailed@office.example", CLAIM_LINK)) !== null);
+
+  // With none, the same call hands the link back so it can be passed on.
+  // Restored afterwards so the rest of the run is unaffected.
+  const savedSmtp = process.env.SMTP_URL;
+  const savedResend = process.env.RESEND_API_KEY;
+  delete process.env.SMTP_URL;
+  delete process.env.RESEND_API_KEY;
+  check("mailConfigured() reflects the environment", mailConfigured() === false);
+
+  const noMail = await createInvite({
+    email: "handover@office.example",
+    invitedById: admin.id,
+  });
+  check("with no transport, the admin gets a link to hand over",
+        typeof noMail.handoverUrl === "string" &&
+        noMail.handoverUrl.includes("/invite/"),
+        String(noMail.handoverUrl));
+  check("and nothing was sent",
+        (await mailLink("handover@office.example", CLAIM_LINK)) === null,
+        "a message went out with no transport configured");
+
+  if (savedSmtp) process.env.SMTP_URL = savedSmtp;
+  if (savedResend) process.env.RESEND_API_KEY = savedResend;
+  check("the transport comes back when the environment does", mailConfigured() === true);
+
+  // The handed-over link has to actually work, or the mode is theatre.
+  const handoverBrowser = new Browser();
+  const handoverPage = await (await handoverBrowser.go(noMail.handoverUrl!)).text();
+  check("a handed-over invite link opens the claim page",
+        handoverPage.includes("will print things for you"));
+
+  await db.invite.deleteMany({
+    where: { email: { in: ["mailed@office.example", "handover@office.example"] } },
+  });
+
+  // --------------------------------------------------------------------------
   section("7. the database itself permits only one admin");
   check("exactly one admin exists",
         (await db.user.count({ where: { role: "admin" } })) === 1);
