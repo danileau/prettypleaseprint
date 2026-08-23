@@ -19,7 +19,16 @@ export {
   type Actor,
 } from "@/lib/scope";
 
-/** The signed-in user, or null. Never throws. */
+/**
+ * The signed-in user, or null. Never throws.
+ *
+ * Suspension is checked here as well as at sign-in, and the redundancy is the
+ * point. The admin plugin refuses to *create* a session for a suspended
+ * account, which stops them getting back in but does nothing about the
+ * session they already hold — that one keeps working until it expires.
+ * Revoking access deletes those sessions, and this is the belt to that
+ * braces: a session that somehow survives still resolves to nobody.
+ */
 export async function currentUser(): Promise<Actor | null> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) return null;
@@ -27,7 +36,10 @@ export async function currentUser(): Promise<Actor | null> {
   const u = session.user as typeof session.user & {
     initials?: string | null;
     role?: string | null;
+    banned?: boolean | null;
   };
+
+  if (u.banned) return null;
 
   return {
     id: u.id,

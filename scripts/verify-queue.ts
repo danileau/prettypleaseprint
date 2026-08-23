@@ -398,6 +398,96 @@ async function main() {
         "a client triggered a password reset");
 
   // ------------------------------------------------------------------
+  section("revoking a member's access");
+
+  const goner = await db.user.create({
+    data: { email: "goner@office.example", name: "Gwen Oner", initials: "GW",
+            role: "client", emailVerified: true, invitedById: admin.id },
+  });
+  const gonerB = await signIn(goner);
+  check("the member can reach the app",
+        rendered(await (await gonerB.go(`${APP}/board`)).text()).includes("backlog"));
+  check("and holds a live session",
+        (await db.session.count({ where: { userId: goner.id } })) > 0);
+
+  let guests = await (await ruben.go(`${APP}/admin/invites`)).text();
+  check("the guest list offers a revoke control", guests.includes("Revoke access?"));
+
+  const revokeIdx = formIndexContaining(guests, 'name="revoke"');
+  const revoked = await ruben.submit(`${APP}/admin/invites`, guests, revokeIdx, {
+    userId: goner.id, revoke: "true",
+  });
+  check("revoking is accepted", revoked.status < 400, `status ${revoked.status}`);
+  check("the account is suspended",
+        (await db.user.findUnique({ where: { id: goner.id } }))?.banned === true);
+  // The admin plugin refuses to CREATE a session for a suspended account but
+  // does nothing about one already held — so the sessions have to go too, or
+  // the control only closes the door they are already through.
+  check("their live sessions are revoked with it",
+        (await db.session.count({ where: { userId: goner.id } })) === 0);
+  check("the session they were holding stops working",
+        !rendered(await (await gonerB.go(`${APP}/board`)).text()).includes("backlog"));
+
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  const lockedOut = await signInWithPassword(new Browser(), APP, usernameFor(goner.email));
+  check("and they cannot sign back in", lockedOut.status >= 400, `status ${lockedOut.status}`);
+  check("revocation is audited",
+        (await db.auditEvent.count({
+          where: { action: "access.revoked", subject: goner.email } })) === 1);
+
+  // The printer owner is the only way into the admin surface; suspending them
+  // would lock the app with no way back.
+  guests = await (await ruben.go(`${APP}/admin/invites`)).text();
+  check("the admin session is still live (or the guard below proves nothing)",
+        guests.includes("The guest list"));
+  await ruben.submit(`${APP}/admin/invites`, guests,
+    formIndexContaining(guests, 'name="revoke"'), { userId: admin.id, revoke: "true" });
+  check("the printer owner cannot be suspended",
+        (await db.user.findUnique({ where: { id: admin.id } }))?.banned !== true);
+
+  const clientRevoke = new FormData();
+  clientRevoke.set("userId", admin.id);
+  clientRevoke.set("revoke", "true");
+  await client.raw(`${APP}/admin/invites`, { method: "POST", body: clientRevoke });
+  check("a client cannot revoke anybody",
+        (await db.auditEvent.count({ where: { action: "access.revoked" } })) === 1);
+
+  guests = await (await ruben.go(`${APP}/admin/invites`)).text();
+  check("a suspended member reads as suspended", guests.includes("Suspended"));
+  await ruben.submit(`${APP}/admin/invites`, guests,
+    formIndexContaining(guests, 'name="revoke"'), { userId: goner.id, revoke: "false" });
+  check("restoring clears the suspension",
+        (await db.user.findUnique({ where: { id: goner.id } }))?.banned === false);
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  check("and they sign in again with the password they already had",
+        (await signInWithPassword(new Browser(), APP, usernameFor(goner.email))).status === 200);
+  check("the restore is audited",
+        (await db.auditEvent.count({
+          where: { action: "access.restored", subject: goner.email } })) === 1);
+
+  // ------------------------------------------------------------------
+  section("the AGPL source offer, and the brand mark");
+
+  const anonPage = await (await new Browser().go(`${APP}/signin`)).text();
+  check("the source offer reaches signed-out visitors",
+        anonPage.includes("Source · AGPL-3.0"),
+        "AGPL section 13 wants it in front of anyone using the app over a network");
+  check("and signed-in ones",
+        (await (await ruben.go(`${APP}/board`)).text()).includes("Source · AGPL-3.0"));
+
+  const iconRes = await new Browser().raw(`${APP}/icon.svg`);
+  check("the favicon is served, not redirected to sign-in",
+        iconRes.status === 200 &&
+        (iconRes.headers.get("content-type") ?? "").includes("svg"),
+        `status ${iconRes.status} type ${iconRes.headers.get("content-type")}`);
+  const iconSvg = await iconRes.text();
+  const fills = [...iconSvg.matchAll(/fill="([^"]+)"/g)].map((m) => m[1]);
+  check("and paints the cherry mark, not the old teal disc",
+        fills.includes("#e4322f") && !fills.includes("#12645f"), fills.join(","));
+
+  await db.user.deleteMany({ where: { email: "goner@office.example" } });
+
+  // ------------------------------------------------------------------
   section("the uploader sees what happened");
   const feed = await (await client.go(`${APP}/board`)).text();
   check("their Activity count is not zero", /Activity[\s\S]{0,200}[1-9]/.test(feed));

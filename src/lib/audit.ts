@@ -28,6 +28,8 @@ export type AuditAction =
   | "user.role_changed"
   | "password.reset_requested"
   | "password.reset_completed"
+  | "access.revoked"
+  | "access.restored"
   // work
   | "story.created"
   | "upload.rejected"

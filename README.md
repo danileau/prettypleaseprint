@@ -27,6 +27,9 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   Delivery, one step at a time, forwards only. Or Declined, with a reason.
 - **Talk on the ticket** — a conversation thread per request, so "can you do it
   in teal" lives with the model rather than in a chat app.
+- **Revoke access when someone leaves** — suspends the account, signs them out
+  everywhere and refuses new sign-ins, while keeping their tickets, comments
+  and history. Reversible, and audited.
 - **See the actual geometry** — the uploaded mesh rendered in the browser,
   auto-framed, drag to rotate.
 - **An audit trail** of everything that changes who can get in or what happens
@@ -108,6 +111,7 @@ with commentary is [`.env.docker.example`](.env.docker.example).
 | `MAIL_FROM` | | Envelope sender. |
 | `TRUST_PROXY_HEADERS` | | `true` only when the app is unreachable except through your proxy. See [the reasoning](docs/deployment.md#why-trust_proxy_headers-is-a-separate-switch). |
 | `HIBP_DISABLED` | | `true` disables the breach check. Only for a host with no outbound internet — it fails closed, so without it nobody could register. |
+| `SOURCE_URL` | | Where this instance's source lives, shown in the footer. **Change it if you modify the code** — see [Licence](#licence). Defaults to the upstream repository. |
 | `PPP_REGISTRY` / `PPP_TAG` | | Which published image to run. Pin `PPP_TAG` to a commit SHA; that is also how you roll back. |
 
 ## Deploying
@@ -285,6 +289,11 @@ See [docs/development.md](docs/development.md) to get set up.
 
 [AGPL-3.0-or-later](LICENSE). Self-host it, fork it, change it, run it for your
 office — all of that is yes, and free.
+
+The app carries a **Source · AGPL-3.0** link in its footer. That is section 13
+made real: if you modify the code, point `SOURCE_URL` at your own repository.
+Leaving it aimed at upstream is worse than removing it, because it looks like
+compliance while offering source that is not what is running.
 
 The one condition is the point of the licence: **if you modify it and let people
 use your version over a network, you have to offer them your source.** Not a

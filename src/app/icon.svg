@@ -1,4 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- The brand mark: the same teal disc as the wordmark in the header. -->
-  <circle cx="16" cy="16" r="16" fill="#12645f"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Pretty Please Print">
+  <!--
+    The brand mark, matching <Brand> in src/components/ui.tsx: a cherry disc
+    with the heavy ink keyline this design language uses everywhere, and the
+    cream bead of filament coming off the nozzle.
+
+    It was a plain teal circle, the wordmark colour from the original design
+    handoff, which the app has not used since it was renamed.
+  -->
+  <circle cx="16" cy="16" r="14" fill="#e4322f" stroke="#221a14" stroke-width="3"/>
+  <circle cx="16" cy="16" r="4.2" fill="#fff6e9"/>
 </svg>
