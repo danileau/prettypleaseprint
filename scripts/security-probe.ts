@@ -12,6 +12,7 @@
  *
  * DESTRUCTIVE: wipes users, invites and tokens. Development database only.
  */
+import "./_env";
 import { db } from "../src/lib/db";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";

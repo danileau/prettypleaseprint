@@ -82,7 +82,7 @@ jobs:
       # Scan what was actually published, not the repo. A base image can carry
       # a CVE that no filesystem scan of this checkout would ever see.
       - name: Trivy scan of the published image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
           image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.sha.outputs.short }}

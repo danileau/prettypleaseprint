@@ -13,6 +13,7 @@
  * DESTRUCTIVE: it wipes users, invites and verification tokens first. Point it
  * at a development database only.
  */
+import "./_env";
 import { PrismaClient } from "@prisma/client";
 import { db } from "../src/lib/db";
 import { createInvite } from "../src/lib/invites";

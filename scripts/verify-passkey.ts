@@ -11,6 +11,7 @@
  *
  * DESTRUCTIVE: wipes the test client's passkeys and sessions.
  */
+import "./_env";
 import { existsSync } from "node:fs";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { db } from "../src/lib/db";

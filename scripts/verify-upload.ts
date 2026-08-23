@@ -9,6 +9,7 @@
  *
  * DESTRUCTIVE: wipes users, stories and invites. Development database only.
  */
+import "./_env";
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 import { db } from "../src/lib/db";

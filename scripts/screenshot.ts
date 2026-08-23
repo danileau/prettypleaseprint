@@ -10,6 +10,7 @@
  *
  * DESTRUCTIVE: replaces stories and the demo client. Development only.
  */
+import "./_env";
 import { existsSync, mkdirSync } from "node:fs";
 import puppeteer from "puppeteer-core";
 import { db } from "../src/lib/db";
