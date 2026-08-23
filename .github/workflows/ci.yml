@@ -132,6 +132,27 @@ jobs:
       - name: OWASP-mapped security probes
         run: npm run probe:security
 
+      # Regression pins for the 2026-08-23 finding: node's base image bundles
+      # npm, npm bundles sigstore 3.1.0 (CVE-2026-48815), and neither image
+      # needs npm at runtime. If someone reintroduces it — an `npx` in a CMD,
+      # a global install — the HIGH comes straight back. Fail here, loudly,
+      # rather than on the next daily image scan.
+      - name: Runtime images ship no npm
+        run: |
+          for img in ppp-app ppp-migrate; do
+            if docker run --rm --entrypoint sh "ghcr.io/danileau/$img:latest"                  -c 'command -v npm' >/dev/null 2>&1; then
+              echo "::error file=Dockerfile::npm is back in $img — it re-adds the vulnerable bundled sigstore"
+              exit 1
+            fi
+          done
+          echo "neither image ships npm"
+
+      # And the migrator must still be able to do its job without it, which is
+      # the half a presence check cannot tell you.
+      - name: Migrator still runs without npm
+        run: |
+          docker run --rm --entrypoint sh ghcr.io/danileau/ppp-migrate:latest             -c './node_modules/.bin/prisma --version >/dev/null && ./node_modules/.bin/tsx --version >/dev/null'             && echo "prisma and tsx resolve via node_modules/.bin"
+
       - name: Container logs on failure
         if: failure()
         run: |

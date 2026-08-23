@@ -53,28 +53,45 @@ WORKDIR /app
 RUN apk add --no-cache openssl libc6-compat
 
 # Exactly three packages, not the whole dependency tree: the seed imports
-# @prisma/client and nothing else, and installing the app's manifest here would
-# drag in Next and sharp just to apply a migration.
+# @prisma/client and nothing else, and installing the app's manifest here
+# would drag in Next and sharp just to apply a migration.
 #
-# package.json is read from /tmp rather than /app on purpose — `npm install
-# <pkg>` in a directory that has a manifest installs that manifest as well,
-# which is exactly the mistake this avoids. Versions still come from it, so the
-# CLI and the generated client cannot drift apart.
+# A generated manifest rather than `npm install <pkg>` in a bare directory,
+# because the root package.json's `overrides` have to come across. Without
+# them the Prisma CLI pulls a vulnerable deepmerge-ts through @prisma/config
+# — which is a HIGH that only shows up when you scan the published image.
+# Versions are read from the real manifest so nothing can drift.
 COPY package.json /tmp/package.json
-RUN npm install --ignore-scripts \
-      "prisma@$(node -p "require('/tmp/package.json').devDependencies.prisma")" \
-      "@prisma/client@$(node -p "require('/tmp/package.json').dependencies['@prisma/client']")" \
-      "tsx@$(node -p "require('/tmp/package.json').devDependencies.tsx")"
+RUN node -e "\
+      const p = require('/tmp/package.json'); \
+      require('fs').writeFileSync('package.json', JSON.stringify({ \
+        name: 'ppp-migrate', private: true, \
+        dependencies: { \
+          prisma: p.devDependencies.prisma, \
+          '@prisma/client': p.dependencies['@prisma/client'], \
+          tsx: p.devDependencies.tsx, \
+        }, \
+        overrides: p.overrides ?? {}, \
+      }, null, 2)); \
+    " \
+ && npm install --ignore-scripts --no-audit --no-fund
 
 COPY prisma ./prisma
 RUN npx prisma generate
+
+# npm is not a runtime dependency here either, and the copy bundled in the
+# node base image carries CVEs of its own (sigstore 3.1.0, CVE-2026-48815 —
+# found by scanning the published image, which no filesystem scan of this
+# repo could ever have seen). The CMD below calls node_modules/.bin directly:
+# those entries are scripts with a node shebang and need no npm.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 ENV NODE_ENV=production
 # `migrate deploy` applies pending migrations and never generates or resets —
 # it is the one migrate subcommand safe to run unattended against real data.
 # The seed is an upsert of the single admin, so re-running it is a no-op that
 # also keeps ADMIN_NAME in step with the environment.
-CMD ["sh", "-c", "npx prisma migrate deploy && npx tsx prisma/seed.ts"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/tsx prisma/seed.ts"]
 
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS runner
@@ -100,6 +117,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 # keeps @prisma/client out of the bundle, so it is copied in whole.
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+
+# Nothing in the runtime shells out to npm — the CMD is `node server.js` — so
+# it is 17 MB of attack surface for no benefit. Removing it also drops the
+# vulnerable sigstore that ships inside npm's own bundled dependencies.
+# ci.yml pins this: "images ship no npm".
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 USER nextjs
 EXPOSE 3000
