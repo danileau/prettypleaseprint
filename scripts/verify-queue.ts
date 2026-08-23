@@ -11,9 +11,9 @@ import "./_env";
  * DESTRUCTIVE: wipes users and stories. Development database only.
  */
 import { db } from "../src/lib/db";
+import { ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
-const MAILPIT = process.env.MAILPIT_URL ?? "http://localhost:8025";
 
 let passed = 0;
 const failures: string[] = [];
@@ -93,22 +93,20 @@ const unescapeHtml = (s: string) =>
   s.replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'")
    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 
-async function signIn(email: string): Promise<Browser> {
+/**
+ * A signed-in browser for an existing user row.
+ *
+ * Takes the id as well as the address because a password is set against the
+ * account, not the mailbox: `ensureCredentials` gives the row a username and
+ * a password through the app's own reset endpoint, and the sign-in below is
+ * the same request the sign-in form makes. `verify:auth` owns the real
+ * registration path; this is the short way to a session.
+ */
+async function signIn(user: { id: string; email: string }): Promise<Browser> {
   const b = new Browser();
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
-  await fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
-  await b.raw(`${APP}/api/auth/sign-in/magic-link`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, callbackURL: "/" }),
-  });
-  const list = await (await fetch(`${MAILPIT}/api/v1/messages?limit=50`)).json();
-  for (const m of list.messages ?? []) {
-    if (!(m.To ?? []).some((a: { Address?: string }) => a.Address?.toLowerCase() === email)) continue;
-    const body = await (await fetch(`${MAILPIT}/api/v1/message/${m.ID}`)).json();
-    const hit = /http:\/\/[^\s"'<]+\/api\/auth\/magic-link\/verify[^\s"'<]*/.exec(body.Text ?? "");
-    if (hit) { await b.go(hit[0].replace(/[.,]$/, "")); break; }
-  }
+  await ensureCredentials(APP, user.id, usernameFor(user.email));
+  await signInWithPassword(b, APP, usernameFor(user.email));
   return b;
 }
 
@@ -147,8 +145,8 @@ async function main() {
             role: "client", emailVerified: true, invitedById: admin.id },
   });
 
-  const ruben = await signIn(admin.email);
-  const client = await signIn(ayla.email);
+  const ruben = await signIn(admin);
+  const client = await signIn(ayla);
   console.info(`  admin=${admin.email}  client=${ayla.email}`);
 
   // ------------------------------------------------------------------
@@ -342,7 +340,7 @@ async function main() {
     data: { email: "mallory@office.example", name: "Mallory Vance", initials: "MA",
             role: "client", emailVerified: true, invitedById: admin.id },
   });
-  const other = await signIn(mallory.email);
+  const other = await signIn(mallory);
   const trespass = new FormData();
   trespass.set("storyId", String(talk.id));
   trespass.set("body", "I should not be able to say this");
@@ -364,43 +362,40 @@ async function main() {
         "raw markup from a comment reached the page");
 
   // ------------------------------------------------------------------
-  section("re-issuing access when someone loses their passkey");
+  section("resetting a password from the guest list");
 
   const guestList = await (await ruben.go(`${APP}/admin/invites`)).text();
   check("members are listed with a recovery control",
-        rendered(guestList).includes("Ayla Berg") && guestList.includes("Lost access?"));
+        rendered(guestList).includes("Ayla Berg") && guestList.includes("Forgotten password?"));
 
-  const reissueIdx = formIndexContaining(guestList, `value="${ayla.id}"`);
-  check("the control targets the right member", reissueIdx >= 0);
-  const reissued = await ruben.submit(`${APP}/admin/invites`, guestList, reissueIdx, {});
-  const reissuedBody = await reissued.text();
-  const linkMatch = /http:\/\/[^\s"'<\\]+\/api\/auth\/magic-link\/verify[^\s"'<\\]*/.exec(reissuedBody);
-  check("a sign-in link comes back for the admin to hand over", linkMatch !== null,
-        reissuedBody.slice(0, 160));
+  const resetIdx = formIndexContaining(guestList, `value="${ayla.id}"`);
+  check("the control targets the right member", resetIdx >= 0);
+  const reset = await ruben.submit(`${APP}/admin/invites`, guestList, resetIdx, {});
+  const resetBody = await reset.text();
 
-  check("and it is recorded loudly — it signs someone in as that person",
+  // A transport is configured in this run, so the link goes to her inbox and
+  // the admin is told it was sent rather than being handed the token.
+  check("the admin is told it went out, not shown the link",
+        resetBody.includes("Sent to") && !resetBody.includes("/set-password?token="),
+        resetBody.slice(0, 200));
+
+  check("and it is recorded, by the admin who asked for it",
         (await db.auditEvent.count({
-          where: { action: "access.reissued", actorId: admin.id },
+          where: { action: "password.reset_requested", actorId: admin.id },
         })) === 1);
 
-  if (linkMatch) {
-    const recovered = new Browser();
-    await recovered.go(linkMatch[0].replace(/&amp;/g, "&"));
-    const landed = await (await recovered.go(`${APP}/board`)).text();
-    check("the link really signs that person in",
-          rendered(landed).includes("Private to you and"),
-          "the recovery link did not establish a session");
-    check("as the client, not the admin",
-          !rendered(landed).includes("Admin view"),
-          "the recovery link granted admin access");
-  }
+  // Asking for a reset must not itself sign anybody out. Only using the link
+  // does that, which is what makes the control safe to press by mistake.
+  check("her existing session survives the request",
+        (await db.session.count({ where: { userId: ayla.id } })) > 0,
+        "requesting a reset revoked a session before a password was set");
 
   const clientTry = new FormData();
   clientTry.set("userId", admin.id);
   await client.raw(`${APP}/admin/invites`, { method: "POST", body: clientTry });
   check("a client cannot mint one for anybody",
-        (await db.auditEvent.count({ where: { action: "access.reissued" } })) === 1,
-        "a client re-issued access");
+        (await db.auditEvent.count({ where: { action: "password.reset_requested" } })) === 1,
+        "a client triggered a password reset");
 
   // ------------------------------------------------------------------
   section("the uploader sees what happened");

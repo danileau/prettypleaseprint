@@ -4,9 +4,10 @@ import type { Invite } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
 import { INVITE_TTL_DAYS } from "@/lib/invites";
+import { RESET_TTL_MINUTES } from "@/lib/password-reset";
 import { Kicker, StatusChip } from "@/components/ui";
 import { InviteForm } from "./invite-form";
-import { ReissueAccess } from "@/components/reissue-access";
+import { ResetPassword } from "@/components/reset-password";
 import { resendInviteAction, revokeInviteAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -104,7 +105,11 @@ export default async function InvitesPage() {
                   <p className="m-0 font-display text-[17px] text-ink">{m.name}</p>
                   <p className="m-0 font-mono text-[11.5px] text-ink-3">{m.email}</p>
                 </div>
-                <ReissueAccess userId={m.id} name={m.name.split(" ")[0] ?? m.name} />
+                <ResetPassword
+                  userId={m.id}
+                  name={m.name.split(" ")[0] ?? m.name}
+                  expiresInMinutes={RESET_TTL_MINUTES}
+                />
               </div>
             ))}
           </div>

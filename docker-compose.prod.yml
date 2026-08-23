@@ -41,12 +41,19 @@ x-restart: &restart
 services:
   # Applies migrations and upserts the admin, then exits. The app waits for it
   # to finish, so a deploy can never serve against an unmigrated schema.
+  #
+  # On a first deploy it also prints a one-use link for the admin to set a
+  # username and a password — that link is the whole bootstrap, so read the
+  # logs:  docker compose -f docker-compose.prod.yml logs migrate
   migrate:
     image: ${PPP_REGISTRY:-ghcr.io/danileau}/ppp-migrate:${PPP_TAG:-latest}
     container_name: ppp-migrate
     env_file: [.env.docker]
     environment:
       DATABASE_URL: postgresql://ppp:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/ppp?schema=public
+      # The set-password link it prints has to point at the hostname the
+      # browser uses, not at the container's idea of localhost.
+      BETTER_AUTH_URL: ${APP_URL:-http://localhost:3000}
     depends_on:
       db:
         condition: service_healthy
@@ -60,8 +67,8 @@ services:
     environment:
       DATABASE_URL: postgresql://ppp:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/ppp?schema=public
       S3_ENDPOINT: http://minio:9000
-      # Better Auth derives cookie scope, magic-link URLs and the WebAuthn
-      # relying party from this. It must match what the browser actually sees,
+      # Better Auth derives cookie scope, invitation and set-password link
+      # URLs, and the WebAuthn relying party from this. It must match what the browser actually sees,
       # including scheme and port.
       BETTER_AUTH_URL: ${APP_URL:-http://localhost:3000}
       # Forwarded client addresses are only believed when a proxy is genuinely
@@ -118,8 +125,8 @@ services:
       timeout: 5s
       retries: 10
 
-  # Development and staging only. Catches every outgoing email so invitations
-  # and sign-in links can be clicked without a real mail server.
+  # Development and staging only. Catches every outgoing email so invitation
+  # and password-reset links can be clicked without a real mail server.
   # Enable with:  --profile mailcatcher
   mailpit:
     image: axllent/mailpit:latest

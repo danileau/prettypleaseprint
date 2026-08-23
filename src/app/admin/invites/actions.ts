@@ -3,12 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { headers } from "next/headers";
-
 import { db } from "@/lib/db";
-import { issueSignInUrl } from "@/lib/auth";
 import { requireAdmin } from "@/lib/authz";
 import { record } from "@/lib/audit";
+import { passwordResetEmail, sendMail } from "@/lib/email";
 import {
   createInvite,
   InviteError,
@@ -16,6 +14,11 @@ import {
   revokeInvite,
   isUniqueViolation,
 } from "@/lib/invites";
+import {
+  RESET_TTL_MINUTES,
+  issuePasswordSetupUrl,
+  revokePasswordSetupLinks,
+} from "@/lib/password-reset";
 
 export type InviteFormState = {
   error?: string;
@@ -104,20 +107,19 @@ export async function revokeInviteAction(formData: FormData): Promise<void> {
 }
 
 /**
- * Give an existing member a fresh way in.
+ * Reset a member's password.
  *
- * The answer to "I wiped my phone and the passkey went with it", and to
- * "the mail server is down and nobody can sign in". Mints a single-use
- * ten-minute sign-in link and hands it to the admin rather than mailing it,
- * because the case this exists for is precisely the one where mail is not an
- * option.
+ * The answer to "I have forgotten it", and to "I wiped the phone my passkey
+ * lived on". Mints a single-use link that lets them choose a new password —
+ * it does not sign anybody in, which is the meaningful difference from the
+ * sign-in link this replaces. Whoever holds that link can set a password and
+ * then has to use it; the old one stops working the moment they do.
  *
- * This is impersonation-shaped: whoever holds the link is signed in as that
- * person. It grants the printer owner nothing they did not already have —
- * they own the machine and the database — but it is recorded loudly, because
- * an audited action beats a quiet UPDATE.
+ * Mailed when there is a transport, handed to the admin when there is not,
+ * which is the same split invitations use and the reason the app needs no
+ * mail server at all.
  */
-export async function reissueAccessAction(
+export async function resetPasswordAction(
   _prev: InviteFormState,
   formData: FormData,
 ): Promise<InviteFormState> {
@@ -132,19 +134,43 @@ export async function reissueAccessAction(
 
   let url: string;
   try {
-    url = await issueSignInUrl(target.email, await headers(), "/");
+    // Any earlier link goes first: "reset it again" should leave exactly one
+    // live link, and the older one is the likelier to have gone astray.
+    await revokePasswordSetupLinks(target.id);
+    url = await issuePasswordSetupUrl(target.id);
   } catch (error) {
-    console.error("reissue failed", error);
+    console.error("password reset failed", error);
     return { error: "That link could not be created. Try again." };
   }
 
+  // A transport that refuses is treated as no transport: the link already
+  // exists, and showing it to the admin beats losing it to a bounced send.
+  let delivered = false;
+  try {
+    delivered = await sendMail(
+      passwordResetEmail({
+        to: target.email,
+        url,
+        expiresInMinutes: RESET_TTL_MINUTES,
+      }),
+    );
+  } catch (error) {
+    console.error("reset mail failed; handing the link over instead", error);
+  }
+
   await record({
-    action: "access.reissued",
+    action: "password.reset_requested",
     actor: admin,
     subject: target.email,
-    detail: { forName: target.name, validMinutes: 10, singleUse: true },
+    detail: {
+      forName: target.name,
+      validMinutes: RESET_TTL_MINUTES,
+      delivery: delivered ? "email" : "handover",
+    },
   });
 
   revalidatePath("/admin/invites");
-  return { sent: target.email, handoverUrl: url };
+  // Same rule as invitations: when the link was delivered it stays inside the
+  // message, so not even the admin who triggered it can replay it.
+  return delivered ? { sent: target.email } : { sent: target.email, handoverUrl: url };
 }

@@ -14,6 +14,8 @@
  */
 import "./_env";
 import { db } from "../src/lib/db";
+import { issuePasswordSetupUrl } from "../src/lib/password-reset";
+import { TEST_PASSWORD, ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 const MAILPIT = process.env.MAILPIT_URL ?? "http://localhost:8025";
@@ -116,16 +118,20 @@ async function mailLink(to: string, re: RegExp) {
   }
   return null;
 }
-const VERIFY = /http:\/\/[^\s"'<]+\/api\/auth\/magic-link\/verify[^\s"'<]*/;
+const CLAIM = /http:\/\/[^\s"'<]+\/invite\/[^\s"'<]+/;
 
-async function signIn(email: string): Promise<Browser> {
+/** A signed-in browser for an existing row, the way the sign-in form does it. */
+async function signIn(user: { id: string; email: string }): Promise<Browser> {
   const b = new Browser();
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
-  await fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
-  await b.json("/api/auth/sign-in/magic-link", { email, callbackURL: "/" });
-  const link = await mailLink(email, VERIFY);
-  if (link) await b.go(link);
+  await ensureCredentials(APP, user.id, usernameFor(user.email));
+  await signInWithPassword(b, APP, usernameFor(user.email));
   return b;
+}
+
+/** Post to the sign-in endpoint directly, for the probes that need the reply. */
+function attemptSignIn(b: Browser, username: string, password: string, extra = {}) {
+  return b.json("/api/auth/sign-in/username", { username, password, ...extra });
 }
 
 async function main() {
@@ -155,8 +161,8 @@ async function main() {
   });
   console.info(`  admin=${admin.email}  client=${ayla.email}  attacker=${mallory.email}`);
 
-  const client = await signIn(ayla.email);
-  const attacker = await signIn(mallory.email);
+  const client = await signIn(ayla);
+  const attacker = await signIn(mallory);
   const anon = new Browser();
   console.info(`  sessions established: ${client.jar.size > 0 && attacker.jar.size > 0}`);
 
@@ -283,9 +289,7 @@ async function main() {
 
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
   const cookieProbe = new Browser();
-  await cookieProbe.json("/api/auth/sign-in/magic-link", { email: ayla.email, callbackURL: "/" });
-  const link = await mailLink(ayla.email, VERIFY);
-  const setRes = await cookieProbe.raw(link!);
+  const setRes = await attemptSignIn(cookieProbe, usernameFor(ayla.email), TEST_PASSWORD);
   const cookieLines = setRes.headers.getSetCookie();
   const sessionCookie = cookieLines.find((c) => c.includes("session_token")) ?? "";
   probe("A02-httponly", "session cookie is HttpOnly", /HttpOnly/i.test(sessionCookie), sessionCookie.slice(0, 80));
@@ -302,17 +306,30 @@ async function main() {
   const { createInvite } = await import("../src/lib/invites");
   await createInvite({ email: "crypto@office.example", invitedById: admin.id });
   const inviteRow = await db.invite.findFirst({ where: { email: "crypto@office.example" } });
-  const inviteLinkUrl = await mailLink("crypto@office.example", /http:\/\/[^\s"'<]+\/invite\/[^\s"'<]+/);
+  const inviteLinkUrl = await mailLink("crypto@office.example", CLAIM);
   const rawInviteToken = inviteLinkUrl?.split("/invite/")[1] ?? "";
   probe("A02-invite-hash", "invite token is stored hashed, not in the clear",
         !!inviteRow && inviteRow.tokenHash !== rawInviteToken && /^[a-f0-9]{64}$/.test(inviteRow.tokenHash),
         `stored=${inviteRow?.tokenHash?.slice(0, 20)}…`);
 
+  // Reset tokens must be unusable straight out of the database too.
+  const resetUrl = await issuePasswordSetupUrl(ayla.id);
+  const rawResetToken = new URL(resetUrl).searchParams.get("token") ?? "";
   const verifications = await db.verification.findMany();
-  const magicRawInUrl = /token=([^&]+)/.exec(link ?? "")?.[1] ?? "";
-  probe("A02-magic-hash", "magic-link token is stored hashed, not in the clear",
-        verifications.every((v) => v.value !== magicRawInUrl && v.identifier !== magicRawInUrl),
-        "a raw magic-link token was found in the verification table");
+  probe("A02-reset-hash", "set-password token is stored hashed, not in the clear",
+        rawResetToken.length > 20 &&
+        verifications.every(
+          (v) => !v.identifier.includes(rawResetToken) && !v.value.includes(rawResetToken),
+        ),
+        "a raw set-password token was found in the verification table");
+
+  const storedPassword = (await db.account.findFirst({
+    where: { userId: ayla.id, providerId: "credential" },
+    select: { password: true },
+  }))?.password ?? "";
+  probe("A02-password-hash", "the account password is stored as a digest, never in the clear",
+        storedPassword.length > 20 && !storedPassword.includes(TEST_PASSWORD),
+        "the password, or something very like it, is readable in the account row");
 
   // =====================================================================
   section("A03 Injection");
@@ -320,10 +337,10 @@ async function main() {
   const sqlPayloads = ["' OR '1'='1", "'; DROP TABLE \"user\"; --", "\\'; SELECT pg_sleep(3); --"];
   let sqlOk = true;
   for (const p of sqlPayloads) {
-    const r = await anon.json("/api/auth/sign-in/magic-link", { email: `${p}@x.test`, callbackURL: "/" });
+    const r = await attemptSignIn(anon, p, "does-not-matter-at-all");
     if (r.status >= 500) sqlOk = false;
   }
-  probe("A03-sqli", "SQL metacharacters in the email field are handled", sqlOk,
+  probe("A03-sqli", "SQL metacharacters in the username field are handled", sqlOk,
         "a payload produced a 5xx, suggesting it reached the driver");
   probe("A03-sqli-intact", "user table still exists after injection attempts",
         (await db.user.count()) > 0);
@@ -357,9 +374,17 @@ async function main() {
   probe("A03-path-xss", "a hostile invite token is not reflected as markup",
         !badToken.includes("<script>alert(1)</script>"));
 
-  const crlf = await anon.json("/api/auth/sign-in/magic-link",
-    { email: "a@x.test\r\nBcc: victim@evil.test", callbackURL: "/" });
-  probe("A03-crlf", "CRLF in the email field does not reach the mailer", crlf.status < 500,
+  // Sign-up is the one public endpoint that takes an address at all, and the
+  // address it takes is the one an invitation would later be matched against.
+  const crlf = await anon.json("/api/auth/sign-up/email", {
+    email: "a@x.test\r\nBcc: victim@evil.test",
+    name: "Header Splitter",
+    username: "splitter",
+    password: TEST_PASSWORD,
+  });
+  probe("A03-crlf", "CRLF in the email field is refused, and never reaches the mailer",
+        crlf.status >= 400 && crlf.status < 500 &&
+        (await db.user.count({ where: { email: { contains: "\n" } } })) === 0,
         `status ${crlf.status}`);
 
   // =====================================================================
@@ -368,7 +393,7 @@ async function main() {
   // raw(), not go(): middleware redirects unknown paths to /signin, and
   // following that redirect would report the sign-in page's 200 as if a
   // signup route existed.
-  for (const path of ["/signup", "/register", "/api/auth/sign-up/email"]) {
+  for (const path of ["/signup", "/register"]) {
     const r = await anon.raw(APP + path);
     const landsOnSignin = (r.headers.get("location") ?? "").includes("/signin");
     probe(`A04-nosignup ${path}`, `${path} offers no public registration`,
@@ -376,14 +401,30 @@ async function main() {
           `status ${r.status} -> ${r.headers.get("location") ?? ""}`);
   }
 
+  // The sign-up endpoint does exist now — it is what an invitation link posts
+  // to. What must hold is that it refuses anybody without a pending invite,
+  // which is the invite-only rule and not a missing route.
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  const gatecrash = await anon.json("/api/auth/sign-up/email", {
+    email: "gatecrasher@nowhere.test",
+    name: "Gate Crasher",
+    username: "gatecrasher",
+    password: TEST_PASSWORD,
+  });
+  probe("A04-invitegate", "registration without a pending invite is refused",
+        gatecrash.status === 403 &&
+        (await db.user.count({ where: { email: "gatecrasher@nowhere.test" } })) === 0,
+        `status ${gatecrash.status}`);
+
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
   let limited = false;
-  for (let i = 0; i < 15; i++) {
-    const r = await anon.json("/api/auth/sign-in/magic-link", { email: ayla.email, callbackURL: "/" });
+  for (let i = 0; i < 25; i++) {
+    const r = await attemptSignIn(anon, usernameFor(ayla.email), `guess-${i}-nope`);
     if (r.status === 429) { limited = true; break; }
   }
-  probe("A04-ratelimit", "magic-link requests are rate limited", limited,
-        "15 requests in a row were all accepted");
+  probe("A04-ratelimit", "password guessing is rate limited", limited,
+        "25 wrong passwords in a row were all answered normally");
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
 
   // =====================================================================
   section("A05 Security Misconfiguration");
@@ -405,7 +446,7 @@ async function main() {
           `status ${r.status}`);
   }
 
-  const errRes = await anon.raw(`${APP}/api/auth/sign-in/magic-link`, {
+  const errRes = await anon.raw(`${APP}/api/auth/sign-in/username`, {
     method: "POST", headers: { "content-type": "application/json" }, body: "{not json",
   });
   const errBody = await errRes.text();
@@ -416,41 +457,68 @@ async function main() {
   section("A07 Identification and Authentication Failures");
 
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
-  await fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
-  const known = await anon.json("/api/auth/sign-in/magic-link", { email: ayla.email, callbackURL: "/" });
-  const unknown = await anon.json("/api/auth/sign-in/magic-link", { email: "nobody@nowhere.test", callbackURL: "/" });
-  probe("A07-enum", "known and unknown addresses are answered identically",
-        known.status === unknown.status,
-        `known=${known.status} unknown=${unknown.status}`);
+  const known = await attemptSignIn(anon, usernameFor(ayla.email), "wrong-password-entirely");
+  const unknown = await attemptSignIn(anon, "nobody-at-all", "wrong-password-entirely");
+  const knownBody = await known.clone().text();
+  const unknownBody = await unknown.clone().text();
+  probe("A07-enum", "a real username and an invented one are answered identically",
+        known.status === unknown.status && knownBody === unknownBody,
+        `known=${known.status} ${knownBody} unknown=${unknown.status} ${unknownBody}`);
 
-  // Magic links must not be replayable.
+  // The wall clock is the other half of the oracle: an unknown username must
+  // still pay for a password hash, or the timing says who exists.
+  const time = async (fn: () => Promise<unknown>) => {
+    const t0 = performance.now();
+    await fn();
+    return performance.now() - t0;
+  };
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
-  await fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
-  const replayer = new Browser();
-  await replayer.json("/api/auth/sign-in/magic-link", { email: ayla.email, callbackURL: "/" });
-  const once = await mailLink(ayla.email, VERIFY);
-  await replayer.go(once!);
-  const second = new Browser();
-  await second.go(once!);
-  const secondBody = await (await second.go(`${APP}/`)).text();
-  probe("A07-replay", "a magic link cannot be redeemed twice",
-        !isAuthenticated(secondBody),
-        "the same link minted a second session");
+  const knownMs = await time(() => attemptSignIn(anon, usernameFor(ayla.email), "wrong-password-entirely"));
+  const unknownMs = await time(() => attemptSignIn(anon, "nobody-at-all", "wrong-password-entirely"));
+  probe("A07-enum-timing", "an unknown username costs about as much as a wrong password",
+        Math.min(knownMs, unknownMs) / Math.max(knownMs, unknownMs) > 0.25,
+        `known=${knownMs.toFixed(0)}ms unknown=${unknownMs.toFixed(0)}ms`);
+
+  // A set-password link must not sign anybody in, and must not work twice.
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  const linkOnly = new Browser();
+  const setUrl = await issuePasswordSetupUrl(ayla.id);
+  const setToken = new URL(setUrl).searchParams.get("token")!;
+  const opened = await linkOnly.go(setUrl);
+  probe("A07-reset-nosession", "opening a set-password link does not sign anybody in",
+        !isAuthenticated(await opened.text()) && linkOnly.jar.size === 0,
+        "following a reset link established a session");
+
+  const RESET_TO = "ppp-probe-new-key-parked-outside";
+  const firstUse = await new Browser().json("/api/auth/reset-password",
+    { token: setToken, newPassword: RESET_TO });
+  const secondUse = await new Browser().json("/api/auth/reset-password",
+    { token: setToken, newPassword: "ppp-probe-third-key-parked-outside" });
+  probe("A07-replay", "a set-password link cannot be redeemed twice",
+        firstUse.status === 200 && secondUse.status >= 400,
+        `first=${firstUse.status} second=${secondUse.status}`);
+
+  // Setting a password revokes what the old one opened. `attacker` is left
+  // alone; only Ayla's sessions should be gone.
+  probe("A07-reset-revokes", "setting a new password ends the sessions the old one opened",
+        (await db.session.count({ where: { userId: ayla.id } })) === 0 &&
+        (await db.session.count({ where: { userId: mallory.id } })) > 0,
+        "a session outlived the password that opened it");
+
+  // Put the suite's own password back, so the probes after this still work.
+  await ensureCredentials(APP, ayla.id, usernameFor(ayla.email));
+  const client2 = await signIn(ayla);
 
   // Open redirect through the API's callbackURL.
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
-  const evil = await anon.json("/api/auth/sign-in/magic-link",
-    { email: ayla.email, callbackURL: "https://evil.example/steal" });
-  let redirectedOffsite = false;
-  if (evil.status < 400) {
-    const evilLink = await mailLink(ayla.email, VERIFY);
-    if (evilLink) {
-      const r = await new Browser().raw(evilLink);
-      redirectedOffsite = (r.headers.get("location") ?? "").startsWith("https://evil.example");
-    }
-  }
-  probe("A07-openredirect", "an off-site callbackURL is refused", !redirectedOffsite,
-        "the magic link redirected to an attacker-controlled origin");
+  const evil = await attemptSignIn(
+    new Browser(), usernameFor(ayla.email), TEST_PASSWORD,
+    { callbackURL: "https://evil.example/steal" },
+  );
+  const evilLocation = evil.headers.get("location") ?? "";
+  probe("A07-openredirect", "an off-site callbackURL is refused",
+        evil.status >= 400 && !evilLocation.startsWith("https://evil.example"),
+        `status ${evil.status} -> ${evilLocation}`);
 
   // The raw value does appear in the RSC flight payload as a page prop, which
   // is inert. What matters is whether anything *navigable* points off-site,
@@ -467,7 +535,7 @@ async function main() {
         protoRel.headers.get("location") ?? "");
 
   // Sign-out must kill the session server-side, not just drop the cookie.
-  const leaver = await signIn(ayla.email);
+  const leaver = client2;
   const stolen = new Map(leaver.jar);
   const signedOut = await leaver.raw(`${APP}/api/auth/sign-out`, {
     method: "POST",
@@ -499,18 +567,36 @@ async function main() {
 
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
   await createInvite({ email: "integrity@office.example", invitedById: admin.id });
-  const massAssign = new Browser();
-  await massAssign.json("/api/auth/sign-in/magic-link", {
-    email: "integrity@office.example", callbackURL: "/",
-    role: "admin", initials: "ZZ", emailVerified: true, banned: false,
-    invitedById: null, id: "chosen-by-attacker",
+
+  // Declared `input: false`, so the request is refused rather than trimmed.
+  const privileged = await new Browser().json("/api/auth/sign-up/email", {
+    email: "integrity@office.example",
+    name: "Ines Tegrity",
+    username: "integrity",
+    password: TEST_PASSWORD,
+    role: "admin", initials: "ZZ", invitedById: null,
   });
-  const ml = await mailLink("integrity@office.example", VERIFY);
-  if (ml) await massAssign.go(ml);
+  probe("A08-massassign-refused", "a sign-up carrying privileged fields is refused",
+        privileged.status === 400 &&
+        (await db.user.count({ where: { email: "integrity@office.example" } })) === 0,
+        `status ${privileged.status} ${(await privileged.clone().text()).slice(0, 90)}`);
+
+  // The rest reach the endpoint undeclared, and are overruled server-side.
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  await new Browser().json("/api/auth/sign-up/email", {
+    email: "integrity@office.example",
+    name: "Ines Tegrity",
+    username: "integrity",
+    password: TEST_PASSWORD,
+    emailVerified: false, banned: true, id: "chosen-by-attacker",
+  });
   const created = await db.user.findUnique({ where: { email: "integrity@office.example" } });
   probe("A08-massassign", "privileged fields cannot be set from the request body",
-        created?.role === "client" && created.initials !== "ZZ" && created.id !== "chosen-by-attacker",
-        JSON.stringify({ role: created?.role, initials: created?.initials, id: created?.id }));
+        created?.role === "client" && created.initials !== "ZZ" &&
+        created.id !== "chosen-by-attacker" && created.invitedById === admin.id &&
+        created.banned !== true,
+        JSON.stringify({ role: created?.role, initials: created?.initials,
+                         id: created?.id, banned: created?.banned }));
 
   probe("A08-lockfile", "a dependency lockfile is committed",
         await Bun_exists("package-lock.json"));
@@ -518,16 +604,13 @@ async function main() {
   // =====================================================================
   section("A10 Server-Side Request Forgery");
 
-  const ssrf = await anon.json("/api/auth/sign-in/magic-link",
-    { email: ayla.email, callbackURL: "http://169.254.169.254/latest/meta-data/" });
-  let hitMetadata = false;
-  if (ssrf.status < 400) {
-    const l = await mailLink(ayla.email, VERIFY);
-    if (l) {
-      const r = await new Browser().raw(l);
-      hitMetadata = (r.headers.get("location") ?? "").includes("169.254.169.254");
-    }
-  }
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  const ssrf = await attemptSignIn(
+    new Browser(), usernameFor(ayla.email), TEST_PASSWORD,
+    { callbackURL: "http://169.254.169.254/latest/meta-data/" },
+  );
+  const hitMetadata =
+    ssrf.status < 400 && (ssrf.headers.get("location") ?? "").includes("169.254.169.254");
   probe("A10-metadata", "a link-local callbackURL is refused", !hitMetadata,
         "the app would redirect a browser at the cloud metadata service");
 

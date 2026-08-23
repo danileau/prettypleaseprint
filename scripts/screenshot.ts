@@ -12,11 +12,11 @@
  */
 import "./_env";
 import { existsSync, mkdirSync } from "node:fs";
-import puppeteer from "puppeteer-core";
+import puppeteer, { type Page } from "puppeteer-core";
 import { db } from "../src/lib/db";
+import { TEST_PASSWORD, ensureCredentials, usernameFor } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
-const MAILPIT = process.env.MAILPIT_URL ?? "http://localhost:8025";
 const OUT = process.env.SHOT_DIR ?? "shots";
 
 const CHROME =
@@ -27,21 +27,39 @@ const CHROME =
     "/usr/bin/chromium",
   ].find((p) => existsSync(p));
 
-async function magicLink(email: string): Promise<string | null> {
+/**
+ * Sign a page in through the real form. The screenshots are of the app a
+ * person uses, so the way into it should be too.
+ */
+async function signIn(page: Page, user: { id: string; email: string }): Promise<void> {
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
-  await fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
-  await fetch(`${APP}/api/auth/sign-in/magic-link`, {
+  await ensureCredentials(APP, user.id, usernameFor(user.email));
+  await page.goto(`${APP}/signin`, { waitUntil: "networkidle2" });
+  await page.type("#username", usernameFor(user.email));
+  await page.type("#password", TEST_PASSWORD);
+  await page.click('button[type="submit"]');
+  await page.waitForFunction(() => location.pathname !== "/signin", { timeout: 15_000 });
+}
+
+/** A cookie jar for the one thing that is not driven through the browser. */
+async function sessionCookie(user: { id: string; email: string }): Promise<string> {
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  await ensureCredentials(APP, user.id, usernameFor(user.email));
+  const res = await fetch(`${APP}/api/auth/sign-in/username`, {
     method: "POST",
     headers: { "content-type": "application/json", origin: APP },
-    body: JSON.stringify({ email, callbackURL: "/board" }),
+    body: JSON.stringify({
+      username: usernameFor(user.email),
+      password: TEST_PASSWORD,
+    }),
   });
-  const list = await (await fetch(`${MAILPIT}/api/v1/messages?limit=20`)).json();
-  for (const m of list.messages ?? []) {
-    const body = await (await fetch(`${MAILPIT}/api/v1/message/${m.ID}`)).json();
-    const hit = /http:\/\/[^\s"'<]+\/api\/auth\/magic-link\/verify[^\s"'<]*/.exec(body.Text ?? "");
-    if (hit) return hit[0].replace(/[.,]$/, "");
+  const jar = new Map<string, string>();
+  for (const line of res.headers.getSetCookie()) {
+    const [pair] = line.split(";");
+    const eq = pair!.indexOf("=");
+    jar.set(pair!.slice(0, eq), pair!.slice(eq + 1));
   }
-  return null;
+  return [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
 }
 
 /**
@@ -121,17 +139,7 @@ async function main() {
   // through the same validation and storage every real file does.
   const printingForUpload = await db.story.findFirst({ where: { status: "Printing" } });
   if (printingForUpload) {
-    const jar = new Map<string, string>();
-    const link0 = await magicLink(ayla.email);
-    if (link0) {
-      const r = await fetch(link0, { redirect: "manual", headers: { origin: APP } });
-      for (const line of r.headers.getSetCookie()) {
-        const [pair] = line.split(";");
-        const i = pair!.indexOf("=");
-        jar.set(pair!.slice(0, i), pair!.slice(i + 1));
-      }
-    }
-    const cookie = [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
+    const cookie = await sessionCookie(ayla);
     const form = new FormData();
     form.set("file", new File([stlBox(78, 40, 22) as BlobPart], "monitor-hook-v3.stl"));
     form.set("title", "Replacement knob, grinder");
@@ -177,9 +185,7 @@ async function main() {
   await page.goto(`${APP}/signin`, { waitUntil: "networkidle2" });
   await page.screenshot({ path: `${OUT}/signin.png` });
 
-  const link = await magicLink(ayla.email);
-  if (!link) throw new Error("no magic link delivered");
-  await page.goto(link, { waitUntil: "networkidle2" });
+  await signIn(page, ayla);
 
   const printing = await db.story.findFirst({ where: { status: "Printing" } });
   const pages: Array<[string, string]> = [
@@ -198,9 +204,8 @@ async function main() {
   const adminCtx = await browser.createBrowserContext();
   const adminPage = await adminCtx.newPage();
   await adminPage.setViewport({ width: 1280, height: 980, deviceScaleFactor: 1 });
-  const adminLink = await magicLink(admin.email);
-  if (adminLink) {
-    await adminPage.goto(adminLink, { waitUntil: "networkidle2" });
+  await signIn(adminPage, admin);
+  {
     for (const [name, url] of [
       ["queue", `${APP}/queue`],
       ["books", `${APP}/me`],

@@ -33,6 +33,18 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  /// --- username plugin ---
+  ///
+  /// The login identifier. Folded to lower case on write, which is what makes
+  /// the unique index case-insensitive; `displayUsername` keeps whatever was
+  /// typed so the profile can show it back.
+  ///
+  /// Nullable because an account can exist before it has one: the seeded admin
+  /// is a row written straight through Prisma, and picks a username and a
+  /// password from the set-password link the seed prints.
+  username        String? @unique
+  displayUsername String?
+
   /// Avatar fallback, e.g. "AY". Derived from `name` on create. The default is
   /// a safety net only — `databaseHooks.user.create.before` always sets it.
   initials String @default("??")
@@ -84,9 +96,15 @@ model Session {
 }
 
 model Account {
-  id                    String    @id @default(cuid())
-  accountId             String
-  providerId            String
+  id        String @id @default(cuid())
+  accountId String
+
+  /// Namespace for `accountId`, so a provider id can never collide with an
+  /// internal method. Better Auth writes `local:credential` for a password
+  /// account; an OAuth provider would get its own issuer. Required by the
+  /// library, and the left half of the uniqueness rule below.
+  issuer     String
+  providerId String
   userId                String
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   accessToken           String?
@@ -95,18 +113,21 @@ model Account {
   accessTokenExpiresAt  DateTime?
   refreshTokenExpiresAt DateTime?
   scope                 String?
-  /// Unused: this app has no password login at all.
+  /// scrypt digest as `salt:hash`, written by Better Auth. Only
+  /// `providerId: "credential"` rows carry one; a passkey has no password.
   password              String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  @@unique([providerId, accountId])
+  @@unique([issuer, accountId])
   @@index([userId])
   @@map("account")
 }
 
-/// Better Auth's generic token store. Backs magic links, which are configured
-/// with `storeToken: "hashed"` — a database reader cannot replay them.
+/// Better Auth's generic token store. Backs password-reset links and the
+/// WebAuthn challenges. `verification.storeIdentifier: "hashed"` in
+/// src/lib/auth.ts means `identifier` holds a digest, not the token — a
+/// database reader cannot replay a live reset link.
 model Verification {
   id         String   @id @default(cuid())
   identifier String

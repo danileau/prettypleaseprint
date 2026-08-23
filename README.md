@@ -9,8 +9,8 @@ is unchanged in `Print That for Me/`; everything in the app reads
 
 Built from `Print That for Me/design_handoff_print_that_for_me/`. Built so far:
 
-- **Authentication and invitation-link registration** — magic link, passkeys,
-  invite-only with no public sign-up.
+- **Authentication and invitation-link registration** — username and password,
+  passkeys, invite-only with no public sign-up.
 - **Upload → board → story detail** — real file validation, object storage,
   mesh measurement, the kanban board, and the read half of story detail.
 - **An audit trail** covering access and story events, readable at
@@ -24,7 +24,7 @@ the 3D viewer, the profile screen, and notification delivery by email.
 | | |
 | --- | --- |
 | Framework | Next.js 15 (App Router), React 19, TypeScript |
-| Auth | [Better Auth](https://better-auth.com) 1.7 — magic link, passkeys, admin plugin |
+| Auth | [Better Auth](https://better-auth.com) 1.7 — username/password, passkeys, breach check, admin plugin |
 | Data | Prisma 6 → PostgreSQL 17 |
 | Styling | Tailwind v4, design tokens from the handoff as CSS variables |
 | Local infra | Docker Compose: Postgres, MinIO (model files), Mailpit (mail) |
@@ -43,65 +43,87 @@ npm run db:seed               # creates the one admin from ADMIN_EMAIL/ADMIN_NAM
 npm run dev
 ```
 
-Sign in at `/signin` as `ADMIN_EMAIL`. In development every outgoing email is
-caught by **Mailpit at http://localhost:8025** — the sign-in link is there.
-Then invite people from `/admin/invites`.
+`npm run db:seed` prints a one-use link for the admin to choose a username and
+a password — open it, then invite people from `/admin/invites`. In development
+every outgoing email is caught by **Mailpit at http://localhost:8025**, so
+invitation and reset links are clickable there.
 
 ```bash
 npm run verify:models         # upload validator vs. hostile fixtures (no server needed)
-npm run verify:auth           # invite + sign-in flow, end to end
+npm run verify:auth           # registration, sign-in and password reset, end to end
 npm run verify:upload         # upload -> board -> story, end to end
 npm run verify:queue          # the admin queue, status flow and conversation
 npm run verify:passkey        # WebAuthn ceremonies in a real browser
-npm run probe:security        # 56 OWASP-mapped security probes
+npm run probe:security        # 62 OWASP-mapped security probes
 ```
 
 ## How authentication works
 
-**There are no passwords anywhere.** Nothing to phish, reuse, or leak. Two ways
-in, both bound to something the person actually holds:
+**An invitation link registers you; after that you sign in with a username and
+a password.** No inbox round trip, and nothing in the running system depends on
+a mail server.
 
-- **Passkey** (WebAuthn) — the primary path once enrolled. Offered through
-  browser conditional UI, so it can sign someone in from the email field with
-  no click at all.
-- **Magic link** — 10 minutes, single use, token stored as a digest
-  (`storeToken: "hashed"`), so a database reader cannot replay one.
+Two ways in:
 
-### Getting people off the inbox round trip
+- **Username and password** — the way in, and the one that always works. At
+  least 10 characters, capped at 128, and refused outright if the password
+  already appears in a known breach corpus.
+- **Passkey** (WebAuthn) — optional, stronger, and faster. Offered through
+  browser conditional UI, so it can sign someone in from the username field
+  with no click at all.
 
-Magic links are the way *in*; they are not meant to be the everyday
-experience. A passkey signs someone in from the email field with no click at
-all (browser conditional UI), and `npm run verify:passkey` proves that path
-works end to end in a real browser.
+The passkey is an accelerator, not the way in. That is the correction this
+model makes over the one before it: an emailed link was doing the job of a
+password while being harder to use and impossible to use at all when mail was
+down.
 
-The thing that decides whether people actually get there is not the technology,
-it is whether anyone ever asks them twice. Accepting an invite offers a passkey
-once; the first version let people tap "Skip for now" and then never mentioned
-it again, which left them on an emailed link for every sign-in, forever,
-without having chosen that.
+### Why ten characters, and why a breach check
 
-So there are three prompts now, and two tests holding them in place:
+Length is the control that does the work. Composition rules — a digit, a
+symbol, a capital — mostly move people to `Password1!`, which is in every
+corpus there is. So the rules here are: ten characters minimum, and
+[Have I Been Pwned](https://haveibeenpwned.com) says no.
+
+The breach lookup is k-anonymity: five characters of a SHA-1 prefix go to
+`api.pwnedpasswords.com`, and the password itself never leaves the machine. It
+**fails closed** — if that service cannot be reached, setting a password fails
+rather than quietly skipping the check. Only registration and reset set a
+password, so an outage cannot lock out anybody who already has one.
+
+`HIBP_DISABLED=true` turns it off, and exists for exactly one case: a
+deployment with no outbound internet at all, where failing closed would mean
+nobody could ever register.
+
+### Getting people onto passkeys
+
+The thing that decides whether people get there is not the technology, it is
+whether anyone ever asks them twice. Registration offers a passkey once; the
+first version let people tap "Skip for now" and then never mentioned it again,
+which left them typing a password every time without having chosen that.
+
+So there are three prompts, and two tests holding them in place:
 
 - A banner for anyone with zero passkeys, dismissible **for the session only** —
   closing it means "not right now", not "never".
 - A line in the account menu saying how you currently sign in, with a way to
   change it.
-- Honest copy on the skip: "Not now — keep using emailed links", rather than
+- Honest copy on the skip: "Not now — keep typing my password", rather than
   implying it is a postponement.
 
 All three disappear the moment a passkey exists.
 
-### Mail is optional
+### Mail is optional — genuinely
 
-**SMTP is used only for authentication, and not at all for notifications** —
-those are in-app, written by `notify()` and read by the Activity panel. Mail
-is called in exactly three places: sending an invitation, resending one, and
-the magic sign-in link.
+**Nothing in the running system needs a mail server.** People sign in with a
+password, and notifications are in-app, written by `notify()` and read by the
+Activity panel. Mail is called in exactly three places, and every one of them
+is delivering a *link*: sending an invitation, resending one, and sending a
+password reset.
 
-So the app runs without a mail server. With `SMTP_URL` or `RESEND_API_KEY`
-set, invitations are emailed as usual. With neither, the admin gets the link
-on screen to hand over directly, and the app boots normally rather than
-refusing to start. Same token, same single use, same expiry either way.
+With `SMTP_URL` or `RESEND_API_KEY` set, those links are emailed. With neither,
+the admin gets the link on screen to hand over directly, and the app boots
+normally rather than refusing to start. Same token, same single use, same
+expiry either way.
 
 For a group that shares an office, handing a link over is arguably the safer
 channel: a token in an inbox sits there indefinitely and can be forwarded,
@@ -109,16 +131,49 @@ where one passed over in person cannot. When mail *is* configured the raw
 token is still withheld from the admin — it exists only inside the message —
 because that property is worth keeping wherever it can be kept.
 
-There is also **"Lost access?"** against each member on the guest list: it
-mints a single-use ten-minute sign-in link for someone who wiped the device
-their passkey lived on, and hands it to the admin. That is the answer when
-mail is down, which is exactly when you cannot email a link.
+### Forgotten passwords
 
-It is impersonation-shaped — whoever holds the link is signed in as that
-person — and it is allowed because it grants the printer owner nothing they
-did not already have, owning the machine and the database. It is recorded
-loudly (`access.reissued`) for the same reason: an audited action beats a
-quiet `UPDATE`.
+**"Forgotten password?"** sits against each member on the guest list. The admin
+presses it; a single-use, thirty-minute token is minted, emailed if there is a
+transport and shown to the admin to hand over if there is not.
+
+The link opens a set-password form. It does **not** sign anyone in — that is
+the whole difference from the sign-in link it replaces, which signed whoever
+held it in *as* that person. Here they choose a password and then have to use
+it, and setting it revokes every session the old password opened. Both halves
+are audited: `password.reset_requested` names the admin, `password.reset_completed`
+names the member.
+
+There is no self-service "forgot password" form. With no `sendResetPassword`
+configured, Better Auth's `/request-password-reset` refuses outright — resets
+are admin-minted so the flow cannot depend on a mail server that may not exist.
+
+One detail worth knowing, because it is a deliberate deviation: Better Auth
+consumes the reset token *before* it hashes the new password, so a password
+refused by the breach check would burn the link on its way out and send someone
+back to the admin over a password they were about to correct. `setPassword`
+puts the row back — with its original expiry — when the failure happened after
+consumption. The link is spent when a password is actually set, which is what
+"single use" was ever meant to mean.
+
+### Bootstrapping the admin
+
+The printer owner is the one account nobody invites, so `prisma/seed.ts` writes
+the row directly. A row cannot sign in on its own, so when the admin has no
+password the seed mints a set-password link and **prints it**:
+
+```bash
+docker compose --env-file .env.docker -f docker-compose.prod.yml logs migrate
+```
+
+Open it within thirty minutes to choose a username and a password. Lost it?
+Re-run the migrator and it prints a fresh one — but only while no password has
+been set. Re-seeding never resets an existing one.
+
+There is deliberately no `ADMIN_PASSWORD`. It would sit in `.env.docker`, in
+`docker inspect`, in the shell history that wrote the file and in every backup
+of the host, still valid months later. A link that expires in half an hour is a
+smaller thing to leak.
 
 ### Invite-only, enforced in one place
 
@@ -134,9 +189,12 @@ async validateUserInfo({ user, source }) {
 }
 ```
 
-Better Auth calls it before provisioning an identity **by any method** — magic
-link, passkey, and whatever gets added later. There is no second copy of this
-rule in a route handler to drift out of sync.
+Better Auth calls it before provisioning an identity **by any method**, from
+`internalAdapter.createUser`. Password sign-up goes through that path with
+`{ method: "email-password" }` exactly as passkey enrolment does, so adding
+passwords neither moved this rule nor added a second copy of it in a route
+handler to drift out of sync. `verify:auth` asserts it directly: registering an
+address with no pending invite is answered 403 and leaves no row.
 
 ### The invitation link
 
@@ -145,32 +203,50 @@ rule in a route handler to drift out of sync.
    digest**, and emails the raw token inside the link. The raw token is never
    returned to the admin either — it exists in the email and nowhere else.
 3. The invitee opens `/invite/<token>`, sees who invited them and which
-   address the invite is bound to, and picks the name they want to be known by.
-4. Claiming redeems the invite and drops them into the app, signed in.
+   address the invite is bound to, and picks a display name, a **username** and
+   a **password**.
+4. Submitting calls Better Auth's sign-up, which runs the invite gate and the
+   stamping hook, creates the account and returns a session. They land on
+   `/welcome`, which offers a passkey.
 5. `databaseHooks.user.create.after` burns every open invite for that address,
    so the link cannot mint a second account.
 
 Invites expire after 7 days, can be withdrawn, and can be re-sent — re-sending
 **rotates the token**, so a previously leaked email stops working.
 
-#### Why claiming does not send a second email
+#### Why registering does not send a second email
 
 The invite token was delivered to that mailbox and nowhere else, so following
 the link already proves control of it. Making someone read a *second* email to
-finish registering adds a hop without adding assurance.
+finish registering adds a hop without adding assurance — and it would put a
+mail server back on the critical path for getting in, which is precisely what
+this model exists to remove.
 
-So `issueInviteSignInUrl` runs Better Auth's normal magic-link issuance inside
-an `AsyncLocalStorage` scope; the `sendMagicLink` callback sees the scope and
-returns the URL in-process instead of mailing it. Every check Better Auth
-performs on a magic link still runs — the link is simply redeemed immediately
-rather than days later, and it never leaves the server.
+So registration creates the session directly. There is no in-process link to
+redeem and no `AsyncLocalStorage` machinery holding one; the previous version
+had both, and they existed only to work around the absence of a password.
+
+#### Usernames
+
+3–32 characters of letters, digits, `-` and `_`. Case is accepted but not kept:
+the value is folded to lower case on write and looked up folded, so `Ayla_B` is
+stored as `ayla_b`, signs in as either, and cannot be registered twice in
+different clothes. `displayUsername` keeps whatever was typed.
+
+Matching case-insensitively rather than refusing capitals is the friendlier
+half of that: somebody whose phone capitalises the first letter should be told
+the username is taken, not that it is malformed.
 
 ### Privileged fields cannot be set over the wire
 
-`role`, `initials` and `invitedById` are declared `input: false`, so they are
-stripped from any request body. They are written server-side in
-`databaseHooks.user.create.before`, read out of the invite row. Posting
-`{"role":"admin"}` at sign-up does nothing — there is a test for exactly that.
+`role`, `initials` and `invitedById` are declared `input: false`. Better Auth
+does not quietly strip them — it **refuses the whole request** with
+`FIELD_NOT_ALLOWED`, which is the better failure: a sign-up that half-worked
+would be harder to notice than one that did not. They are written server-side
+in `databaseHooks.user.create.before`, read out of the invite row.
+
+Fields that are not declared at all — a chosen `id`, a posted `emailVerified` —
+reach the endpoint and are simply overruled. There are tests for both halves.
 
 ### Exactly one admin
 
@@ -216,14 +292,23 @@ and every server action.
 - **CSP carries a per-request nonce** minted in `src/middleware.ts`, so
   `script-src` needs no `'unsafe-inline'`. Every script tag on a rendered page
   carries it.
-- **Rate limiting** is on, in Postgres. Magic links are capped at 10 per minute
-  per IP rather than a tighter number *because an office sits behind one NAT
-  address* — a limit of 3 would refuse the fourth colleague to claim an invite
-  in the same minute.
-- **No user enumeration**: `/signin` answers identically whether or not the
-  address is known, and always says "if that address belongs to someone here".
+- **Rate limiting** is on, in Postgres, with the password paths capped well
+  below the blanket rule: `/sign-in/username`, `/sign-up/email` and
+  `/reset-password` get 10 a minute per IP. Ten rather than three *because an
+  office sits behind one NAT address* — a tighter limit would lock out the
+  colleague at the next desk. Ten a minute still puts online guessing several
+  thousand years away from a ten-character password, which is the number that
+  matters.
+- **No user enumeration**: a wrong password and an invented username get
+  byte-identical responses, and an unknown username still pays for a password
+  hash so the wall clock does not answer either. Both are probed.
 - `SameSite=Lax`, not `Strict`, because `Strict` would drop the cookie on the
-  magic-link landing and the sign-in would appear to silently fail.
+  hop from a set-password link and the sign-in would appear to silently fail.
+- **Reset tokens are hashed at rest.** `verification.storeIdentifier: "hashed"`
+  means the table holds a digest, not a link anyone could paste into a URL.
+  `prisma/reset-token.ts` reproduces that digest for the two places that mint a
+  row directly — the admin control and the seed — and is the single definition
+  of the format, because the migrator image ships `prisma/` and nothing else.
 
 ## The viewer
 
@@ -485,8 +570,8 @@ Two independent reasons:
 
 1. **WebAuthn requires a secure context.** Browsers refuse to create or use a
    passkey over plain HTTP, with the single exception of `localhost`. On
-   `http://nas.local:3000`, passkeys simply do not work — the app falls back to
-   magic links, which still function.
+   `http://nas.local:3000`, passkeys simply do not work — everyone falls back
+   to a username and a password, which still function.
 2. **The app refuses to start.** `src/lib/auth.ts` throws in production when
    `BETTER_AUTH_URL` is not `https://`, unless it is loopback. Session cookies
    carry `Secure`, and a cookie the browser discards is an app nobody can sign
@@ -501,16 +586,22 @@ records that address.
 It is the registrable domain with no scheme and no port
 (`print.example.org`, not `https://print.example.org:443`). Passkeys are bound
 to it cryptographically. **Change it later and every passkey already
-registered stops working**, with no migration path — everyone re-enrols from a
-magic link. Pick the hostname you intend to keep.
+registered stops working**, with no migration path — everyone signs in with
+their password and re-enrols. Pick the hostname you intend to keep.
 
 ### First run
 
-`migrate` seeds exactly one admin from `ADMIN_EMAIL` / `ADMIN_NAME`. Sign in at
-`/signin`, then invite the office from `/admin/invites`. The seed is an upsert,
-so it is safe on every start and keeps the admin's name in step with the
-environment — but it will refuse to create a *second* admin, and so will the
-database.
+`migrate` seeds exactly one admin from `ADMIN_EMAIL` / `ADMIN_NAME` and prints
+a one-use link for setting a username and a password:
+
+```bash
+docker compose --env-file .env.docker -f docker-compose.prod.yml logs migrate
+```
+
+Open it within thirty minutes, then invite the office from `/admin/invites`.
+The seed is an upsert, so it is safe on every start and keeps the admin's name
+in step with the environment — but it will refuse to create a *second* admin,
+and so will the database, and it never resets a password that already exists.
 
 ### What to back up
 
@@ -566,17 +657,21 @@ framework versions, and drop any that upstream has caught up with.
 ```
 prisma/
   schema.prisma          auth tables (Better Auth's shapes) + domain models
-  seed.ts                bootstraps the single admin
+  seed.ts                bootstraps the single admin, prints its setup link
+  reset-token.ts         set-password token format, shared with the app
 src/lib/
   auth.ts                Better Auth config — the invite gate lives here
-  auth-client.ts         browser client (magic link, passkey, admin)
+  auth-client.ts         browser client (username, passkey, admin)
+  auth-rules.ts          username and password rules, shared with the forms
+  password-reset.ts      minting, reading and restoring set-password links
   authz.ts               requireUser/requireAdmin/storyScope + status flow
   invites.ts             invite lifecycle: mint, resend, revoke, consume
   email.ts               Resend → SMTP → console, plus templates
   tokens.ts              CSPRNG tokens, digests, initials
 src/app/
-  signin/                passkey-first, magic-link fallback
-  invite/[token]/        the claim page and its server action
+  signin/                passkey button over a username/password form
+  invite/[token]/        the registration page and its server action
+  set-password/          where a reset link lands; sets no session
   welcome/               passkey enrolment after registration
   admin/invites/         the guest list (admin only)
   scope.ts               pure authorisation predicates (no server-only)
@@ -592,7 +687,7 @@ src/app/
   api/upload/            validation, storage, story creation
 scripts/
   verify-models.ts       validator vs. hostile fixtures
-  verify-auth.ts         invite + sign-in flow
+  verify-auth.ts         registration, sign-in and password reset
   verify-upload.ts       upload -> board -> story
   verify-passkey.ts      WebAuthn in a real browser
   security-probe.ts      OWASP-mapped security probes

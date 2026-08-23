@@ -13,6 +13,7 @@ import "./_env";
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 import { db } from "../src/lib/db";
+import { ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 /**
  * A client of its own rather than the app's.
@@ -33,7 +34,6 @@ const s3 = new S3Client({
 });
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
-const MAILPIT = process.env.MAILPIT_URL ?? "http://localhost:8025";
 const BUCKET = process.env.S3_BUCKET ?? "ppp-models";
 
 let passed = 0;
@@ -82,27 +82,20 @@ class Browser {
   }
 }
 
-async function signIn(email: string): Promise<Browser> {
+/**
+ * A signed-in browser for an existing user row.
+ *
+ * Takes the id as well as the address because a password is set against the
+ * account, not the mailbox: `ensureCredentials` gives the row a username and
+ * a password through the app's own reset endpoint, and the sign-in below is
+ * the same request the sign-in form makes. `verify:auth` owns the real
+ * registration path; this is the short way to a session.
+ */
+async function signIn(user: { id: string; email: string }): Promise<Browser> {
   const b = new Browser();
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
-  await fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
-  await b.raw(`${APP}/api/auth/sign-in/magic-link`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, callbackURL: "/" }),
-  });
-  const list = await (await fetch(`${MAILPIT}/api/v1/messages?limit=50`)).json();
-  for (const m of list.messages ?? []) {
-    if (!(m.To ?? []).some((a: { Address?: string }) => a.Address?.toLowerCase() === email)) continue;
-    const body = await (await fetch(`${MAILPIT}/api/v1/message/${m.ID}`)).json();
-    const link = /http:\/\/[^\s"'<]+\/api\/auth\/magic-link\/verify[^\s"'<]*/.exec(
-      `${body.Text ?? ""}`,
-    );
-    if (link) {
-      await b.go(link[0].replace(/[.,]$/, ""));
-      break;
-    }
-  }
+  await ensureCredentials(APP, user.id, usernameFor(user.email));
+  await signInWithPassword(b, APP, usernameFor(user.email));
   return b;
 }
 
@@ -163,9 +156,9 @@ async function main() {
             role: "client", emailVerified: true, invitedById: admin.id },
   });
 
-  const aylaB = await signIn(ayla.email);
-  const jonasB = await signIn(jonas.email);
-  const rubenB = await signIn(admin.email);
+  const aylaB = await signIn(ayla);
+  const jonasB = await signIn(jonas);
+  const rubenB = await signIn(admin);
   const anon = new Browser();
   check("three sessions established",
         [aylaB, jonasB, rubenB].every((b) => [...b.jar.keys()].some((k) => k.includes("session_token"))));

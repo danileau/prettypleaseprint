@@ -24,9 +24,9 @@ export function mailTransport(): Transport {
  * Is there anywhere to send mail?
  *
  * Running without one is a supported mode, not a broken deployment. Mail here
- * is only ever used for authentication — never for notifications, which are
- * in-app — so with no transport the app hands the admin a link to pass on
- * directly instead. For a group that shares an office that is arguably the
+ * is only ever used to deliver a link — an invitation, or a password reset —
+ * never for notifications, which are in-app. With no transport the app hands
+ * the admin the link to pass on directly instead. For a group that shares an office that is arguably the
  * better channel: a token in an inbox sits there indefinitely and can be
  * forwarded; one handed over in person cannot.
  *
@@ -37,8 +37,9 @@ export const mailConfigured = () => mailTransport() !== "none";
 
 if (!isBuildPhase && process.env.NODE_ENV === "production" && !mailConfigured()) {
   console.info(
-    "[mail] No transport configured. Invitations and recovery links will be " +
-      "shown to the admin to hand over; sign-in is passkey-first.",
+    "[mail] No transport configured. Invitations and password-reset links " +
+      "will be shown to the admin to hand over. Nothing else needs mail: " +
+      "people sign in with a username and password.",
   );
 }
 
@@ -193,32 +194,34 @@ export function inviteEmail(opts: {
   };
 }
 
-export function magicLinkEmail(opts: {
+export function passwordResetEmail(opts: {
   to: string;
   url: string;
   expiresInMinutes: number;
 }): Mail {
   return {
     to: opts.to,
-    subject: "Your sign-in link",
+    subject: "Set a new password",
     text:
-      `Sign in to Pretty Please Print: ${opts.url}\n\n` +
+      `Someone with the keys to the printer reset your Pretty Please Print password.\n\n` +
+      `Choose a new one: ${opts.url}\n\n` +
       `The link works once and expires in ${opts.expiresInMinutes} minutes. ` +
-      `If you did not ask for it, ignore this message.`,
+      `It does not sign you in — you pick a password, then use it. ` +
+      `If you did not expect this, say so before you use it.`,
     html: shell(
-      "OPEN &middot; COME ON IN",
-      `<h1 style="margin:0 0 14px;font-family:${SLAB};font-size:29px;line-height:1.1;color:${INK}">Sign in</h1>
+      "NEW KEY &middot; ONE USE",
+      `<h1 style="margin:0 0 14px;font-family:${SLAB};font-size:29px;line-height:1.1;color:${INK}">Set a new password</h1>
        <p style="margin:0 0 20px">
-         Here&rsquo;s the link you asked for. It signs you in on this device and
-         then stops working.
+         Whoever runs the printer reset your password. This link lets you pick a
+         new one — it does <strong>not</strong> sign you in on its own.
        </p>
-       ${button(opts.url, "Sign in")}
+       ${button(opts.url, "Choose a password")}
        <p style="margin:20px 0 0;padding:9px 13px;background:${SUN};border:2px solid ${INK};border-radius:999px;display:inline-block;font-family:${MONO};font-size:11px;font-weight:bold;letter-spacing:1px;color:${INK}">
          ONE USE &middot; EXPIRES IN ${opts.expiresInMinutes} MINUTES
        </p>
        <p style="margin:18px 0 0;font-family:${SANS};font-size:13.5px;color:${INK_2}">
-         Didn&rsquo;t ask for this? Ignore it — nobody can sign in without the link.
-         Tired of waiting for these? Save a passkey once you&rsquo;re in.
+         Didn&rsquo;t expect this? Have a word with them before you use it.
+         Tired of typing a password? Save a passkey once you&rsquo;re back in.
        </p>
        ${fallback(opts.url)}`,
     ),

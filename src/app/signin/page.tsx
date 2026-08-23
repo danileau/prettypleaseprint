@@ -16,17 +16,20 @@ function safeNext(raw: string | undefined): string {
 const ERRORS: Record<string, string> = {
   invite_required:
     "That address has not been invited. Pretty Please Print is invite-only — ask whoever owns the printer for a link.",
-  INVALID_TOKEN: "That link is no longer valid. Ask for a fresh one below.",
-  TOKEN_EXPIRED: "That link expired. Links last 10 minutes — here is another go.",
+  INVALID_TOKEN: "That link is no longer valid. Ask the printer owner for a fresh one.",
+  TOKEN_EXPIRED: "That link expired. Ask the printer owner for another.",
   banned: "That account has been suspended.",
 };
+
+/** Set by /set-password once a new one has been chosen. */
+const PASSWORD_SET = "Password saved. Sign in with it.";
 
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; error?: string }>;
+  searchParams: Promise<{ next?: string; error?: string; reset?: string }>;
 }) {
-  const { next, error } = await searchParams;
+  const { next, error, reset } = await searchParams;
 
   const user = await currentUser();
   if (user) redirect(safeNext(next));
@@ -36,9 +39,14 @@ export default async function SignInPage({
       <Kicker>Members only · ask at the counter</Kicker>
       <H1>What&rsquo;ll it be?</H1>
       <Lead>
-        No passwords on this menu. Use the passkey on this device, or have a
-        one-time link sent to your inbox.
+        Use the passkey on this device, or your username and password.
       </Lead>
+
+      {reset && (
+        <div className="mb-[22px]">
+          <Notice tone="good">{PASSWORD_SET}</Notice>
+        </div>
+      )}
 
       {error && (
         <div className="mb-[22px]">

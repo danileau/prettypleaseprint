@@ -41,8 +41,8 @@ export function PasskeyPrompt({ deviceHint }: { deviceHint: string }) {
     return (
       <div className="flex flex-col gap-[17.6px]">
         <Notice>
-          This browser does not do passkeys. You will sign in with an emailed
-          link instead, which works fine.
+          This browser does not do passkeys. Your username and password work
+          everywhere, which is why they are the way in.
         </Notice>
         <Button onClick={() => router.push("/")}>Take me in</Button>
       </div>
@@ -53,8 +53,8 @@ export function PasskeyPrompt({ deviceHint }: { deviceHint: string }) {
     return (
       <div className="flex flex-col gap-[17.6px]">
         <Notice tone="good">
-          Passkey saved. Next time, signing in is a fingerprint or a face —
-          no inbox round trip.
+          Passkey saved. Next time, signing in is a fingerprint or a face — no
+          password to type. It still works if you would rather.
         </Notice>
         <Button onClick={() => router.push("/")}>Take me in</Button>
       </div>
@@ -70,14 +70,14 @@ export function PasskeyPrompt({ deviceHint }: { deviceHint: string }) {
       {message && <Notice tone="warn">{message}</Notice>}
 
       {/* Honest about the consequence. The old copy said "Skip for now" and
-          then never mentioned it again, which is how people ended up on
-          emailed links permanently without choosing to. */}
+          then never mentioned it again, which is how people ended up typing a
+          password every time without ever choosing to. */}
       <button
         type="button"
         onClick={() => router.push("/")}
         className="cursor-pointer self-center text-[13.5px] font-bold text-ink-2 underline underline-offset-2 hover:text-cherry-dk"
       >
-        Not now — keep using emailed links
+        Not now — keep typing my password
       </button>
     </div>
   );

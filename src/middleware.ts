@@ -19,8 +19,15 @@ import { buildCsp, newNonce } from "@/lib/csp";
  * server action. A forged cookie gets past this file and no further; there is
  * a probe for exactly that (A01-forge).
  */
-/** Pages anyone may reach without a session. */
-const PUBLIC_PREFIXES = ["/signin", "/invite"];
+/**
+ * Pages anyone may reach without a session.
+ *
+ * `/set-password` is on the list for the same reason `/invite` is: the whole
+ * point of the link is that somebody who cannot get in can use it. It grants
+ * nothing on its own — the token is checked by the page and again by the
+ * action behind it.
+ */
+const PUBLIC_PREFIXES = ["/signin", "/invite", "/set-password"];
 
 const isProd = process.env.NODE_ENV === "production";
 

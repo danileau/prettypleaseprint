@@ -1,17 +1,23 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
-import { magicLink } from "better-auth/plugins/magic-link";
 import { admin } from "better-auth/plugins/admin";
+import { haveIBeenPwned } from "better-auth/plugins/haveibeenpwned";
+import { username } from "better-auth/plugins/username";
 import { passkey } from "@better-auth/passkey";
 
 import { db } from "@/lib/db";
-import { magicLinkEmail, sendMail } from "@/lib/email";
-import { consumeInvitesFor, normalizeEmail, pendingInviteFor } from "@/lib/invites";
+import { normalizeEmail, pendingInviteFor, consumeInvitesFor } from "@/lib/invites";
 import { initialsFor } from "@/lib/tokens";
 import { isBuildPhase } from "@/lib/runtime";
 import { record } from "@/lib/audit";
+import {
+  PASSWORD_MAX,
+  PASSWORD_MIN,
+  USERNAME_MAX,
+  USERNAME_MIN,
+  USERNAME_PATTERN,
+} from "@/lib/auth-rules";
 
 const baseURL = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 const isProd = process.env.NODE_ENV === "production";
@@ -28,8 +34,6 @@ const isProd = process.env.NODE_ENV === "production";
  */
 const isHttps = baseURL.startsWith("https://");
 
-const MAGIC_LINK_TTL_MINUTES = 10;
-
 /** localhost is never a real deployment, whatever NODE_ENV happens to say. */
 const isLoopback = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(
   baseURL,
@@ -42,8 +46,8 @@ if (isProd && !isBuildPhase) {
   if (!isHttps && !isLoopback) {
     throw new Error(
       `BETTER_AUTH_URL must be an https:// URL in production (got "${baseURL}"). ` +
-        "Session cookies carry the Secure flag and magic links are sent by " +
-        "email; neither is safe to serve over plain HTTP.",
+        "Session cookies carry the Secure flag and passwords are posted to " +
+        "this origin; neither is safe to serve over plain HTTP.",
     );
   }
   if (isLoopback) {
@@ -55,34 +59,46 @@ if (isProd && !isBuildPhase) {
   }
 }
 
-/**
- * ---------------------------------------------------------------------------
- * Direct grant, used only by invite acceptance.
- * ---------------------------------------------------------------------------
- * Someone who followed an invite link has already proved they control the
- * mailbox — the token was delivered there and nowhere else. Making them read a
- * *second* email to finish signing up adds a hop without adding assurance.
- *
- * So invite acceptance calls `issueInviteSignInUrl()`, which runs the normal
- * magic-link issuance inside this store. `sendMagicLink` sees the store, hands
- * the URL back in-process instead of mailing it, and the route redirects the
- * browser through it. Every check Better Auth performs on a magic link still
- * runs — the link is simply redeemed immediately rather than days later, and
- * it never leaves the server.
- */
-const directGrant = new AsyncLocalStorage<{ url?: string }>();
-
 export const auth = betterAuth({
   appName: "Pretty Please Print",
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,
   database: prismaAdapter(db, { provider: "postgresql" }),
 
-  // There is no password anywhere in this app. Nothing to phish, nothing to
-  // reuse, nothing to leak.
-  emailAndPassword: { enabled: false },
+  /**
+   * Username and password is how people get in.
+   *
+   * `requireEmailVerification` stays off: the address was verified by
+   * construction. The only way to reach sign-up at all is through an invite
+   * link that was delivered to that mailbox, and the invite gate below
+   * refuses anything else.
+   */
+  emailAndPassword: {
+    enabled: true,
+    minPasswordLength: PASSWORD_MIN,
+    maxPasswordLength: PASSWORD_MAX,
+    // Registration hands back a session; there is no second hop to /signin.
+    autoSignIn: true,
+    /**
+     * A reset is what you do when you have lost control of the account, so
+     * every session opened with the old password dies with it.
+     */
+    revokeSessionsOnPasswordReset: true,
+    // Self-service "forgot password" is deliberately absent: with no
+    // `sendResetPassword` configured, /request-password-reset refuses. Resets
+    // are minted by the admin (src/lib/password-reset.ts) so the flow does
+    // not depend on a mail server that may not exist.
+  },
 
   trustedOrigins: [baseURL],
+
+  /**
+   * Reset links are filed under a digest of their token rather than the token
+   * itself, so a database reader sees no link they can put in a URL. The
+   * digest is Better Auth's, and `prisma/reset-token.ts` reproduces it for
+   * the two places that mint a row directly.
+   */
+  verification: { storeIdentifier: "hashed" },
 
   session: {
     expiresAt: undefined,
@@ -109,18 +125,36 @@ export const auth = betterAuth({
     useSecureCookies: isHttps,
     defaultCookieAttributes: {
       httpOnly: true,
-      sameSite: "lax", // "strict" would break the magic-link landing
+      // "strict" would drop the cookie on the hop from a set-password link,
+      // and the sign-in would appear to silently fail.
+      sameSite: "lax",
       path: "/",
       secure: isHttps,
     },
   },
 
-  // Blanket limiter; the magic-link plugin adds a tighter one of its own.
   rateLimit: {
     enabled: true,
     window: 60,
     max: 60,
     storage: "database",
+    /**
+     * A password is guessable in a way a link in an inbox never was, so the
+     * paths that take one are capped well below the blanket rule.
+     *
+     * Ten a minute rather than three, for the same reason the invite limit is
+     * ten: an office shares one NAT address, and a limit tuned for a single
+     * user locks out the colleague at the next desk. Ten per minute still
+     * puts online guessing several thousand years away from a ten-character
+     * password, which is the number that matters.
+     */
+    customRules: {
+      "/sign-in/username": { window: 60, max: 10 },
+      "/sign-up/email": { window: 60, max: 10 },
+      "/reset-password": { window: 60, max: 10 },
+      // Would otherwise be a free oracle for "who is already here".
+      "/is-username-available": { window: 60, max: 20 },
+    },
   },
 
   user: {
@@ -137,9 +171,11 @@ export const auth = betterAuth({
      * The invite-only gate.
      *
      * Called before any identity is provisioned, by every authentication
-     * method — today magic link and passkey, tomorrow whatever gets added.
-     * No pending invite, no account. This is the one place that decides who
-     * is allowed to exist, which is why it lives here and not in a route.
+     * method — password sign-up and passkey today, whatever gets added
+     * tomorrow. Better Auth runs it from `internalAdapter.createUser`, which
+     * `/sign-up/email` goes through with `{ method: "email-password" }`, so
+     * adding passwords did not move this rule or add a second copy of it.
+     * No pending invite, no account.
      */
     async validateUserInfo({ user, source }) {
       if (source.action !== "create-user") return;
@@ -182,7 +218,7 @@ export const auth = betterAuth({
               initials: initialsFor(name),
               role: invite?.role ?? "client",
               invitedById: invite?.invitedById ?? null,
-              // Provisioning only happens off a link sent to this address,
+              // Registration only happens off a link sent to this address,
               // so the address is verified by construction.
               emailVerified: true,
             },
@@ -229,30 +265,41 @@ export const auth = betterAuth({
   },
 
   plugins: [
-    magicLink({
-      expiresIn: 60 * MAGIC_LINK_TTL_MINUTES,
-      // Digest at rest: a database reader sees hashes, not usable links.
-      storeToken: "hashed",
-      // Per IP. Deliberately not tighter: an office sits behind one NAT
-      // address, so a limit of 3 would refuse the fourth colleague to claim
-      // an invite in the same minute. Ten still stops mail-bombing an inbox,
-      // and the responses are identical either way, so this is not an
-      // enumeration oracle to grind against.
-      rateLimit: { window: 60, max: 10 },
-      async sendMagicLink({ email, url }) {
-        const box = directGrant.getStore();
-        if (box) {
-          box.url = url;
-          return;
-        }
-        await sendMail(
-          magicLinkEmail({
-            to: email,
-            url,
-            expiresInMinutes: MAGIC_LINK_TTL_MINUTES,
-          }),
-        );
-      },
+    username({
+      minUsernameLength: USERNAME_MIN,
+      maxUsernameLength: USERNAME_MAX,
+      usernameValidator: (value) => USERNAME_PATTERN.test(value),
+      // `validationOrder` is left at the default (pre-normalization), which is
+      // the only setting under which sign-up and sign-in agree: sign-in
+      // normalises *before* validating, so a case-sensitive rule applied after
+      // normalisation would accept `Ayla_B` at registration and then refuse it
+      // at the door. The validator above is case-insensitive for the same
+      // reason — the plugin folds the value either way.
+    }),
+
+    /**
+     * Refuse a password that is already in a breach corpus.
+     *
+     * The single highest-value password control there is: a ten-character
+     * password is only strong if it is not one of the several hundred million
+     * that have already been published. Checked by k-anonymity — five
+     * characters of a SHA-1 prefix leave the machine, never the password.
+     *
+     * It fails closed. If api.pwnedpasswords.com cannot be reached, setting a
+     * password fails rather than quietly skipping the check, which is the
+     * right way round: the alternative is a control that silently is not one.
+     * Registration and reset are the only paths that set a password, so an
+     * outage cannot lock out anybody who already has one.
+     *
+     * `HIBP_DISABLED=true` is the escape hatch for a deployment with no
+     * outbound internet at all — a NAS on an isolated VLAN, say. Failing
+     * closed there would mean nobody could ever register, which is worse than
+     * losing the check. It is off by default and should stay that way.
+     */
+    haveIBeenPwned({
+      enabled: process.env.HIBP_DISABLED !== "true",
+      customPasswordCompromisedMessage:
+        "That password appears in a known breach. Pick another — length beats cleverness.",
     }),
 
     passkey({
@@ -260,8 +307,8 @@ export const auth = betterAuth({
       rpName: process.env.PASSKEY_RP_NAME ?? "Pretty Please Print",
       origin: baseURL,
       authenticatorSelection: {
-        // Discoverable credentials let someone sign in without typing an
-        // address at all. "preferred" rather than "required" so older
+        // Discoverable credentials let someone sign in without typing a
+        // username at all. "preferred" rather than "required" so older
         // security keys still work.
         residentKey: "preferred",
         userVerification: "preferred",
@@ -280,37 +327,3 @@ export const auth = betterAuth({
 });
 
 export type Session = typeof auth.$Infer.Session;
-
-/**
- * Issue a magic-link URL without mailing it.
- *
- * Two callers, both deliberate:
- *   - invite acceptance, which already proved control of the mailbox
- *   - the admin re-issuing access for someone who lost their passkey and
- *     cannot receive mail
- *
- * The second is effectively impersonation: the link signs the browser in AS
- * that person. It is allowed because it grants the printer owner nothing they
- * did not already have — they own the machine and the database — and an
- * audited action is strictly better than a quiet `UPDATE`. It is recorded
- * loudly for that reason.
- */
-export async function issueSignInUrl(
-  email: string,
-  headers: Headers,
-  callbackURL: string,
-): Promise<string> {
-  const box: { url?: string } = {};
-
-  await directGrant.run(box, () =>
-    auth.api.signInMagicLink({
-      body: { email: normalizeEmail(email), callbackURL },
-      headers,
-    }),
-  );
-
-  if (!box.url) {
-    throw new Error("No sign-in link was issued.");
-  }
-  return box.url;
-}
