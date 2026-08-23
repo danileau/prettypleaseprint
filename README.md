@@ -19,6 +19,11 @@ Built from `Print That for Me/design_handoff_print_that_for_me/`. Built so far:
 Not built: the admin queue and status transitions, the conversation thread,
 the 3D viewer, the profile screen, and notification delivery by email.
 
+## Licence
+
+[MIT](LICENSE). Self-host it, fork it, change it, run it for your office — the
+licence exists to say yes, and to say the warranty is nil.
+
 ## Stack
 
 | | |
