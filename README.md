@@ -1,7 +1,7 @@
 # Pretty Please Print
 
 [![CI](https://github.com/danileau/ppp/actions/workflows/ci.yml/badge.svg)](https://github.com/danileau/ppp/actions/workflows/ci.yml)
-[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+[![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-docker%20compose-2496ed)](docs/deployment.md)
 [![Stars](https://img.shields.io/github/stars/danileau/ppp?style=flat)](https://github.com/danileau/ppp/stargazers)
 [![Forks](https://img.shields.io/github/forks/danileau/ppp?style=flat)](https://github.com/danileau/ppp/network/members)
@@ -283,8 +283,34 @@ See [docs/development.md](docs/development.md) to get set up.
 
 ## Licence
 
-[MIT](LICENSE). Self-host it, fork it, change it, run it for your office — the
-licence exists to say yes, and to say the warranty is nil.
+[AGPL-3.0-or-later](LICENSE). Self-host it, fork it, change it, run it for your
+office — all of that is yes, and free.
+
+The one condition is the point of the licence: **if you modify it and let people
+use your version over a network, you have to offer them your source.** Not a
+courtesy, a term. It covers the case a plain GPL misses — running a modified
+version as a service without ever distributing a copy — which is exactly how
+web software gets taken private.
+
+What that does and does not mean:
+
+- **Running it unmodified obliges you to nothing.** Deploy it for your office,
+  never touch the code, and there is nothing to publish and nobody to tell.
+- **Modify it and let others use it, and those users can ask for your source.**
+  Note *others* includes your own colleagues — §13 counts anyone interacting
+  over a network, not just paying customers. In practice that is easy: point
+  them at your fork.
+- **Selling it is allowed.** No open source licence forbids commercial use, and
+  this one does not either. Sell support, sell hosting, sell it outright — your
+  users just get the source too.
+- **Modification nobody else touches is unconstrained.** Hack on it locally, on
+  your own, forever, and the clause never bites.
+
+The asymmetry is deliberate: the licence asks for reciprocity from those who
+benefit publicly, and nothing from those who merely use it.
+
+If your organisation's policy forbids AGPL software — some do, blanket-style —
+you are welcome to ask about other terms.
 
 Built from the design handoff in `Pretty Please Print/`, which is why story refs
 read `PPP-104` and the copy sounds like a diner.
