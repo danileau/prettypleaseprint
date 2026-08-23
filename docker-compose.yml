@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ppp
-      POSTGRES_PASSWORD: ppp
+      POSTGRES_PASSWORD: dev-only-not-a-secret
       POSTGRES_DB: ppp
     ports: ["5432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
@@ -15,6 +15,9 @@ services:
       timeout: 3s
       retries: 10
 
+  # Credentials here are literally named 'dev-only-not-a-secret' so that a
+  # copy-paste into a real deployment is impossible to miss. The production
+  # stack (docker-compose.prod.yml) refuses to start without real ones.
   # Model files (.stl/.3mf) live here, never in the web root. Served only
   # through signed URLs gated by the ownership check in src/lib/authz.ts.
   minio:
@@ -24,7 +27,7 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ppp
-      MINIO_ROOT_PASSWORD: ppp-secret
+      MINIO_ROOT_PASSWORD: dev-only-not-a-secret
     ports: ["9000:9000", "9001:9001"]
     volumes: ["miniodata:/data"]
 

@@ -27,7 +27,7 @@ const s3 = new S3Client({
   forcePathStyle: true,
   credentials: {
     accessKeyId: process.env.S3_ACCESS_KEY ?? "ppp",
-    secretAccessKey: process.env.S3_SECRET_KEY ?? "ppp-secret",
+    secretAccessKey: process.env.S3_SECRET_KEY ?? "dev-only-not-a-secret",
   },
 });
 

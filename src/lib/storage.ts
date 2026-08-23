@@ -48,7 +48,7 @@ export const s3 = new S3Client({
   forcePathStyle: true,
   credentials: {
     accessKeyId: storageCredential("S3_ACCESS_KEY", "ppp"),
-    secretAccessKey: storageCredential("S3_SECRET_KEY", "ppp-secret"),
+    secretAccessKey: storageCredential("S3_SECRET_KEY", "dev-only-not-a-secret"),
   },
 });
 

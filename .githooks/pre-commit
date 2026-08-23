@@ -1,0 +1,4 @@
+#!/bin/sh
+# Blocks a commit that carries a credential. Installed by `npm run hooks:install`.
+# Bypass with --no-verify only if you are certain, and say why in the message.
+exec npx tsx scripts/check-secrets.ts
