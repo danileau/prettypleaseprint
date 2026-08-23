@@ -9,6 +9,7 @@ import { AppHeader } from "@/components/app-header";
 import { Kicker, StatusChip } from "@/components/ui";
 import { InviteForm } from "./invite-form";
 import { ResetPassword } from "@/components/reset-password";
+import { MemberAccess } from "@/components/member-access";
 import { resendInviteAction, revokeInviteAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +62,7 @@ export default async function InvitesPage() {
     db.user.findMany({
       where: { role: "client" },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, email: true, initials: true },
+      select: { id: true, name: true, email: true, initials: true, banned: true },
     }),
   ]);
   const members = memberList.length;
@@ -106,14 +107,28 @@ export default async function InvitesPage() {
                     {m.initials}
                   </span>
                   <div className="min-w-[180px] flex-[1_1_240px]">
-                    <p className="m-0 font-display text-[17px] text-ink">{m.name}</p>
+                    <p className="m-0 font-display text-[17px] text-ink">
+                      {m.name}
+                      {m.banned && (
+                        <span className="ml-[8px] rounded-chip border-2 border-ink bg-cream-3 px-[8px] py-[1px] font-mono text-[10.5px] font-bold uppercase tracking-[0.06em] text-ink-2">
+                          Suspended
+                        </span>
+                      )}
+                    </p>
                     <p className="m-0 font-mono text-[11.5px] text-ink-3">{m.email}</p>
                   </div>
-                  <ResetPassword
-                    userId={m.id}
-                    name={m.name.split(" ")[0] ?? m.name}
-                    expiresInMinutes={RESET_TTL_MINUTES}
-                  />
+                  <div className="flex flex-wrap items-center gap-[8.8px]">
+                    <ResetPassword
+                      userId={m.id}
+                      name={m.name.split(" ")[0] ?? m.name}
+                      expiresInMinutes={RESET_TTL_MINUTES}
+                    />
+                    <MemberAccess
+                      userId={m.id}
+                      name={m.name.split(" ")[0] ?? m.name}
+                      suspended={m.banned === true}
+                    />
+                  </div>
                 </div>
               ))}
             </div>

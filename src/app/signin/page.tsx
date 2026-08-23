@@ -18,7 +18,8 @@ const ERRORS: Record<string, string> = {
     "That address has not been invited. Pretty Please Print is invite-only — ask whoever owns the printer for a link.",
   INVALID_TOKEN: "That link is no longer valid. Ask the printer owner for a fresh one.",
   TOKEN_EXPIRED: "That link expired. Ask the printer owner for another.",
-  banned: "That account has been suspended.",
+  banned: "That account has been suspended. Ask whoever owns the printer.",
+  BANNED_USER: "That account has been suspended. Ask whoever owns the printer.",
 };
 
 /** Set by /set-password once a new one has been chosen. */

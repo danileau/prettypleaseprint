@@ -13,3 +13,16 @@
  * the moment that matters.
  */
 export const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+
+/**
+ * The public location of this instance's source.
+ *
+ * AGPL-3.0 section 13 obliges anyone who modifies this app and serves it over
+ * a network to offer their users the corresponding source. The default points
+ * at the upstream repository, which is correct only for an unmodified
+ * instance: **if you change the code, change this**, or the offer in the
+ * footer points at source that is not what is running.
+ */
+export function sourceUrl(): string {
+  return process.env.SOURCE_URL ?? "https://github.com/danileau/ppp";
+}

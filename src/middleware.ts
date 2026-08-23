@@ -68,6 +68,12 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except Next's own static assets, which need no nonce.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.png$).*)"],
+  // Everything except static assets, which need no nonce and no session.
+  //
+  // `icon.svg` is on this list because leaving it off put the favicon behind
+  // the sign-in redirect: a signed-out browser asked for it, got a 307 to
+  // /signin, and rendered no icon at all — on precisely the pages where the
+  // brand is doing the most work. It is a public brand asset; there is
+  // nothing there to protect.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|.*\\.png$).*)"],
 };

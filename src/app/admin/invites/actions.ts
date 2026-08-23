@@ -174,3 +174,63 @@ export async function resetPasswordAction(
   // message, so not even the admin who triggered it can replay it.
   return delivered ? { sent: target.email } : { sent: target.email, handoverUrl: url };
 }
+
+/**
+ * Revoke, or restore, a member's access.
+ *
+ * Suspension rather than deletion, deliberately. `Story.uploaderId` cascades,
+ * so removing the row would take their whole print history with it — tickets
+ * you finished, conversations you had, and the audit trail's actor links.
+ * Somebody leaving the office is not a reason to lose the record of what was
+ * printed for them.
+ *
+ * Two things have to happen together or the control is theatre. The admin
+ * plugin refuses to create a session for a suspended account, which shuts the
+ * door; it does nothing about the session they are already holding, which
+ * would keep working until it expired. So the sessions go too, and
+ * `currentUser()` refuses a suspended account besides.
+ */
+export async function setMemberAccessAction(
+  _prev: InviteFormState,
+  formData: FormData,
+): Promise<InviteFormState> {
+  const admin = await requireAdmin();
+  const userId = String(formData.get("userId") ?? "");
+  const revoke = String(formData.get("revoke") ?? "") === "true";
+
+  const target = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, name: true, role: true, banned: true },
+  });
+  if (!target) return { error: "No such member." };
+
+  // The printer owner is the only way back into the admin surface. Suspending
+  // them locks the app permanently, so the guard is here rather than only in
+  // the UI, which renders no control for them anyway.
+  if (target.role === "admin") {
+    return { error: "The printer owner cannot be suspended — that would lock the app." };
+  }
+
+  await db.user.update({
+    where: { id: target.id },
+    data: revoke
+      ? { banned: true, banReason: `Access revoked by ${admin.name}`, banExpires: null }
+      : { banned: false, banReason: null, banExpires: null },
+  });
+
+  if (revoke) {
+    // Shut the door they are already through, not only the one they would
+    // come back to.
+    await db.session.deleteMany({ where: { userId: target.id } });
+  }
+
+  await record({
+    action: revoke ? "access.revoked" : "access.restored",
+    actor: admin,
+    subject: target.email,
+    detail: { forName: target.name },
+  });
+
+  revalidatePath("/admin/invites");
+  return { sent: target.email };
+}

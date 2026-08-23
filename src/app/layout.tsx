@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Alfa_Slab_One, Archivo, Courier_Prime, Pacifico } from "next/font/google";
 import "./globals.css";
 
+import { SourceLink } from "@/components/source-link";
+import { sourceUrl } from "@/lib/runtime";
+
 /*
  * Four faces, each with a job, which is how a real diner sign works: a script
  * logotype, fat slab for the shouting, a workhorse for the reading, and a
@@ -54,8 +57,13 @@ export default function RootLayout({
       lang="en"
       className={`${script.variable} ${slab.variable} ${archivo.variable} ${courier.variable}`}
     >
-      <body className="plate min-h-screen bg-cream text-ink antialiased">
-        {children}
+      <body className="plate flex min-h-screen flex-col bg-cream text-ink antialiased">
+        <div className="flex-1">{children}</div>
+        {/* AGPL-3.0 section 13 wants the source offer in front of people using
+            the app over a network. In the root layout it reaches every page,
+            signed in or not, and is resolved server-side so a fork can point
+            it at its own source with SOURCE_URL. */}
+        <SourceLink href={sourceUrl()} />
       </body>
     </html>
   );
