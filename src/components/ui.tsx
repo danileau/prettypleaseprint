@@ -182,8 +182,8 @@ const CHIP_SKIN: Record<string, string> = {
   Requested: "bg-chrome text-ink",
   Accepted: "bg-aqua text-ink",
   Printing: "bg-sun text-ink",
-  Done: "bg-mint text-ink",
   Delivery: "bg-cherry text-ink",
+  Done: "bg-mint text-ink",
   Declined: "bg-cream-3 text-ink-2",
 };
 

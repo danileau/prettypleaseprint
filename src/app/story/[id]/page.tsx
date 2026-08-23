@@ -10,6 +10,7 @@ import { AdminActions } from "@/components/admin-actions";
 import { Conversation } from "@/components/conversation";
 import { ModelViewer } from "@/components/model-viewer";
 import { Toast } from "@/components/toast";
+import { WithdrawStory } from "@/components/withdraw-story";
 
 export const dynamic = "force-dynamic";
 
@@ -178,6 +179,20 @@ export default async function StoryPage({
               the actions behind them check the role again — drawing a button
               is not authorisation.
             */}
+            {/*
+              The requester's own control. Deliberately not gated on role —
+              an admin looking at somebody else's ticket is not its owner, and
+              the action refuses on ownership rather than on role.
+            */}
+            {story.uploader.id === user.id &&
+              (story.status === "Requested" || story.status === "Declined") && (
+                <WithdrawStory
+                  storyId={story.id}
+                  label={storyRef(story.id)}
+                  from={`/story/${story.id}`}
+                />
+              )}
+
             {user.role === "admin" && (
               <section className="mt-[26.4px] rounded-panel border-[3px] border-ink bg-aqua-wash p-[22px] shadow-stamp">
                 <h2 className="m-0 mb-[13.2px] font-display text-[20px] text-ink">

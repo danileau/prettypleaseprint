@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
@@ -11,9 +11,14 @@ import {
   assertTransition,
   nextStatus,
   notify,
+  printerName,
+  printerOwner,
   requireAdmin,
+  requireUser,
   storyRef,
+  storyScope,
 } from "@/lib/authz";
+import { deleteModel } from "@/lib/storage";
 
 /**
  * Everything the printer owner can do to a ticket.
@@ -221,4 +226,83 @@ export async function clearFlag(formData: FormData): Promise<void> {
 
   refresh(story.id);
   back(formData.get("from"), { toast: `Flag cleared · ${story.uploader.name} notified` });
+}
+
+/**
+ * The person who asked for a print withdraws it.
+ *
+ * The only action in this file that is not the printer owner's, which is why
+ * it takes `requireUser` and checks ownership itself rather than leaning on
+ * `requireAdmin`.
+ *
+ * **Only while nobody has acted on it.** `Requested` means it is still sitting
+ * in the queue untouched; `Declined` means it is already dead. Past that the
+ * printer owner has committed time, filament and bed space, and a ticket
+ * vanishing from under them — along with the conversation and the audit
+ * trail's subject — is not the requester's call to make. They can ask.
+ *
+ * The stored file goes with it. Leaving 50 MB of geometry in object storage
+ * for a request nobody can see any more is a slow leak and, for somebody who
+ * withdrew a model on purpose, arguably not what they asked for. Comments and
+ * notifications cascade at the database.
+ */
+export async function withdrawStory(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = IdSchema.parse(formData.get("storyId"));
+
+  // Scoped read: a client asking after somebody else's story gets the same
+  // answer as one asking after a story that does not exist.
+  const story = await db.story.findFirst({
+    where: { AND: [{ id }, storyScope(user)] },
+    select: {
+      id: true, title: true, status: true, storageKey: true,
+      uploaderId: true, uploader: { select: { name: true } },
+    },
+  });
+  if (!story) notFound();
+
+  // An admin can see every story; being able to see one is not being allowed
+  // to withdraw it. Only the person who asked for it may take it back.
+  if (story.uploaderId !== user.id) {
+    back(`/story/${id}`, { toast: "Only the person who asked for it can withdraw it." });
+  }
+
+  if (story.status !== "Requested" && story.status !== "Declined") {
+    back(`/story/${id}`, {
+      toast:
+        `${storyRef(story.id)} is already ${story.status.toLowerCase()} — ` +
+        `ask ${await printerName()} instead.`,
+    });
+  }
+
+  const ref = storyRef(story.id);
+  const owner = await printerOwner();
+
+  await db.story.delete({ where: { id: story.id } });
+
+  // After the row is gone, so a failure here cannot leave a story pointing at
+  // an object that is not there. The reverse would be worse: an orphaned
+  // object is invisible, a story with no file is broken in the viewer.
+  try {
+    await deleteModel(story.storageKey);
+  } catch (error) {
+    console.error(`[withdraw] ${ref}: object ${story.storageKey} not removed`, error);
+  }
+
+  // Only worth telling the printer owner if it was still waiting on them.
+  if (owner && story.status === "Requested" && owner.id !== user.id) {
+    await notify({
+      recipientId: owner.id,
+      text: `${user.name} withdrew ${ref} — “${story.title}”.`,
+    });
+  }
+
+  await record({
+    action: "story.withdrawn",
+    actor: user,
+    subject: ref,
+    detail: { title: story.title, wasStatus: story.status },
+  });
+
+  back("/board", { toast: `${ref} withdrawn.` });
 }
