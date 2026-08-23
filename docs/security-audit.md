@@ -1,6 +1,6 @@
 # Security validation
 
-Scope: Pretty Please Print (formerly Print That For Me), assessed against the **OWASP Top 10 (2021)** with
+Scope: Pretty Please Print, assessed against the **OWASP Top 10 (2021)** with
 SAST, SCA and DAST. Everything below was run against the production build
 (`npm run build && npm start`) on 2026-08-23.
 
