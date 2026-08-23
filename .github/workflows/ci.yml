@@ -2,9 +2,10 @@
 #
 # Four independent gates, so branch protection can require them by name:
 #
-#   guard    — typecheck, and the secret scanner over the whole tree. Cheap
-#              and first: a leaked credential should fail in seconds, not
-#              after a six-minute integration run.
+#   guard    — typecheck, the secret scanner over the whole tree, and the
+#              documentation link checker. Cheap and first: a leaked
+#              credential should fail in seconds, not after a six-minute
+#              integration run.
 #   models   — the upload validator against hostile fixtures. Needs no
 #              server and no database, so it stays a fast gate of its own.
 #   verify   — raises the REAL compose stack from source and runs every
@@ -24,6 +25,11 @@ on:
   pull_request:
   push:
     branches: [main]
+    # The daily traffic snapshot writes only here. Rebuilding the whole stack
+    # for a row of numbers would burn twenty minutes a day and republish
+    # byte-identical images.
+    paths-ignore:
+      - "docs/traffic/**"
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -52,6 +58,11 @@ jobs:
       # the half that catches a secret someone typed straight into a file.
       - name: Secret scan
         run: npm run check:secrets -- --all
+      # Documentation links rot silently — no test, build or typecheck notices.
+      # This repo has proved it twice: once moving the narrative into docs/,
+      # once renaming a directory out from under references into it.
+      - name: Documentation links
+        run: npm run check:links
 
   models:
     runs-on: ubuntu-latest

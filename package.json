@@ -32,6 +32,7 @@
     "verify:upload": "tsx scripts/verify-upload.ts",
     "verify:passkey": "tsx scripts/verify-passkey.ts",
     "check:secrets": "tsx scripts/check-secrets.ts",
+    "check:links": "tsx scripts/check-links.ts",
     "hooks:install": "git config core.hooksPath .githooks && echo \"pre-commit hook active\"",
     "shots": "tsx scripts/screenshot.ts",
     "env:container": "tsx scripts/use-container-env.ts",

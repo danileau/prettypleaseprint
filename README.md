@@ -15,6 +15,16 @@ Self-hosted, Docker Compose, no accounts anywhere but your own machine. Five
 people and one printer is the size it is built for, and it is honest about
 that: there is no multi-tenancy, no billing, and no queue theory.
 
+## What it looks like
+
+| The rail — every request as a ticket, scoped to who may see it |
+| :-- |
+| ![The backlog board](docs/screenshots/board.png) |
+
+| A ticket, with the actual uploaded geometry | The printer owner's queue |
+| :-- | :-- |
+| ![Story detail with the 3D viewer](docs/screenshots/story.png) | ![The admin queue](docs/screenshots/queue.png) |
+
 ## What it does
 
 - **Invite-only.** There is no public sign-up. A `User` row cannot come into
@@ -261,6 +271,7 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 | **[Development](docs/development.md)** | stack, local setup, the six verification suites, CI |
 | **[Security audit](docs/security-audit.md)** | the OWASP Top 10 assessment, findings, and residual risk accepted |
 | **[Security policy](SECURITY.md)** | how to report a vulnerability |
+| **[Contributing](CONTRIBUTING.md)** | the six suites are the contract; what a good change looks like |
 
 ## Security
 

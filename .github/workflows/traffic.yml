@@ -1,0 +1,84 @@
+# Traffic snapshot — because GitHub forgets after 14 days.
+#
+# Clones and views are owner-only analytics: there is no public badge for them,
+# the API needs push access, and the window is a fortnight. Anything older is
+# simply gone unless somebody wrote it down. This writes it down.
+#
+# It appends one row per day to two CSVs, keyed on the date, so a re-run
+# overwrites rather than duplicates and a missed day is backfilled from
+# whatever of the 14-day window is still there.
+#
+# The commit it makes is deliberately excluded from ci.yml and
+# release-images.yml by path, so a daily data point does not rebuild and
+# republish the container images.
+name: Traffic
+
+on:
+  schedule:
+    # 04:12 UTC — off the hour, because everything on the hour queues.
+    - cron: "12 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: traffic
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch and merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p docs/traffic
+          for kind in clones views; do
+            gh api "repos/$REPO/traffic/$kind" > "/tmp/$kind.json" || {
+              echo "::warning::could not read $kind — skipping this run"; continue; }
+            python3 - "$kind" <<'PY'
+          import csv, json, os, sys
+          kind = sys.argv[1]
+          path = f"docs/traffic/{kind}.csv"
+          data = json.load(open(f"/tmp/{kind}.json"))
+
+          rows = {}
+          if os.path.exists(path):
+              with open(path) as f:
+                  for r in csv.DictReader(f):
+                      rows[r["date"]] = r
+
+          # The API returns the last 14 days; anything it still knows about
+          # wins, so a corrected count replaces a stale one.
+          for point in data.get(kind, []):
+              day = point["timestamp"][:10]
+              rows[day] = {"date": day,
+                           "count": str(point["count"]),
+                           "uniques": str(point["uniques"])}
+
+          with open(path, "w", newline="") as f:
+              w = csv.DictWriter(f, fieldnames=["date", "count", "uniques"])
+              w.writeheader()
+              for day in sorted(rows):
+                  w.writerow(rows[day])
+          print(f"{path}: {len(rows)} day(s)")
+          PY
+          done
+
+      - name: Commit if anything changed
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- docs/traffic; then
+            echo "no change"; exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/traffic
+          git commit -m "Traffic snapshot $(date -u +%F)"
+          git push

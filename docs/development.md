@@ -90,3 +90,34 @@ Two more workflows:
   database, over the repo *and* the published images. This closes the gap the
   PR gate cannot: a CVE published after the last commit still lands in the
   committed lockfile and in the base layers already running on the NAS.
+
+## The cheap gates
+
+Three checks that need no server and run in seconds, all of them in CI's
+`guard` job:
+
+```bash
+npm run typecheck                  # tsc --noEmit
+npm run check:secrets -- --all     # credential shapes across every tracked file
+npm run check:links                # internal markdown links and heading anchors
+```
+
+`check:links` exists because documentation links rot silently — no test, build
+or typecheck notices — and this repo has proved it twice: once when the
+narrative moved into `docs/` and every `src/…` link became `docs/src/…`, and
+once when a directory was renamed out from under references pointing into it.
+It resolves anchors with GitHub's own slug rules rather than an approximation,
+and deliberately does not fetch external URLs: a gate that depends on somebody
+else's uptime fails for reasons unrelated to the change and gets ignored.
+
+## Traffic
+
+Clone and view counts are owner-only analytics with a **14-day** window and no
+public badge. `.github/workflows/traffic.yml` snapshots them daily into
+`docs/traffic/*.csv` so the history survives. Its commit is excluded by path
+from CI and from the image release, so a row of numbers does not rebuild the
+stack.
+
+Note that once the repository is public those numbers are public with it.
+Delete the workflow if that is not wanted; the data is anodyne but it is a
+choice.
