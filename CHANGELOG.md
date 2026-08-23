@@ -5,6 +5,21 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+### Fixed
+
+- **Release images could never pass signature verification.** A tag-triggered
+  build signs with `refs/tags/<tag>`, not `refs/heads/main`, so the deploy
+  wizard's identity pattern — written for branch builds — rejected exactly the
+  images a deployment is supposed to pin. The bug was invisible because
+  without cosign installed the wizard skips the check and says so; it would
+  have surfaced the first time anyone installed it. Found by verifying a real
+  signature rather than by reading the workflow.
+
+  The wizard also looks for `cosign` beside the project now, not only on PATH.
+  On a host whose OS filesystem is replaced by updates, a binary in
+  `/usr/local/bin` disappears and the check stops happening silently — which
+  is worse than never having had it.
+
 ### Changed
 
 - **The repository is now `danileau/prettypleaseprint`.** GitHub redirects the

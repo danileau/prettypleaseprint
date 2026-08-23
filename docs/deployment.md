@@ -99,6 +99,50 @@ docker compose --env-file .env.docker \
 
 Deploying is a human action by design. Nothing in CI reaches into the NAS.
 
+
+### Verifying signatures (and where cosign has to live)
+
+CI signs every image with cosign keyless, which is what protects the
+registry-to-host link against a substituted image. The wizard checks that
+before it swaps anything — but only if it can find `cosign`, and it says so
+loudly when it cannot rather than skipping quietly.
+
+**Do not install it into the OS.** TrueNAS and similar appliances replace the
+system filesystem on update, taking `/usr/local/bin` with it — the check would
+silently stop happening at the next upgrade, which is worse than never having
+had it. Put the binary on the same dataset as the deployment, where the wizard
+also looks:
+
+```bash
+cd /mnt/<pool>/applications/ppp/app
+mkdir -p bin
+curl -fsSL -o bin/cosign \
+  https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+chmod +x bin/cosign
+./bin/cosign version
+```
+
+It is a single statically linked binary with no runtime dependencies, so there
+is nothing else to install.
+
+Verify by hand if you want to see it work:
+
+```bash
+./bin/cosign verify \
+  --certificate-identity-regexp '^https://github\.com/danileau/(prettypleaseprint|ppp)/\.github/workflows/release-images\.yml@refs/(heads/main|tags/v[0-9][0-9A-Za-z.\-]*)$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/danileau/ppp-app:v0.1.0
+```
+
+Two things that alternation is carrying, both found by verifying a real
+signature rather than by reading the workflow:
+
+- **A tag build signs with `refs/tags/<tag>`, not `refs/heads/main`.** Release
+  images — the thing a deployment is meant to pin — therefore fail a pattern
+  written only for branch builds.
+- **Keyless signing embeds the repository path**, so images built before the
+  repository was renamed carry the old one and stay verifiable.
+
 ### The deploy wizard
 
 `scripts/deploy-wizard.sh` is the single entry point for a deploy. Copy it next
