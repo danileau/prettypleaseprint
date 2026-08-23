@@ -142,7 +142,14 @@ each overlay adds only what its context needs.
 Every merge to `main` publishes images tagged with the commit SHA and `latest`;
 every `v*` tag publishes that same commit under its version. Pin `PPP_TAG` to a
 release if you want to move deliberately, or to a SHA if you want to follow
-`main` closely — the wizard lists both.
+`main` closely.
+
+The images are **public**, so a deployment needs no registry credential at all.
+`scripts/deploy-wizard.sh` reflects that: run it without a token and it lists
+releases, which is the right menu for most deployments; give it a
+`read:packages` token and it lists every published image including SHA builds.
+That token is optional, is never stored, and is only needed because GitHub
+gates the package *listing* API even for public packages.
 
 `scripts/deploy-wizard.sh` is the way to move between versions: it lists what is
 published, cosign-verifies before swapping, health-checks after, and rolls back
@@ -223,9 +230,18 @@ docker run --rm --network npm-proxy curlimages/curl -sS -m 5 http://ppp-app:3000
 ```
 
 **`unauthorized` when pulling the images.**
-The registry token needs **`read:packages`** and nothing else — it is a
-*classic* token scope, nested under `write:packages` in the checkbox list.
-Fine-grained tokens do not work with ghcr.io at all. Check what yours carries:
+The published images are public, so this should not happen — check the tag
+exists before assuming it is an auth problem:
+
+```bash
+docker manifest inspect ghcr.io/danileau/ppp-app:v0.1.0
+```
+
+On a **fork** with private packages you do need a credential, and it must be a
+*classic* token with **`read:packages`** and nothing else — that scope is
+nested under `write:packages` in the checkbox list, which is easy to scroll
+past. Fine-grained tokens do not work with ghcr.io at all. Check what yours
+carries:
 
 ```bash
 curl -sSI -H "Authorization: Bearer $TOKEN" https://api.github.com/user | grep -i x-oauth-scopes

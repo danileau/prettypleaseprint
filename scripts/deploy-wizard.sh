@@ -19,10 +19,15 @@
 #   3. DID IT WORK?   → polls the public health URL after the swap, and rolls
 #      back to the previous tag automatically if it does not come good.
 #
-# The registry token is borrowed and returned: read from a hidden prompt,
-# used for the pull, then `docker logout`. Nothing long-lived is left behind,
-# which matters because the images are local afterwards and reboots need no
-# registry access at all.
+# The images are public, so no registry credential is needed to pull one. A
+# token is optional and buys only a longer menu: GitHub gates the package
+# *listing* API even for public packages, so without one the wizard lists
+# releases instead — which is the right list for most deployments anyway.
+#
+# When a token IS given (a fork with private packages, or someone following
+# main by SHA) it is borrowed and returned: read from a hidden prompt, used for
+# the pull, then `docker logout` on exit including on failure. Nothing
+# long-lived is left behind.
 #
 # Usage:
 #   ./deploy-wizard.sh              # interactive
@@ -153,22 +158,40 @@ hr
 # ----- candidates -----------------------------------------------------------
 # Asked of the registry, not of a checkout: the NAS has no git, and "what is
 # published" is the honest definition of what is deployable anyway.
+# A token is OPTIONAL, and what it buys is a longer list rather than access.
+#
+# The images are public, so pulling one needs no credential at all. What is
+# still gated is GitHub's package *listing* API, which returns 401 even for a
+# public package — so without a token the wizard lists releases instead, from
+# the public Releases API. That is the better list for most deployments
+# anyway: named versions with dates, rather than every commit.
+#
+# With a token it lists every published image, SHA builds included, which is
+# what you want when following main closely.
 read_token() {
   if [ -n "${PPP_TOKEN:-}" ]; then TOKEN="$PPP_TOKEN"; return; fi
-  printf 'ghcr.io token (read:packages, hidden): '
+  printf 'ghcr.io token for the full image list, or press enter for releases only: '
   stty -echo 2>/dev/null || true
   read -r TOKEN
   stty echo 2>/dev/null || true
   printf '\n'
-  [ -n "$TOKEN" ] || die "no token given"
 }
 read_token
 
-echo "${DIM}→ asking ghcr.io what is published…${R}"
-VERSIONS="$(curl -sS --max-time 20 \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Accept: application/vnd.github+json" \
-  "https://api.github.com/user/packages/container/ppp-app/versions?per_page=100" 2>/dev/null || true)"
+if [ -n "$TOKEN" ]; then
+  echo "${DIM}→ asking ghcr.io what is published…${R}"
+  SOURCE_LABEL="every published image"
+  VERSIONS="$(curl -sS --max-time 20 \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/user/packages/container/ppp-app/versions?per_page=100" 2>/dev/null || true)"
+else
+  echo "${DIM}→ asking GitHub what has been released…${R}"
+  SOURCE_LABEL="releases only (no token given)"
+  VERSIONS="$(curl -sS --max-time 20 \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/${REPO}/releases?per_page=100" 2>/dev/null || true)"
+fi
 
 # Two things this filtering has to get right, both learned the hard way:
 #   - release-images publishes cosign signatures and SBOM attestations to the
@@ -192,6 +215,15 @@ if not isinstance(data, list):
     sys.exit(1)
 rows = []
 for v in data:
+    # Two shapes: a package version carries its tags under metadata.container,
+    # a release is simply its tag_name. Both give a date.
+    if "tag_name" in v:
+        if v.get("draft"):
+            continue
+        tag = v["tag_name"]
+        if DEPLOYABLE.match(tag):
+            rows.append((v.get("published_at") or v.get("created_at") or "", tag, False))
+        continue
     tags = (v.get("metadata") or {}).get("container", {}).get("tags", []) or []
     # Prefer a version tag when the same image carries both, because that is
     # the name a person will recognise in the menu.
@@ -206,14 +238,14 @@ for when, sha, is_latest in rows:
 ' 2>/dev/null || true)"
 
 if [ -z "$CANDIDATES" ]; then
-  echo "${YLW}⚠ could not read the package list.${R}"
-  echo "  ${DIM}Most likely the token lacks read:packages, or it expired."
+  echo "${YLW}⚠ could not read the list.${R}"
+  echo "  ${DIM}With a token, the most likely cause is that it lacks read:packages or expired."
   echo "  Verify with:  curl -sSI -H \"Authorization: Bearer \$TOKEN\" https://api.github.com/user | grep -i x-oauth-scopes${R}"
   exit 1
 fi
 
 echo
-echo "${B}Published images${R} ${DIM}(newest first):${R}"
+echo "${B}Deployable${R} ${DIM}— ${SOURCE_LABEL}, newest first:${R}"
 echo
 printf "  ${DIM} %-3s %-10s %-18s %-8s %s${R}\n" "#" "tag" "published" "moving" "state"
 
@@ -318,9 +350,13 @@ fi
 cleanup() { docker logout ghcr.io >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
-echo "${DIM}→ authenticating to ghcr.io…${R}"
-printf '%s' "$TOKEN" | docker login ghcr.io -u "$REGISTRY_OWNER" --password-stdin >/dev/null \
-  || die "docker login failed — check the token's read:packages scope"
+if [ -n "$TOKEN" ]; then
+  # Only needed if the packages are private. Public images pull anonymously,
+  # and logging in would leave a credential on disk for nothing.
+  echo "${DIM}→ authenticating to ghcr.io…${R}"
+  printf '%s' "$TOKEN" | docker login ghcr.io -u "$REGISTRY_OWNER" --password-stdin >/dev/null \
+    || die "docker login failed — check the token's read:packages scope"
+fi
 
 echo "${DIM}→ pulling ${TARGET}…${R}"
 ( cd "$PROJECT_DIR" && sed -i "s|^PPP_TAG=.*|PPP_TAG=\"$TARGET\"|" .env.docker )
