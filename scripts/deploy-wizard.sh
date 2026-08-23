@@ -46,7 +46,7 @@ PROJECT_DIR="${PPP_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 
 HEALTH_URL="${PPP_HEALTH_URL:-https://ppp.danileau.com/api/health}"
 REGISTRY_OWNER="${PPP_REGISTRY_OWNER:-danileau}"
-REPO="${PPP_REPO:-danileau/ppp}"
+REPO="${PPP_REPO:-danileau/prettypleaseprint}"
 IMAGES="${PPP_IMAGES:-ppp-app ppp-migrate}"
 WINDOW="${PPP_WINDOW:-15}"
 HEALTH_TIMEOUT="${PPP_HEALTH_TIMEOUT:-300}"
@@ -181,14 +181,16 @@ read_token
 if [ -n "$TOKEN" ]; then
   echo "${DIM}→ asking ghcr.io what is published…${R}"
   SOURCE_LABEL="every published image"
-  VERSIONS="$(curl -sS --max-time 20 \
+  # -L because a renamed repository answers 301 here, and an unfollowed
+  # redirect returns an empty body that looks exactly like "nothing published".
+  VERSIONS="$(curl -sSL --max-time 20 \
     -H "Authorization: Bearer $TOKEN" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/user/packages/container/ppp-app/versions?per_page=100" 2>/dev/null || true)"
 else
   echo "${DIM}→ asking GitHub what has been released…${R}"
   SOURCE_LABEL="releases only (no token given)"
-  VERSIONS="$(curl -sS --max-time 20 \
+  VERSIONS="$(curl -sSL --max-time 20 \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/${REPO}/releases?per_page=100" 2>/dev/null || true)"
 fi
@@ -327,9 +329,20 @@ read -r ans; case "$ans" in y|Y|yes|YES) ;; *) echo "aborted."; exit 0 ;; esac
 # silently skipped.
 if command -v cosign >/dev/null; then
   echo "${DIM}→ verifying signatures…${R}"
+  # Keyless signing embeds the workflow's identity, and that identity contains
+  # the repository PATH — so renaming the repository splits the published
+  # images in two: everything built before it carries the old path, everything
+  # after carries the new one. Verifying against only one of them means either
+  # today's image or every rollback target fails, and the wizard refuses to
+  # deploy a perfectly good image.
+  #
+  # The signature itself is unaffected: it is over the digest, and the old ones
+  # remain valid. Only the pattern has to admit both names. Drop the old
+  # alternative once nothing you would roll back to predates the rename.
+  IDENTITY="^https://github\.com/danileau/(prettypleaseprint|ppp)/\.github/workflows/release-images\.yml@refs/heads/main$"
   for img in $IMAGES; do
     if cosign verify \
-        --certificate-identity-regexp "^https://github\.com/${REPO}/\.github/workflows/release-images\.yml@refs/heads/main$" \
+        --certificate-identity-regexp "$IDENTITY" \
         --certificate-oidc-issuer https://token.actions.githubusercontent.com \
         "ghcr.io/${REGISTRY_OWNER}/${img}:${TARGET}" >/dev/null 2>&1; then
       echo "  ${GRN}✓${R} ${img}:${TARGET} signed by release-images on ${REPO}"

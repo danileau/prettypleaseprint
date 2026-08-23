@@ -24,5 +24,5 @@ export const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
  * footer points at source that is not what is running.
  */
 export function sourceUrl(): string {
-  return process.env.SOURCE_URL ?? "https://github.com/danileau/ppp";
+  return process.env.SOURCE_URL ?? "https://github.com/danileau/prettypleaseprint";
 }

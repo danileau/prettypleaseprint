@@ -4,7 +4,7 @@
 
 Please report security issues **privately**, not as a public issue.
 
-- **Preferred:** [open a private advisory](https://github.com/danileau/ppp/security/advisories/new)
+- **Preferred:** [open a private advisory](https://github.com/danileau/prettypleaseprint/security/advisories/new)
   on this repository. It is visible only to the maintainers until a fix ships.
 - **Otherwise:** email <danilo.licitra@gmail.com> with `[ppp security]` in the
   subject.
