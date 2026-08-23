@@ -196,6 +196,36 @@ and every server action.
 - `SameSite=Lax`, not `Strict`, because `Strict` would drop the cookie on the
   magic-link landing and the sign-in would appear to silently fail.
 
+## The viewer
+
+Story detail renders the actual uploaded geometry with three.js — `STLLoader`
+for `.stl`, `ThreeMFLoader` for `.3mf` — auto-framed, drag to rotate, with an
+idle spin that stops on first touch and never starts under
+`prefers-reduced-motion`.
+
+The handoff's lighting rig is kept exactly: hemisphere, a key at (3,5,4) and a
+cool rim behind. It reads well on filament colours from near-black to bone
+white, which is the whole job. The ground and grid moved to this palette,
+because the print bed should look like the app it sits in.
+
+Three details worth knowing:
+
+- **The bytes are proxied, not signed.** `/api/models/[id]` streams from
+  object storage through the app. That is not the elegant option, it is the
+  only correct one here: the deployment publishes no port for MinIO, so a
+  signed URL would point at something the browser cannot reach. Proxying also
+  keeps `connect-src` at `'self'`, so the viewer needs no CSP relaxation —
+  verified with zero violations in a real browser.
+- **It is scoped like the story.** Same `storyScope` fragment, so a client
+  asking for someone else's model gets 404, not 403.
+- **three.js is imported dynamically**, inside the effect. It is fetched when
+  someone opens a ticket and never on the board or the queue.
+
+The trade: every viewer load moves the whole file through Next. At 50 MB and a
+handful of people that is fine. If this ever faces a wider audience, put
+storage behind the same reverse proxy, hand out a signed URL, and widen
+`connect-src` to that origin.
+
 ## Uploads
 
 `POST /api/upload` is a route handler rather than a server action, so the
@@ -260,9 +290,6 @@ says so at the point where the old heuristic used to live.
 
 ## What is deliberately not built
 
-- **The 3D viewer.** Needs `STLLoader` / `ThreeMFLoader` per the handoff. The
-  geometry is already measured and stored, and `signedModelUrl` in
-  `storage.ts` is what will feed it.
 - **The profile screen** and its scoped stats. Declined stories are meant to
   surface here — until it lands they are reachable only by URL and from the
   Activity panel.

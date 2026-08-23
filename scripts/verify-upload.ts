@@ -264,7 +264,43 @@ async function main() {
   const nonsense = await aylaB.go(`${APP}/story/not-a-number`);
   check("a non-numeric id is 404", nonsense.status === 404, `status ${nonsense.status}`);
 
-  section("the audit trail reads correctly");
+  section("the model file is scoped like the story");
+
+  const modelUrl = `${APP}/api/models/${story!.id}`;
+  const ownFetch = await aylaB.raw(modelUrl);
+  check("the uploader can fetch their own model", ownFetch.status === 200, `status ${ownFetch.status}`);
+  const bytes = new Uint8Array(await ownFetch.arrayBuffer());
+  check("and gets the bytes that were stored",
+        bytes.length === story!.fileSize, `${bytes.length} vs ${story!.fileSize}`);
+  check("served as an attachment, never inline",
+        (ownFetch.headers.get("content-disposition") ?? "").startsWith("attachment"),
+        ownFetch.headers.get("content-disposition") ?? "");
+  check("and never cached",
+        (ownFetch.headers.get("cache-control") ?? "").includes("no-store"),
+        ownFetch.headers.get("cache-control") ?? "");
+
+  const otherFetch = await jonasB.raw(modelUrl);
+  check("another client gets 404, not 403", otherFetch.status === 404, `status ${otherFetch.status}`);
+  check("a refused fetch is recorded",
+        (await db.auditEvent.count({ where: { action: "file.refused" } })) >= 1);
+
+  const anonFetch = await anon.raw(modelUrl);
+  check("an unauthenticated fetch is 401", anonFetch.status === 401, `status ${anonFetch.status}`);
+
+  const adminFetch = await rubenB.raw(modelUrl);
+  check("the admin can fetch any model", adminFetch.status === 200, `status ${adminFetch.status}`);
+  check("the admin taking a copy is recorded",
+        (await db.auditEvent.count({ where: { action: "file.downloaded" } })) === 1);
+  check("the uploader opening their own ticket is NOT recorded as a download",
+        (await db.auditEvent.count({
+          where: { action: "file.downloaded", actorId: ayla.id },
+        })) === 0,
+        "the owner's own fetches would drown the trail");
+
+  const noSuchModel = await aylaB.raw(`${APP}/api/models/999999`);
+  check("a model that does not exist is 404", noSuchModel.status === 404, `status ${noSuchModel.status}`);
+
+    section("the audit trail reads correctly");
 
   const actions = await db.auditEvent.groupBy({ by: ["action"], _count: true });
   const byAction = Object.fromEntries(actions.map((a) => [a.action, a._count]));

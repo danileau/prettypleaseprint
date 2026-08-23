@@ -44,6 +44,27 @@ async function magicLink(email: string): Promise<string | null> {
   return null;
 }
 
+/**
+ * A real 12-triangle STL. The seeded tickets point at storage keys that do
+ * not exist, which is fine for the rail but useless for the viewer — it needs
+ * bytes it can actually parse.
+ */
+function stlBox(x: number, y: number, z: number): Uint8Array {
+  const p = [[0,0,0],[x,0,0],[x,y,0],[0,y,0],[0,0,z],[x,0,z],[x,y,z],[0,y,z]];
+  const faces = [[0,1,2],[0,2,3],[4,6,5],[4,7,6],[0,4,5],[0,5,1],
+                 [1,5,6],[1,6,2],[2,6,7],[2,7,3],[3,7,4],[3,4,0]];
+  const tris = faces.map((f) => f.flatMap((i) => p[i]!));
+  const buf = new Uint8Array(84 + tris.length * 50);
+  const view = new DataView(buf.buffer);
+  view.setUint32(80, tris.length, true);
+  let off = 84;
+  for (const t of tris) {
+    for (let i = 0; i < 9; i++) view.setFloat32(off + 12 + i * 4, t[i]!, true);
+    off += 50;
+  }
+  return buf;
+}
+
 /** One ticket per stage, so every rail colour and state is on screen at once. */
 const SEED = [
   ["Hook for the monitor arm", "Requested", "PETG", "Slate", "#4a5d78", "A beer", 1, false],
@@ -93,6 +114,44 @@ async function main() {
           body: "On the bed now, layer 84. Teal it is." },
       ],
     });
+  }
+
+  // Put real geometry behind the Printing ticket so the viewer has something
+  // to draw. Uploading it through the API is also the honest path — it goes
+  // through the same validation and storage every real file does.
+  const printingForUpload = await db.story.findFirst({ where: { status: "Printing" } });
+  if (printingForUpload) {
+    const jar = new Map<string, string>();
+    const link0 = await magicLink(ayla.email);
+    if (link0) {
+      const r = await fetch(link0, { redirect: "manual", headers: { origin: APP } });
+      for (const line of r.headers.getSetCookie()) {
+        const [pair] = line.split(";");
+        const i = pair!.indexOf("=");
+        jar.set(pair!.slice(0, i), pair!.slice(i + 1));
+      }
+    }
+    const cookie = [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
+    const form = new FormData();
+    form.set("file", new File([stlBox(78, 40, 22) as BlobPart], "monitor-hook-v3.stl"));
+    form.set("title", "Replacement knob, grinder");
+    form.set("material", "PETG");
+    form.set("colorName", "Teal");
+    form.set("quantity", "2");
+    form.set("tip", "A spool of filament");
+    form.set("note", "Clips onto the round arm tube and holds a headset. No rush.");
+    const up = await fetch(`${APP}/api/upload`, {
+      method: "POST", body: form, headers: { origin: APP, cookie },
+    });
+    if (up.ok) {
+      const created = await up.json();
+      // Promote it into Printing and retire the placeholder.
+      await db.story.delete({ where: { id: printingForUpload.id } });
+      await db.story.update({
+        where: { id: created.id },
+        data: { status: "Printing", colorHex: "#12645f" },
+      });
+    }
   }
 
   const browser = await puppeteer.launch({

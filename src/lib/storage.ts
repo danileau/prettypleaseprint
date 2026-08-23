@@ -8,8 +8,6 @@ import {
   HeadBucketCommand,
   CreateBucketCommand,
 } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-
 import { isBuildPhase } from "@/lib/runtime";
 
 /**
@@ -22,7 +20,7 @@ import { isBuildPhase } from "@/lib/runtime";
  */
 
 const endpoint = process.env.S3_ENDPOINT ?? "http://localhost:9000";
-const bucket = process.env.S3_BUCKET ?? "ppp-models";
+export const bucket = process.env.S3_BUCKET ?? "ppp-models";
 
 /**
  * A convenience default in development is a known password in production.
@@ -94,25 +92,19 @@ export async function deleteModel(key: string): Promise<void> {
   await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
 
-/**
- * A short-lived download URL. Ten minutes is long enough to fetch geometry
- * into the viewer and short enough that a URL copied out of a log or a
- * referrer header is stale before it is useful.
+/*
+ * There is deliberately no signed-URL helper here any more.
+ *
+ * It existed for a deployment where the browser can reach object storage
+ * directly. This one cannot: docker-compose.truenas.yml publishes no port for
+ * MinIO, so a signed URL would point at something unreachable. The model
+ * bytes are proxied by /api/models/[id] instead, which also keeps the CSP's
+ * connect-src at 'self'.
+ *
+ * If storage is ever put behind the same reverse proxy, bring it back —
+ * getSignedUrl(s3, new GetObjectCommand({...}), { expiresIn }) — and widen
+ * connect-src to that origin, or the fetch is blocked.
  */
-export async function signedModelUrl(
-  key: string,
-  filename: string,
-): Promise<string> {
-  return getSignedUrl(
-    s3,
-    new GetObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      ResponseContentDisposition: `attachment; filename="${filename.replace(/"/g, "")}"`,
-    }),
-    { expiresIn: 600 },
-  );
-}
 
 export const MIME_FOR: Record<string, string> = {
   ".stl": "model/stl",

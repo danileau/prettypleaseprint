@@ -8,6 +8,7 @@ import { AppHeader } from "@/components/app-header";
 import { Fact, Notice, StatusChip } from "@/components/ui";
 import { AdminActions } from "@/components/admin-actions";
 import { Conversation } from "@/components/conversation";
+import { ModelViewer } from "@/components/model-viewer";
 import { Toast } from "@/components/toast";
 
 export const dynamic = "force-dynamic";
@@ -53,20 +54,12 @@ export default async function StoryPage({
         <div className="mt-[13.2px] grid grid-cols-[repeat(auto-fit,minmax(330px,1fr))] items-start gap-[26.4px]">
           {/* ---------- left: the file ---------- */}
           <div>
-            <div className="layers flex h-[380px] flex-col items-center justify-center rounded-panel border-[3px] border-ink bg-cream-2 p-[26.4px] text-center shadow-stamp-lg">
-              <span
-                aria-hidden
-                className="mb-[17.6px] h-[72px] w-[72px] rounded-card border-[3px] border-ink shadow-stamp"
-                style={{ background: story.colorHex }}
-              />
-              <p className="m-0 font-mono text-[13px] font-bold text-ink">
-                {story.filename}
-              </p>
-              <p className="m-0 mt-[11px] max-w-[36ch] text-[13.5px] leading-[1.5] text-ink-2">
-                The rotatable 3D view is the next piece of work. The measurements
-                below came off this file on upload.
-              </p>
-            </div>
+            <ModelViewer
+              storyId={story.id}
+              filename={story.filename}
+              colorHex={story.colorHex}
+              dims={story.dims}
+            />
 
             {/* Both measured from the file itself. Nothing inferred. */}
             <div className="mt-[13.2px] flex flex-wrap gap-[8px]">

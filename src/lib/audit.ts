@@ -34,7 +34,8 @@ export type AuditAction =
   | "story.flagged"
   | "story.flag_cleared"
   | "comment.added"
-  | "file.downloaded";
+  | "file.downloaded"
+  | "file.refused";
 
 /**
  * Whether `X-Forwarded-For` can be believed.
