@@ -286,5 +286,5 @@ See [docs/development.md](docs/development.md) to get set up.
 [MIT](LICENSE). Self-host it, fork it, change it, run it for your office — the
 licence exists to say yes, and to say the warranty is nil.
 
-Built from the design handoff in `Print That for Me/`, which is why story refs
+Built from the design handoff in `Pretty Please Print/`, which is why story refs
 read `PPP-104` and the copy sounds like a diner.

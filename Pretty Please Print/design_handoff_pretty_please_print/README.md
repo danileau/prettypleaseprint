@@ -15,7 +15,7 @@ Notifications: every upload notifies the admin; every status change, flag or com
 
 The files in this bundle are **design references created in HTML** — a clickable prototype that shows intended look and behaviour. They are **not production code to copy directly**.
 
-- `Print That For Me v2.dc.html` — the full prototype. It is a single-file component with an HTML template (inline styles) and a JavaScript logic class. `support.js` is only the runtime that renders that authoring format in the browser; **do not port it**.
+- `Pretty Please Print v2.dc.html` — the full prototype. It is a single-file component with an HTML template (inline styles) and a JavaScript logic class. `support.js` is only the runtime that renders that authoring format in the browser; **do not port it**.
 - The task is to **recreate these designs in the target codebase's existing environment** (React/Next, Vue/Nuxt, Svelte, Rails+Hotwire, native — whatever the project uses) with its established patterns, router, form and data libraries.
 - If no codebase exists yet, see "Suggested stack" below.
 
@@ -257,7 +257,7 @@ React + TypeScript with a file-based router (Next.js or Remix), a Postgres datab
 
 ## Files
 
-- `Print That For Me v2.dc.html` — the design reference (current). Open it in a browser: the role switcher in the header lets you see both the client and admin perspectives; the header nav reaches every screen.
+- `Pretty Please Print v2.dc.html` — the design reference (current). Open it in a browser: the role switcher in the header lets you see both the client and admin perspectives; the header nav reaches every screen.
 - `support.js` — runtime needed only to open that file locally. Not part of the design and not to be ported.
 
 ## Definition of done
