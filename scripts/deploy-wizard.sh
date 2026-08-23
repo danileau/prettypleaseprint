@@ -10,8 +10,9 @@
 # It answers the questions a bare `sed PPP_TAG && docker compose up -d` does
 # not:
 #   1. WHICH image?   → lists what is actually published to ghcr.io, newest
-#      first, with publish dates and the live one marked. You pick from a menu
-#      instead of copying a 7-char SHA out of a CI log.
+#      first, with publish dates and the live one marked, showing a release
+#      version where one exists and the commit SHA otherwise. You pick from a
+#      menu instead of copying a tag out of a CI log.
 #   2. IS IT INTACT?  → cosign-verifies the image against the identity of the
 #      release-images workflow on this repo before anything is swapped. If
 #      cosign is absent it says so loudly rather than quietly skipping.
@@ -176,7 +177,10 @@ VERSIONS="$(curl -sS --max-time 20 \
 #     superseded.
 CANDIDATES="$(printf '%s' "$VERSIONS" | python3 -c '
 import json, re, sys
-SHA = re.compile(r"^[0-9a-f]{7}$")
+# A 7-char commit SHA, or a release like v0.1.0 / v1.2.3-rc1. Everything else
+# in this package is machinery: cosign publishes `sha256-<digest>.sig` and the
+# SBOM publishes `.att`, and neither is a runnable image.
+DEPLOYABLE = re.compile(r"^([0-9a-f]{7}|v\d+\.\d+\.\d+[0-9A-Za-z.\-]*)$")
 try:
     data = json.load(sys.stdin)
 except Exception:
@@ -186,7 +190,10 @@ if not isinstance(data, list):
 rows = []
 for v in data:
     tags = (v.get("metadata") or {}).get("container", {}).get("tags", []) or []
-    sha = next((t for t in tags if SHA.match(t)), None)
+    # Prefer a version tag when the same image carries both, because that is
+    # the name a person will recognise in the menu.
+    sha = next((t for t in tags if t.startswith("v") and DEPLOYABLE.match(t)), None) \
+          or next((t for t in tags if DEPLOYABLE.match(t)), None)
     if not sha:
         continue
     rows.append((v.get("created_at") or "", sha, "latest" in tags))

@@ -122,7 +122,7 @@ with commentary is [`.env.docker.example`](.env.docker.example).
 | `TRUST_PROXY_HEADERS` | | Which header carries the client address: `false` (trust nothing, the default), `true` (left-most `X-Forwarded-For`), or `cloudflare` (`CF-Connecting-IP`). See [the reasoning](docs/deployment.md#why-trust_proxy_headers-is-a-separate-switch). |
 | `HIBP_DISABLED` | | `true` disables the breach check. Only for a host with no outbound internet — it fails closed, so without it nobody could register. |
 | `SOURCE_URL` | | Where this instance's source lives, shown in the footer. **Change it if you modify the code** — see [Licence](#licence). Defaults to the upstream repository. |
-| `PPP_REGISTRY` / `PPP_TAG` | | Which published image to run. Pin `PPP_TAG` to a commit SHA; that is also how you roll back. |
+| `PPP_REGISTRY` / `PPP_TAG` | | Which published image to run. Pin `PPP_TAG` to a release (`v0.1.0`) or a commit SHA; either is also how you roll back. |
 
 ## Deploying
 
@@ -138,6 +138,11 @@ docker compose --env-file .env.docker \
 deployment needs no source tree and no toolchain, and what runs there is
 byte-for-byte what CI tested and signed. It publishes **no host ports at all** —
 each overlay adds only what its context needs.
+
+Every merge to `main` publishes images tagged with the commit SHA and `latest`;
+every `v*` tag publishes that same commit under its version. Pin `PPP_TAG` to a
+release if you want to move deliberately, or to a SHA if you want to follow
+`main` closely — the wizard lists both.
 
 `scripts/deploy-wizard.sh` is the way to move between versions: it lists what is
 published, cosign-verifies before swapping, health-checks after, and rolls back
@@ -272,6 +277,7 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 | **[Security audit](docs/security-audit.md)** | the OWASP Top 10 assessment, findings, and residual risk accepted |
 | **[Security policy](SECURITY.md)** | how to report a vulnerability |
 | **[Contributing](CONTRIBUTING.md)** | the six suites are the contract; what a good change looks like |
+| **[Changelog](CHANGELOG.md)** | what changed in each release |
 
 ## Security
 

@@ -4,8 +4,13 @@
 # the source tree or a toolchain, and what runs there is byte-for-byte what CI
 # tested. Deploying stays a human action — nothing here reaches into TrueNAS.
 #
-# Tags per image: the 7-char commit SHA, and a moving `latest`. Pin PPP_TAG to
-# a SHA on the NAS, because that is also how you roll back.
+# Tags per image: the 7-char commit SHA always, plus a moving `latest` on a
+# push to main, or the version on a `v*` tag. Pin PPP_TAG to a SHA or a
+# version on the NAS — either is also how you roll back.
+#
+# A release deliberately does not move `latest`: the tag is cut from a commit
+# already on main, so `latest` already points at it or at something newer, and
+# a patch release for an older line must not drag it backwards.
 #
 # Images are signed with cosign keyless (GitHub OIDC, logged to Rekor). The
 # signature pins the identity of THIS workflow on THIS repo, which protects
@@ -23,6 +28,9 @@ name: Release images
 on:
   push:
     branches: [main]
+    # A version tag republishes the same commit under a name a human can say
+    # out loud, so PPP_TAG can read v0.1.0 instead of a 7-char SHA.
+    tags: ["v*"]
     # The daily traffic snapshot writes only here, and republishing images for
     # a row of numbers helps nobody.
     paths-ignore:
@@ -58,9 +66,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Short SHA
-        id: sha
-        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Which tags
+        id: tags
+        run: |
+          set -euo pipefail
+          short="${GITHUB_SHA::7}"
+          image="ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}"
+          # The SHA tag always goes on: it is what a deployment pins to and
+          # what a rollback selects by.
+          list="$image:$short"
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            # A release: add the version, and do NOT move `latest`. The tag is
+            # cut from a commit already on main, so latest already points at
+            # it or at something newer — moving it backwards on a patch
+            # release for an older line would be wrong.
+            list="$list"$'\n'"$image:${GITHUB_REF_NAME}"
+          else
+            list="$list"$'\n'"$image:latest"
+          fi
+          echo "short=$short" >> "$GITHUB_OUTPUT"
+          {
+            echo "list<<TAGS"
+            echo "$list"
+            echo "TAGS"
+          } >> "$GITHUB_OUTPUT"
+          echo "tagging:"; echo "$list" | sed 's/^/  /' 
 
       - name: Build and push
         id: push
@@ -69,9 +99,7 @@ jobs:
           context: .
           target: ${{ matrix.target }}
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.sha.outputs.short }}
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}:latest
+          tags: ${{ steps.tags.outputs.list }}
           # No registry cache on the base layers: an `apk upgrade` has to
           # really re-run, or a CVE fixed upstream shows up as a stale replay.
           provenance: true
@@ -89,7 +117,7 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
-          image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.sha.outputs.short }}
+          image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.tags.outputs.short }}
           severity: HIGH,CRITICAL
           exit-code: '1'
           ignore-unfixed: true
