@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/danileau/ppp/security/advisories/new
+    about: Report privately, never as a public issue. See SECURITY.md.
+  - name: Deployment trouble
+    url: https://github.com/danileau/ppp#troubleshooting
+    about: 502s, registry auth, certificates and the bootstrap link are covered in the README.

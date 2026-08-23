@@ -1,0 +1,26 @@
+name: Idea
+description: Suggest something the app should do
+labels: [idea]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This app is built for a handful of people and one printer, and is
+        deliberately narrow. Ideas that only make sense at a hundred users are
+        likely to be declined — see
+        [CONTRIBUTING.md](https://github.com/danileau/ppp/blob/main/CONTRIBUTING.md).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is the problem?
+      description: The situation you are actually in, rather than the feature you have in mind.
+    validations: { required: true }
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would solve it?
+    validations: { required: true }
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What did you try instead?

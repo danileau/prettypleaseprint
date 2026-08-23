@@ -1,0 +1,51 @@
+name: Bug report
+description: Something behaves differently from how it is documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do **not** report security vulnerabilities here — see
+        [SECURITY.md](https://github.com/danileau/ppp/blob/main/SECURITY.md)
+        for the private route.
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations: { required: true }
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: Exact error text beats a description of it. Redact secrets.
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can it be reproduced?
+      placeholder: |
+        1. …
+        2. …
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Which version?
+      description: The `PPP_TAG` you are running, or the commit SHA.
+    validations: { required: true }
+  - type: dropdown
+    id: how
+    attributes:
+      label: How is it running?
+      options:
+        - Docker Compose, behind a reverse proxy
+        - Docker Compose, direct
+        - Local development (npm run dev)
+        - Other
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes:
+      label: Anything in the logs?
+      description: "`docker compose logs app --tail=50`. Redact tokens and passwords."
+      render: text

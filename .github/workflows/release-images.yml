@@ -23,6 +23,10 @@ name: Release images
 on:
   push:
     branches: [main]
+    # The daily traffic snapshot writes only here, and republishing images for
+    # a row of numbers helps nobody.
+    paths-ignore:
+      - "docs/traffic/**"
   workflow_dispatch:
 
 permissions:
