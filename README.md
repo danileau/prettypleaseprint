@@ -459,7 +459,7 @@ docker compose --env-file .env.docker \
 App on :3000, Mailpit on :8025 — every invitation and sign-in link lands there,
 so the whole flow is clickable without a mail server.
 
-Four compose files, each with one job:
+Five compose files, each with one job:
 
 | File | Job |
 | --- | --- |
@@ -467,7 +467,8 @@ Four compose files, each with one job:
 | `docker-compose.prod.yml` | the full stack, **consuming published images**. Publishes no host ports. |
 | `docker-compose.build.yml` | puts the build context back, for local work and CI |
 | `docker-compose.test.yml` | publishes the ports a local run and the host-side suites need |
-| `docker-compose.truenas.yml` | the proxy network, for a deployment |
+| `docker-compose.truenas.yml` | the proxy network, for a deployment behind Nginx Proxy Manager alone |
+| `docker-compose.cf.yml` | the same, but with Cloudflare proxying in front of NPM |
 
 `prod` consumes rather than builds on purpose: a deployment then needs no
 source tree and no toolchain, and what runs there is byte-for-byte what CI
@@ -536,6 +537,42 @@ docker compose --env-file .env.docker \
 
 Deploying is a human action by design. Nothing in CI reaches into the NAS.
 
+### The deploy wizard
+
+`scripts/deploy-wizard.sh` is the single entry point for a deploy. Copy it next
+to `docker-compose.prod.yml` on the NAS and run it there — it needs `docker`,
+`curl` and `python3`, and deliberately not `git`, `gh` or a checkout, because
+the NAS is a consumer of images and should stay one.
+
+```bash
+./deploy-wizard.sh            # interactive
+./deploy-wizard.sh --status   # read-only: what is live, and what is newer
+```
+
+It answers what a bare `sed PPP_TAG && docker compose up -d` does not:
+
+1. **Which image?** It asks ghcr.io what is actually published, newest first,
+   with build dates and the live one marked, so you pick from a menu instead of
+   copying a SHA out of a CI log. It filters to 7-hex-char tags — the cosign
+   `.sig` and SBOM `.att` tags live in the same package and are not runnable
+   images — and sorts by `created_at`, because re-pointing `latest` touches the
+   *previous* version's `updated_at` and would otherwise reshuffle history.
+2. **Is it intact?** It `cosign verify`s both images against the identity of
+   this repo's `release-images` workflow before anything is swapped. If cosign
+   is missing it says so and asks, rather than skipping quietly.
+3. **Did it work?** It polls the public health URL after the swap and **rolls
+   back to the previous tag automatically** if health does not stabilise —
+   then tells you whether the rollback is healthy, which distinguishes "bad
+   image" from "the proxy or the database is down".
+
+The registry token is borrowed and returned: read from a hidden prompt, used
+for the pull, then `docker logout` on exit including on failure. Nothing
+long-lived is left on the NAS, which costs nothing — the images are local
+afterwards, and `restart: unless-stopped` brings them back after a reboot with
+no registry access at all.
+
+Rollback is the same menu: pick the older tag.
+
 **In Nginx Proxy Manager**, add a Proxy Host:
 
 | | |
@@ -563,6 +600,16 @@ audit log and pin their own refused attempts on another address.
 So it is off by default, and the trail records *no* address rather than a
 fictional one. `docker-compose.truenas.yml` turns it on, and is also the file
 that makes it true by keeping the app off every host port.
+
+**Put Cloudflare in front and it has to go off again**, which is why
+`docker-compose.cf.yml` exists as a separate overlay. Cloudflare *appends* to
+`X-Forwarded-For` instead of replacing it, and NPM appends after that, so the
+left-most entry — the one `clientIp()` reads — is whatever the client chose to
+send. `CF-Connecting-IP` is the header that cannot be spoofed there, and the
+app does not read it yet. Until it does, a Cloudflare-fronted deployment
+records no address, which is the honest answer rather than an attacker-chosen
+one. The `cf` overlay is identical to the `truenas` one except that it leaves
+the setting to `.env.docker`, where it must be `false`.
 
 ### HTTPS is not optional, and here is why
 
@@ -686,6 +733,7 @@ src/app/
   story/[id]/            story detail (read half)
   api/upload/            validation, storage, story creation
 scripts/
+  deploy-wizard.sh       pick an image, verify it, deploy, auto-rollback
   verify-models.ts       validator vs. hostile fixtures
   verify-auth.ts         registration, sign-in and password reset
   verify-upload.ts       upload -> board -> story
