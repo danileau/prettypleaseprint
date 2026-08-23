@@ -1,0 +1,27 @@
+# Nginx Proxy Manager overlay, with Cloudflare proxying in front of NPM.
+#
+#   docker compose --env-file .env.docker \
+#     -f docker-compose.prod.yml -f docker-compose.cf.yml up -d
+#
+# Same shape as docker-compose.truenas.yml — the app joins the shared network
+# so NPM can reach it as ppp-app:3000, and publishes no host port, so nothing
+# on the LAN can bypass the proxy and talk to it in cleartext.
+#
+# The one difference, and the reason this file exists instead: truenas.yml
+# forces TRUST_PROXY_HEADERS=true, which is right when NPM is the only thing
+# in front. With Cloudflare proxying, it is wrong. Cloudflare *appends* to
+# X-Forwarded-For rather than replacing it, and NPM appends again, so the
+# left-most entry — the one src/lib/audit.ts reads — is whatever the client
+# chose to send. CF-Connecting-IP is the header that cannot be spoofed there,
+# and the app does not read it yet. So the value is left to .env.docker,
+# where it must be false: the trail then records no address rather than an
+# attacker-chosen one, which is the failure this app prefers.
+services:
+  app:
+    networks:
+      - default
+      - npm-proxy
+
+networks:
+  npm-proxy:
+    external: true
