@@ -7,11 +7,11 @@
   "author": "Danilo Licitra",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danileau/ppp.git"
+    "url": "git+https://github.com/danileau/prettypleaseprint.git"
   },
-  "homepage": "https://github.com/danileau/ppp#readme",
+  "homepage": "https://github.com/danileau/prettypleaseprint#readme",
   "bugs": {
-    "url": "https://github.com/danileau/ppp/issues"
+    "url": "https://github.com/danileau/prettypleaseprint/issues"
   },
   "type": "module",
   "scripts": {

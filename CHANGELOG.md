@@ -5,6 +5,29 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+### Changed
+
+- **The repository is now `danileau/prettypleaseprint`.** GitHub redirects the
+  old path — web, git remotes and the API — so clones and links keep working.
+  Two things redirects do not cover, both handled here:
+
+  - **Keyless signatures embed the repository path.** Images built before the
+    rename carry `…/danileau/ppp/…` in their certificate identity and images
+    built after carry the new one, so verifying against a single name would
+    make either today's image or every rollback target fail. The deploy wizard
+    now accepts both, and rejects everything else — a fork, another workflow,
+    another branch. Drop the old alternative once nothing you would roll back
+    to predates the rename.
+  - **The wizard did not follow redirects.** `curl` without `-L` against a
+    renamed repository returns an empty body that looks exactly like "nothing
+    published". It follows them now, which also makes it survive the next
+    rename.
+
+  **The container images keep their names** — `ppp-app` and `ppp-migrate`.
+  They are named by the release workflow, not by the repository, so nothing
+  deployed has to change. Renaming them would break every pinned `PPP_TAG`
+  and orphan `v0.1.0` in exchange for tidiness.
+
 ### Added
 
 - **`Done` is now the end of the flow**, and a ticket marked Done leaves the

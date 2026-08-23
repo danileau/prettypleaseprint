@@ -8,7 +8,7 @@ body:
         This app is built for a handful of people and one printer, and is
         deliberately narrow. Ideas that only make sense at a hundred users are
         likely to be declined — see
-        [CONTRIBUTING.md](https://github.com/danileau/ppp/blob/main/CONTRIBUTING.md).
+        [CONTRIBUTING.md](https://github.com/danileau/prettypleaseprint/blob/main/CONTRIBUTING.md).
   - type: textarea
     id: problem
     attributes:

@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Please do **not** report security vulnerabilities here — see
-        [SECURITY.md](https://github.com/danileau/ppp/blob/main/SECURITY.md)
+        [SECURITY.md](https://github.com/danileau/prettypleaseprint/blob/main/SECURITY.md)
         for the private route.
   - type: textarea
     id: expected

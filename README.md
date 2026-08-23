@@ -1,10 +1,10 @@
 # Pretty Please Print
 
-[![CI](https://github.com/danileau/ppp/actions/workflows/ci.yml/badge.svg)](https://github.com/danileau/ppp/actions/workflows/ci.yml)
+[![CI](https://github.com/danileau/prettypleaseprint/actions/workflows/ci.yml/badge.svg)](https://github.com/danileau/prettypleaseprint/actions/workflows/ci.yml)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-docker%20compose-2496ed)](docs/deployment.md)
-[![Stars](https://img.shields.io/github/stars/danileau/ppp?style=flat)](https://github.com/danileau/ppp/stargazers)
-[![Forks](https://img.shields.io/github/forks/danileau/ppp?style=flat)](https://github.com/danileau/ppp/network/members)
+[![Stars](https://img.shields.io/github/stars/danileau/prettypleaseprint?style=flat)](https://github.com/danileau/prettypleaseprint/stargazers)
+[![Forks](https://img.shields.io/github/forks/danileau/prettypleaseprint?style=flat)](https://github.com/danileau/prettypleaseprint/network/members)
 
 **Invite-only 3D print requests for a small office.** One person owns the
 printer. Everyone else uploads a model, says what they are hoping for, and
@@ -62,7 +62,7 @@ that: there is no multi-tenancy, no billing, and no queue theory.
 ## Quick start
 
 ```bash
-git clone https://github.com/danileau/ppp.git && cd ppp
+git clone https://github.com/danileau/prettypleaseprint.git && cd prettypleaseprint
 cp .env.docker.example .env.docker
 ```
 
@@ -147,6 +147,10 @@ Every merge to `main` publishes images tagged with the commit SHA and `latest`;
 every `v*` tag publishes that same commit under its version. Pin `PPP_TAG` to a
 release if you want to move deliberately, or to a SHA if you want to follow
 `main` closely.
+
+The images are named `ppp-app` and `ppp-migrate` — after the project's old
+short name, kept deliberately because they are a deployment interface. Renaming
+them would break every pinned `PPP_TAG` in exchange for nothing.
 
 The images are **public**, so a deployment needs no registry credential at all.
 `scripts/deploy-wizard.sh` reflects that: run it without a token and it lists
