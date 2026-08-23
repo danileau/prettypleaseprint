@@ -160,7 +160,7 @@ hit was a false positive *inside* that generated file.
 | **A06** | Vulnerable Components | **Pass, after fixes 4 and 5.** Zero across three independent scanners. |
 | **A07** | Auth Failures | **Pass, after fix 1.** Passwords: ≥10 characters, breach-checked against HIBP by k-anonymity, guessing capped at 10/min per IP. No user enumeration — a wrong password and an invented username give byte-identical responses, and an unknown username still pays for a hash so the wall clock does not answer either. Set-password links single-use, 30-minute TTL, hashed at rest, and they establish **no session**. Setting a password revokes the sessions the old one opened. Off-site and protocol-relative redirect targets refused, both via `?next=` and via the API's `callbackURL`. Sign-out kills the session server-side. See the section below. |
 | **A08** | Integrity Failures | **Pass.** `role`, `initials` and `invitedById` cannot be set from the request body: declared `input: false`, and Better Auth refuses the whole sign-up with `FIELD_NOT_ALLOWED` rather than silently trimming it. A chosen `id` and a posted `emailVerified` reach the endpoint undeclared and are overruled server-side from the invite. Both halves probed. On upload, `uploaderId` comes from the session and a posted `status` is ignored, both probed. Storage keys are generated, never derived from the filename. Lockfile committed. |
-| **A09** | Logging & Monitoring | **Pass.** An append-only `AuditEvent` table records invitations sent, resent, revoked, accepted and *rejected*; password resets requested and completed; sign-in and sign-out; story creation and refused uploads. Rows are denormalised (`actorEmail`, `subject`) so the trail still reads correctly after the user or story it refers to is deleted, and a probe asserts no token or secret reaches `detail`. |
+| **A09** | Logging & Monitoring | **Pass.** An append-only `AuditEvent` table records invitations sent, resent, revoked, accepted and *rejected*; access revoked and restored; password resets requested and completed; sign-in and sign-out; story creation and refused uploads. The client address is recorded only from a header the deployment has explicitly named as trustworthy (`TRUST_PROXY_HEADERS`), and no address at all otherwise — a blank rather than a fiction. Rows are denormalised (`actorEmail`, `subject`) so the trail still reads correctly after the user or story it refers to is deleted, and a probe asserts no token or secret reaches `detail`. |
 | **A10** | SSRF | **Pass (low exposure).** The app makes no outbound request from user input. A link-local `callbackURL` (`169.254.169.254`) is refused. |
 
 ## A07 with passwords in the picture
@@ -236,6 +236,17 @@ spent when a password is actually set, which is what "single use" is for.
 and a successful one kills it.
 
 ### Residual risk accepted
+
+- **A trusted-proxy misconfiguration is silent.** `TRUST_PROXY_HEADERS` now
+  names which header to believe (`false` / `true` / `cloudflare`) rather than
+  being a boolean, because the right answer depends on what is in front of the
+  app and the wrong answer does not fail loudly — it fills the audit trail
+  with client-chosen addresses. The modes never fall back to one another, and
+  the default trusts nothing. What remains is that nothing *verifies* the
+  claim: set `cloudflare` on an origin that is reachable directly and anyone
+  can send `CF-Connecting-IP` themselves. Checking the peer against
+  Cloudflare's published ranges would close that; the compose overlays close it
+  instead by keeping the app off every host port.
 
 - **The breach check is an outbound dependency.** It fails closed, so if
   `api.pwnedpasswords.com` is unreachable, nobody can *set* a password —

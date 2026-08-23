@@ -11,6 +11,7 @@ import "./_env";
  * DESTRUCTIVE: wipes users and stories. Development database only.
  */
 import { db } from "../src/lib/db";
+import { clientIpFrom, ipSource } from "../src/lib/client-ip";
 import { ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
@@ -464,6 +465,45 @@ async function main() {
   check("the restore is audited",
         (await db.auditEvent.count({
           where: { action: "access.restored", subject: goner.email } })) === 1);
+
+  // ------------------------------------------------------------------
+  section("the audit trail believes the right header");
+
+  // Pure function, exercised directly: the alternative is restarting the stack
+  // once per mode, and the thing worth testing is precisely which header wins.
+  const hdr = (o: Record<string, string>) => new Headers(o);
+  const SPOOF = "203.0.113.66";   // what a client sends
+  const REAL = "198.51.100.7";    // what the edge saw
+
+  check("unset trusts nothing", ipSource(undefined) === "none");
+  check('"false" trusts nothing', ipSource("false") === "none");
+  check('"true" means X-Forwarded-For', ipSource("true") === "forwarded");
+  check('"cloudflare" means CF-Connecting-IP', ipSource("cloudflare") === "cloudflare");
+  check("the value is case- and space-insensitive", ipSource("  CloudFlare ") === "cloudflare");
+
+  check("with no source trusted, nothing is recorded even when headers are present",
+        clientIpFrom(hdr({ "x-forwarded-for": SPOOF, "cf-connecting-ip": REAL }), "none") === null);
+
+  check("forwarded mode takes the left-most X-Forwarded-For",
+        clientIpFrom(hdr({ "x-forwarded-for": `${REAL}, 10.0.0.1` }), "forwarded") === REAL);
+  check("and falls back to X-Real-IP when there is no XFF",
+        clientIpFrom(hdr({ "x-real-ip": REAL }), "forwarded") === REAL);
+
+  // The whole point. Cloudflare APPENDS to X-Forwarded-For, so the left-most
+  // entry is whatever the client sent; CF-Connecting-IP is set at the edge.
+  check("cloudflare mode reads CF-Connecting-IP",
+        clientIpFrom(hdr({ "cf-connecting-ip": REAL }), "cloudflare") === REAL);
+  check("and ignores a spoofed X-Forwarded-For sitting in front of it",
+        clientIpFrom(hdr({ "x-forwarded-for": `${SPOOF}, ${REAL}`, "cf-connecting-ip": REAL }),
+                     "cloudflare") === REAL);
+  check("with no CF header it records nothing rather than falling back",
+        clientIpFrom(hdr({ "x-forwarded-for": SPOOF }), "cloudflare") === null,
+        "falling back to XFF here would reopen the hole the mode exists to close");
+
+  check("an absurdly long value is refused rather than stored",
+        clientIpFrom(hdr({ "cf-connecting-ip": "a".repeat(200) }), "cloudflare") === null);
+  check("surrounding whitespace is trimmed",
+        clientIpFrom(hdr({ "cf-connecting-ip": `  ${REAL}  ` }), "cloudflare") === REAL);
 
   // ------------------------------------------------------------------
   section("the AGPL source offer, and the brand mark");

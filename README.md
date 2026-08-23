@@ -109,7 +109,7 @@ with commentary is [`.env.docker.example`](.env.docker.example).
 | `SMTP_URL` | | SMTP transport. **Leave unset and the app still works** — links are shown to the admin to hand over. |
 | `RESEND_API_KEY` | | Alternative to `SMTP_URL`; takes precedence. |
 | `MAIL_FROM` | | Envelope sender. |
-| `TRUST_PROXY_HEADERS` | | `true` only when the app is unreachable except through your proxy. See [the reasoning](docs/deployment.md#why-trust_proxy_headers-is-a-separate-switch). |
+| `TRUST_PROXY_HEADERS` | | Which header carries the client address: `false` (trust nothing, the default), `true` (left-most `X-Forwarded-For`), or `cloudflare` (`CF-Connecting-IP`). See [the reasoning](docs/deployment.md#why-trust_proxy_headers-is-a-separate-switch). |
 | `HIBP_DISABLED` | | `true` disables the breach check. Only for a host with no outbound internet — it fails closed, so without it nobody could register. |
 | `SOURCE_URL` | | Where this instance's source lives, shown in the footer. **Change it if you modify the code** — see [Licence](#licence). Defaults to the upstream repository. |
 | `PPP_REGISTRY` / `PPP_TAG` | | Which published image to run. Pin `PPP_TAG` to a commit SHA; that is also how you roll back. |
@@ -232,10 +232,11 @@ an **Origin Certificate** plus SSL mode *Full (strict)* removes ACME from the
 picture entirely.
 
 **Audit rows have no IP address.**
-Expected when `TRUST_PROXY_HEADERS=false`, which is correct behind Cloudflare:
-it *appends* to `X-Forwarded-For` rather than replacing it, so the left-most
-entry is whatever the client chose to send. The app records nothing rather than
-something attacker-chosen.
+`TRUST_PROXY_HEADERS` is unset or `false`, so nothing is trusted. Behind
+Cloudflare set it to `cloudflare` — not `true`, because Cloudflare *appends* to
+`X-Forwarded-For` and the left-most entry there is whatever the client sent.
+Behind a proxy that replaces the header, `true`. Set either only if the app
+cannot be reached without going through that proxy.
 
 **The bootstrap link expired.**
 Re-run the migrator; it prints a fresh one, and keeps doing so until a password
