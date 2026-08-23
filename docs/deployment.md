@@ -63,10 +63,12 @@ docker network create npm-proxy
 docker network connect npm-proxy <your-nginx-proxy-manager-container>
 ```
 
-**Authenticate to the registry once**, so the NAS can pull what CI publishes:
+**No registry credential is needed.** The images are public, so the host pulls
+them anonymously — nothing to create, store or rotate. Forks that keep their
+packages private need a one-off login instead:
 
 ```bash
-docker login ghcr.io -u <your-github-user> -p <PAT with read:packages>
+docker login ghcr.io -u <your-github-user> -p <classic PAT with read:packages>
 ```
 
 **In `.env.docker`:**
