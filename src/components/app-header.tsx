@@ -20,10 +20,12 @@ const NAV: Record<Actor["role"], Array<{ label: string; href: string }>> = {
   client: [
     { label: "The rail", href: "/board" },
     { label: "Order up", href: "/upload" },
+    { label: "My orders", href: "/me" },
   ],
   admin: [
     { label: "The pass", href: "/queue" },
     { label: "The rail", href: "/board" },
+    { label: "The books", href: "/me" },
     { label: "Guest list", href: "/admin/invites" },
     { label: "Audit", href: "/admin/audit" },
   ],

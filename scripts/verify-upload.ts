@@ -300,6 +300,62 @@ async function main() {
   const noSuchModel = await aylaB.raw(`${APP}/api/models/999999`);
   check("a model that does not exist is 404", noSuchModel.status === 404, `status ${noSuchModel.status}`);
 
+    section("the profile is scoped, and shows the whole history");
+
+  // A second ticket for Jonas, and a declined one for Ayla, so the two
+  // interesting properties have something to bite on.
+  const jonasStory = await db.story.create({
+    data: {
+      title: "Jonas's private bracket", uploaderId: jonas.id, material: "PLA",
+      colorName: "Teal", colorHex: "#12645f", tip: "A coffee", quantity: 1,
+      filename: "bracket.stl", fileSize: 500, mimeType: "model/stl",
+      storageKey: "k-jonas", dims: "1 × 1 × 1 mm",
+    },
+  });
+  const declined = await db.story.create({
+    data: {
+      title: "Turned down last week", uploaderId: ayla.id, status: "Declined",
+      material: "PETG", colorName: "Slate", colorHex: "#4a5d78", tip: "A beer",
+      quantity: 1, filename: "nope.stl", fileSize: 500, mimeType: "model/stl",
+      storageKey: "k-nope", dims: "1 × 1 × 1 mm",
+    },
+  });
+
+  const mine = await (await aylaB.go(`${APP}/me`)).text();
+  check("a client sees their own ticket", mine.includes("Hook for the monitor arm"));
+  check("and the declined one, which the rail does not carry",
+        mine.includes("Turned down last week"),
+        "declined tickets have nowhere to surface");
+  check("but never another client's", !mine.includes("Jonas's private bracket"),
+        "someone else's ticket leaked onto the profile");
+  check("nor another client's name", !mine.includes("Jonas Weiss"));
+
+  // Stats are facts about data, so they leak just as readily as a list.
+  const aylaCount = await db.story.count({ where: { uploaderId: ayla.id } });
+  const allCount = await db.story.count();
+  check("the counts are scoped, not global",
+        aylaCount < allCount && new RegExp(`>${aylaCount}<`).test(mine) &&
+        !new RegExp(`>${allCount}<`).test(mine),
+        `client sees ${aylaCount} of ${allCount}; a global count would be a leak`);
+
+  const theirs = await (await jonasB.go(`${APP}/me`)).text();
+  check("the other client sees only theirs",
+        theirs.includes("Jonas's private bracket") &&
+        !theirs.includes("Hook for the monitor arm"));
+
+  const books = await (await rubenB.go(`${APP}/me`)).text();
+  check("the admin sees everything", books.includes("Hook for the monitor arm") &&
+        books.includes("Jonas's private bracket"));
+  check("with the uploader named", books.includes("Jonas Weiss"));
+
+  const anonProfile = await anon.raw(`${APP}/me`);
+  check("signed out, the profile redirects to sign-in",
+        anonProfile.status === 307 &&
+        (anonProfile.headers.get("location") ?? "").includes("/signin"),
+        `status ${anonProfile.status}`);
+
+  await db.story.deleteMany({ where: { id: { in: [jonasStory.id, declined.id] } } });
+
     section("the audit trail reads correctly");
 
   const actions = await db.auditEvent.groupBy({ by: ["action"], _count: true });

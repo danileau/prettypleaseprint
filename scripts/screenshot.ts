@@ -154,6 +154,18 @@ async function main() {
     }
   }
 
+  // One declined ticket, so the profile shows what the rail deliberately
+  // does not carry.
+  await db.story.create({
+    data: {
+      title: "Bracket that was too thin", uploaderId: ayla.id, status: "Declined",
+      material: "PLA", colorName: "Bone white", colorHex: "#eaecee",
+      tip: "Nothing, sorry", quantity: 1, filename: "bracket-v1.stl",
+      fileSize: 640_000, mimeType: "model/stl", storageKey: "declined-demo",
+      dims: "60 × 20 × 3 mm",
+    },
+  });
+
   const browser = await puppeteer.launch({
     executablePath: CHROME, headless: true,
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
@@ -173,6 +185,7 @@ async function main() {
   const pages: Array<[string, string]> = [
     ["board", `${APP}/board`],
     ["upload", `${APP}/upload`],
+    ["profile", `${APP}/me`],
     ["story", `${APP}/story/${printing!.id}`],
   ];
   for (const [name, url] of pages) {
@@ -190,6 +203,7 @@ async function main() {
     await adminPage.goto(adminLink, { waitUntil: "networkidle2" });
     for (const [name, url] of [
       ["queue", `${APP}/queue`],
+      ["books", `${APP}/me`],
       ["story-admin", `${APP}/story/${printing!.id}`],
     ] as Array<[string, string]>) {
       await adminPage.goto(url, { waitUntil: "networkidle2" });

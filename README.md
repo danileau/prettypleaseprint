@@ -268,9 +268,17 @@ All five are settled, and recorded here so nobody has to re-derive them:
 | --- | --- |
 | Tip pill radius — README §3 says `8px`, the prototype renders `999px` | **8px.** The tokens reserve `999px` for "avatars, dots and status chips only", so two written sources beat the render. |
 | *Printing* column label — README §2 says amber `#79541a`, the prototype uses teal `#0b4340` | **Amber.** The tokens call amber "warning / in-progress only", and Printing is the in-progress state. It also makes the live column findable. |
-| Where declined stories go — `Declined` is not in the flow, so it has no column | **Off the board entirely.** The board is for work that is still moving. A declined story stays reachable from its own URL, from the Activity panel, and from the profile list when that lands. |
+| Where declined stories go — `Declined` is not in the flow, so it has no column | **Off the board entirely.** The board is for work that is still moving; the profile at `/me` carries the whole history, declined included. |
 | The whole-board empty state, which the handoff says to ask about | **Minimal.** One quiet panel saying what is true, with the Upload button already above it. No invented onboarding. |
 | Print-time estimates | **Dropped.** See below. |
+
+### The one stat that changed
+
+The handoff's admin profile card is "Printer time given". There is no honest
+number behind it once print-time estimates are gone, so rather than invent
+one it counts something real — how much geometry has actually come off the
+plate, in bytes. Swap it back the day a slicer is wired in and the hours are
+known rather than assumed.
 
 ### Why there is no print-time estimate
 
@@ -290,9 +298,6 @@ says so at the point where the old heuristic used to live.
 
 ## What is deliberately not built
 
-- **The profile screen** and its scoped stats. Declined stories are meant to
-  surface here — until it lands they are reachable only by URL and from the
-  Activity panel.
 - **Email/Slack notification delivery.** `Notification` rows and the `notify()`
   helper exist and the Activity panel reads them; only the in-app record is
   written so far.
