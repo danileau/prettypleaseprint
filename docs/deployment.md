@@ -159,18 +159,33 @@ the caller typed, and believing it would let someone put chosen strings in the
 audit log and pin their own refused attempts on another address.
 
 So it is off by default, and the trail records *no* address rather than a
-fictional one. `docker-compose.truenas.yml` turns it on, and is also the file
-that makes it true by keeping the app off every host port.
+fictional one.
 
-**Put Cloudflare in front and it has to go off again**, which is why
-`docker-compose.cf.yml` exists as a separate overlay. Cloudflare *appends* to
-`X-Forwarded-For` instead of replacing it, and NPM appends after that, so the
-left-most entry — the one `clientIp()` reads — is whatever the client chose to
-send. `CF-Connecting-IP` is the header that cannot be spoofed there, and the
-app does not read it yet. Until it does, a Cloudflare-fronted deployment
-records no address, which is the honest answer rather than an attacker-chosen
-one. The `cf` overlay is identical to the `truenas` one except that it leaves
-the setting to `.env.docker`, where it must be `false`.
+It is a **named source rather than a boolean**, because which header to
+believe depends on what is actually in front of the app — and getting that
+wrong does not fail loudly, it quietly fills the trail with addresses the
+client picked:
+
+| value | header read | when |
+| --- | --- | --- |
+| unset / `false` | none | default; correct whenever the app is reachable without the proxy |
+| `true` | left-most `X-Forwarded-For` | a proxy that **replaces** the header — Nginx Proxy Manager alone |
+| `cloudflare` | `CF-Connecting-IP` | behind Cloudflare |
+
+**Cloudflare needs its own mode** because it *appends* to `X-Forwarded-For`
+instead of replacing it, and a proxy behind it appends again — so the
+left-most entry is whatever the client sent, with the real address buried
+after it. `CF-Connecting-IP` is written at Cloudflare's edge and cannot be
+spoofed through it.
+
+The two modes never fall back to one another. Under `cloudflare`, a request
+arriving with no `CF-Connecting-IP` did not come through Cloudflare, and
+reading `X-Forwarded-For` instead would reopen exactly the hole the mode
+exists to close — so it records nothing.
+
+`docker-compose.truenas.yml` forces `true`, and is also the file that makes it
+true by keeping the app off every host port. `docker-compose.cf.yml` leaves the
+value to `.env.docker` so a Cloudflare-fronted deployment can set `cloudflare`.
 
 ### HTTPS is not optional, and here is why
 

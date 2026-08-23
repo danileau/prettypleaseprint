@@ -2,6 +2,7 @@ import "server-only";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import type { Actor } from "@/lib/scope";
+import { clientIpFrom, ipSource } from "@/lib/client-ip";
 
 /**
  * The audit trail.
@@ -41,26 +42,8 @@ export type AuditAction =
   | "file.downloaded"
   | "file.refused";
 
-/**
- * Whether `X-Forwarded-For` can be believed.
- *
- * The header is set by whoever spoke to us last. Behind a reverse proxy that
- * is the proxy, and the value is the real client. Reachable directly — on a
- * LAN, say — it is whatever the caller typed, and recording that as fact would
- * put attacker-chosen strings in the audit trail and let someone frame another
- * address for their own refused attempts.
- *
- * So it is off unless the deployment says otherwise. Without it the trail
- * records no address rather than a fictional one, which is the more useful
- * failure: a blank is obviously a blank.
- */
-const TRUST_PROXY = process.env.TRUST_PROXY_HEADERS === "true";
-
 function clientIp(h: Headers): string | null {
-  if (!TRUST_PROXY) return null;
-  // Left-most entry is the original client as the first proxy saw it.
-  const forwarded = h.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || h.get("x-real-ip")?.trim() || null;
+  return clientIpFrom(h, ipSource());
 }
 
 type RecordInput = {
