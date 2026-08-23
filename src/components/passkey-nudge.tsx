@@ -4,12 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 /**
- * The one prompt that gets people off emailed links.
+ * The one prompt that gets people onto passkeys.
  *
- * Accepting an invite offers a passkey once. Anyone who taps "not now" is on
- * an inbox round trip for every sign-in after that, forever, with nothing to
- * tell them there is a better way — which is the actual reason emailed links
- * feel like the whole experience.
+ * Registration offers a passkey once. Anyone who taps "not now" types a
+ * password for every sign-in after that, forever, with nothing to tell them
+ * there is a better way — which is the actual reason passwords feel like the
+ * whole experience.
  *
  * So it asks again. Dismissible, but only for the session: closing it is "not
  * right now", not "never mention this again". It disappears for good the
@@ -39,10 +39,10 @@ export function PasskeyNudge() {
       <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-[13.2px] px-[26.4px] py-[11px]">
         <p className="m-0 flex-1 text-[14.5px] leading-[1.4] text-ink">
           <strong className="font-display text-[15px]">
-            Tired of waiting for the sign-in email?
+            Tired of typing your password?
           </strong>{" "}
           Save a passkey and this device signs you in with a fingerprint —
-          no inbox, no link, no typing.
+          nothing to remember, nothing to phish.
         </p>
         <Link
           href="/welcome"

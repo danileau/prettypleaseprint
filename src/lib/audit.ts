@@ -26,7 +26,8 @@ export type AuditAction =
   | "auth.signed_in"
   | "auth.signed_out"
   | "user.role_changed"
-  | "access.reissued"
+  | "password.reset_requested"
+  | "password.reset_completed"
   // work
   | "story.created"
   | "upload.rejected"

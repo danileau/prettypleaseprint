@@ -13,11 +13,11 @@
  */
 import "./_env";
 import { existsSync } from "node:fs";
-import puppeteer, { type Browser } from "puppeteer-core";
+import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { db } from "../src/lib/db";
+import { TEST_PASSWORD, ensureCredentials } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
-const MAILPIT = process.env.MAILPIT_URL ?? "http://localhost:8025";
 /**
  * The real executable, not a launcher. /snap/bin/chromium is a symlink to the
  * snap wrapper, which does not forward puppeteer's flags.
@@ -39,21 +39,19 @@ function check(name: string, ok: boolean, detail = "") {
   ok ? passed++ : failures.push(name);
 }
 
-async function magicLinkFor(email: string): Promise<string | null> {
+/**
+ * Sign in through the real form, so the session exists before any passkey
+ * does. Typed rather than posted: this is the screen a person uses, and if it
+ * cannot be driven with a keyboard the passkey path is being tested on top of
+ * something broken.
+ */
+async function signInWithPassword(page: Page, username: string): Promise<void> {
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
-  await fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
-  await fetch(`${APP}/api/auth/sign-in/magic-link`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: APP },
-    body: JSON.stringify({ email, callbackURL: "/board" }),
-  });
-  const list = await (await fetch(`${MAILPIT}/api/v1/messages?limit=50`)).json();
-  for (const m of list.messages ?? []) {
-    const body = await (await fetch(`${MAILPIT}/api/v1/message/${m.ID}`)).json();
-    const hit = /http:\/\/[^\s"'<]+\/api\/auth\/magic-link\/verify[^\s"'<]*/.exec(body.Text ?? "");
-    if (hit) return hit[0].replace(/[.,]$/, "");
-  }
-  return null;
+  await page.goto(`${APP}/signin`, { waitUntil: "networkidle2" });
+  await page.type("#username", username);
+  await page.type("#password", TEST_PASSWORD);
+  await page.click('button[type="submit"]');
+  await page.waitForFunction(() => location.pathname !== "/signin", { timeout: 15_000 });
 }
 
 async function main() {
@@ -96,23 +94,22 @@ async function main() {
     });
     check("a virtual authenticator is attached", !!authenticatorId);
 
-    // --- sign in with a magic link so there is a session to enrol against ---
-    const link = await magicLinkFor(email);
-    if (!link) throw new Error("no magic link was delivered");
-    await page.goto(link, { waitUntil: "networkidle2" });
-    check("signed in via magic link",
+    // --- sign in with a password so there is a session to enrol against ---
+    await ensureCredentials(APP, user.id, "petra");
+    await signInWithPassword(page, "petra");
+    check("signed in with a username and a password",
           (await db.session.count({ where: { userId: user.id } })) === 1);
 
     // --- the nudge: the only thing that reaches someone who skipped ---
     await page.goto(`${APP}/board`, { waitUntil: "networkidle2" });
     await page.waitForFunction(
-      () => document.body.innerText.includes("Tired of waiting"),
+      () => document.body.innerText.includes("Tired of typing"),
       { timeout: 8_000 },
     ).catch(() => {});
     const beforeEnrol = await page.evaluate(() => document.body.innerText);
     check("someone with no passkey is prompted to get one",
-          beforeEnrol.includes("Tired of waiting"),
-          "no nudge — a skipper would stay on emailed links forever");
+          beforeEnrol.includes("Tired of typing"),
+          "no nudge — a skipper would type a password forever");
 
     // --- register a passkey ---
     await page.goto(`${APP}/welcome`, { waitUntil: "networkidle2" });
@@ -141,7 +138,7 @@ async function main() {
     await page.goto(`${APP}/board`, { waitUntil: "networkidle2" });
     const afterEnrol = await page.evaluate(() => document.body.innerText);
     check("the prompt disappears once a passkey exists",
-          !afterEnrol.includes("Tired of waiting"), "still nagging after enrolment");
+          !afterEnrol.includes("Tired of typing"), "still nagging after enrolment");
 
     // --- sign out, then sign back in with the passkey alone ---
     await page.evaluate(async () => {

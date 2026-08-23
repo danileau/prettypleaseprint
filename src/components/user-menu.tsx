@@ -63,7 +63,7 @@ export function UserMenu({
           <div className="mt-[13.2px] border-t-2 border-dashed border-rule pt-[13.2px]">
             <p className="m-0 font-mono text-[11.5px] uppercase text-ink-3">
               {passkeyCount === 0
-                ? "Signing in by emailed link"
+                ? "Signing in with a password"
                 : `${passkeyCount} passkey${passkeyCount === 1 ? "" : "s"} on this account`}
             </p>
             <a

@@ -21,7 +21,7 @@ services:
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
   mailpit:
     ports:
-      # 8025 is the web UI where invitations and sign-in links show up;
+      # 8025 is the web UI where invitation and reset links show up;
       # 1025 is SMTP, which the host-side suites post to directly.
       - "${MAILPIT_UI_PORT:-8025}:8025"
       - "1025:1025"

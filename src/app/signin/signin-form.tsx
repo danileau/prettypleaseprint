@@ -4,11 +4,19 @@ import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { Button, Input, Label, Notice } from "@/components/ui";
 
-type Phase = "idle" | "sending" | "sent";
+/**
+ * One message for every way a sign-in can fail.
+ *
+ * Distinguishing "no such username" from "wrong password" turns this form
+ * into a membership oracle for the office, and there is nothing the person at
+ * the keyboard can do with the difference anyway.
+ */
+const REFUSED = "That username and password do not match. Try again.";
 
 export function SignInForm({ next }: { next: string }) {
-  const [email, setEmail] = useState("");
-  const [phase, setPhase] = useState<Phase>("idle");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [passkeySupported, setPasskeySupported] = useState(false);
 
@@ -17,9 +25,9 @@ export function SignInForm({ next }: { next: string }) {
     setPasskeySupported(true);
 
     // Conditional UI: if the browser already holds a passkey for this site it
-    // offers it straight from the email field, with no click at all. Browsers
-    // without support simply never resolve this, which is why it is fire and
-    // forget.
+    // offers it straight from the username field, with no click at all.
+    // Browsers without support simply never resolve this, which is why it is
+    // fire and forget.
     void authClient.signIn.passkey({ autoFill: true }).then((res) => {
       if (res && !res.error) window.location.assign(next);
     });
@@ -31,50 +39,35 @@ export function SignInForm({ next }: { next: string }) {
     if (res?.error) {
       setError(
         res.error.message ??
-          "That passkey was not accepted. Try the email link instead.",
+          "That passkey was not accepted. Use your password instead.",
       );
       return;
     }
     window.location.assign(next);
   }
 
-  async function sendLink(e: React.FormEvent) {
+  async function signInWithPassword(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setPhase("sending");
+    setBusy(true);
 
-    const { error } = await authClient.signIn.magicLink({
-      email: email.trim().toLowerCase(),
-      callbackURL: next,
+    const { error } = await authClient.signIn.username({
+      username: username.trim().toLowerCase(),
+      password,
     });
 
-    // Deliberately identical UI whether or not the address has an account.
-    // Telling a stranger "no such user" turns this form into a membership
-    // oracle for the office.
-    if (error && error.status !== 403) {
-      setPhase("idle");
-      setError("Something went wrong sending that link. Try again in a moment.");
+    if (error) {
+      setBusy(false);
+      // 429 is worth saying out loud: "wrong password" would send someone
+      // hunting for a typo that is not there.
+      setError(
+        error.status === 429
+          ? "Too many attempts. Wait a minute and try again."
+          : REFUSED,
+      );
       return;
     }
-    setPhase("sent");
-  }
-
-  if (phase === "sent") {
-    return (
-      <div className="flex flex-col gap-[17.6px]">
-        <Notice tone="good">
-          If <strong>{email}</strong> belongs to someone here, a sign-in link is
-          on its way. It works once and expires in 10 minutes.
-        </Notice>
-        <button
-          type="button"
-          onClick={() => setPhase("idle")}
-          className="cursor-pointer self-start font-bold text-[14px] text-cherry-dk underline underline-offset-2 hover:text-cherry"
-        >
-          ← Use a different address
-        </button>
-      </div>
-    );
+    window.location.assign(next);
   }
 
   return (
@@ -92,18 +85,33 @@ export function SignInForm({ next }: { next: string }) {
         </>
       )}
 
-      <form onSubmit={sendLink} className="flex flex-col gap-[13.2px]">
+      <form onSubmit={signInWithPassword} className="flex flex-col gap-[13.2px]">
         <div>
-          <Label htmlFor="email">Your email</Label>
+          <Label htmlFor="username">Username</Label>
           <Input
-            id="email"
-            name="email"
-            type="email"
+            id="username"
+            name="username"
             required
+            // "webauthn" is what lets conditional UI offer a passkey from this
+            // field before a single character is typed.
             autoComplete="username webauthn"
-            placeholder="ayla@office.example"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            autoCapitalize="none"
+            spellCheck={false}
+            placeholder="ayla"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            name="password"
+            type="password"
+            required
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
           />
         </div>
         {/* Secondary on purpose: one primary per screen, and the passkey is
@@ -111,10 +119,10 @@ export function SignInForm({ next }: { next: string }) {
         <Button
           type="submit"
           variant="secondary"
-          disabled={phase === "sending"}
+          disabled={busy}
           className="w-full"
         >
-          {phase === "sending" ? "Sending…" : "Email me a link"}
+          {busy ? "Checking…" : "Sign in"}
         </Button>
       </form>
 
@@ -122,7 +130,8 @@ export function SignInForm({ next }: { next: string }) {
 
       <p className="m-0 border-t-2 border-dashed border-rule pt-[13.2px] text-[13.5px] leading-[1.5] text-ink-2">
         Pretty Please Print is invite-only — there is no sign-up. If you have not
-        been invited yet, ask whoever owns the printer for a link.
+        been invited yet, or you have forgotten your password, ask whoever owns
+        the printer.
       </p>
     </div>
   );
