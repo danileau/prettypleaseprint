@@ -32,6 +32,7 @@ export type AuditAction =
   | "story.status_changed"
   | "story.declined"
   | "story.flagged"
+  | "story.flag_cleared"
   | "comment.added"
   | "file.downloaded";
 

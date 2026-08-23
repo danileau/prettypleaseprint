@@ -107,13 +107,31 @@ async function main() {
     await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
   }
 
+  // The printer owner's side. A separate browser context rather than signing
+  // out: /api/auth/sign-out is POST-only, so navigating to it just hangs.
+  const adminCtx = await browser.createBrowserContext();
+  const adminPage = await adminCtx.newPage();
+  await adminPage.setViewport({ width: 1280, height: 980, deviceScaleFactor: 1 });
+  const adminLink = await magicLink(admin.email);
+  if (adminLink) {
+    await adminPage.goto(adminLink, { waitUntil: "networkidle2" });
+    for (const [name, url] of [
+      ["queue", `${APP}/queue`],
+      ["story-admin", `${APP}/story/${printing!.id}`],
+    ] as Array<[string, string]>) {
+      await adminPage.goto(url, { waitUntil: "networkidle2" });
+      await adminPage.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
+    }
+  }
+  await adminCtx.close();
+
   // Narrow, because the rail has to collapse without a media query.
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
   await page.goto(`${APP}/board`, { waitUntil: "networkidle2" });
   await page.screenshot({ path: `${OUT}/board-mobile.png`, fullPage: true });
 
   await browser.close();
-  console.info(`wrote ${pages.length + 2} screenshots to ${OUT}/`);
+  console.info(`wrote ${pages.length + 4} screenshots to ${OUT}/`);
 }
 
 main()

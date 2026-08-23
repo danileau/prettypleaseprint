@@ -51,6 +51,7 @@ Then invite people from `/admin/invites`.
 npm run verify:models         # upload validator vs. hostile fixtures (no server needed)
 npm run verify:auth           # invite + sign-in flow, end to end
 npm run verify:upload         # upload -> board -> story, end to end
+npm run verify:queue          # the admin queue and the status flow
 npm run verify:passkey        # WebAuthn ceremonies in a real browser
 npm run probe:security        # 56 OWASP-mapped security probes
 ```
@@ -259,10 +260,8 @@ says so at the point where the old heuristic used to live.
 
 ## What is deliberately not built
 
-- **The admin queue and the status flow.** `assertTransition` enforces
-  forward-only, admin-only moves and is tested, but nothing calls it yet.
-- **The conversation thread** on story detail, and the admin action panel
-  (accept / decline / flag).
+- **The conversation thread** on story detail — `Comment` exists in the schema
+  and nothing reads or writes it yet.
 - **The 3D viewer.** Needs `STLLoader` / `ThreeMFLoader` per the handoff. The
   geometry is already measured and stored, and `signedModelUrl` in
   `storage.ts` is what will feed it.
@@ -471,7 +470,7 @@ as four gates that can be required by name in branch protection:
 | --- | --- |
 | `guard` | typecheck, and the secret scanner over every tracked file |
 | `models` | the upload validator against hostile fixtures — no server needed |
-| `verify` | raises the real compose stack and runs all four integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
+| `verify` | raises the real compose stack and runs all five integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
 | `trivy` | filesystem scan for vulnerabilities, secrets and misconfiguration; HIGH/CRITICAL fail |
 
 `verify` uses docker compose rather than GitHub `services:` for two reasons:

@@ -119,6 +119,8 @@ jobs:
         run: npm run verify:auth
       - name: Upload, board and story
         run: npm run verify:upload
+      - name: Admin queue and the status flow
+        run: npm run verify:queue
 
       # Registering and using a passkey is a browser ceremony — it cannot be
       # tested with fetch. The runner ships Chrome; a CDP virtual authenticator

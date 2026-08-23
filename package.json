@@ -23,7 +23,8 @@
     "check:secrets": "tsx scripts/check-secrets.ts",
     "hooks:install": "git config core.hooksPath .githooks && echo \"pre-commit hook active\"",
     "shots": "tsx scripts/screenshot.ts",
-    "env:container": "tsx scripts/use-container-env.ts"
+    "env:container": "tsx scripts/use-container-env.ts",
+    "verify:queue": "tsx scripts/verify-queue.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

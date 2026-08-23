@@ -22,6 +22,7 @@ const NAV: Record<Actor["role"], Array<{ label: string; href: string }>> = {
     { label: "Order up", href: "/upload" },
   ],
   admin: [
+    { label: "The pass", href: "/queue" },
     { label: "The rail", href: "/board" },
     { label: "Guest list", href: "/admin/invites" },
     { label: "Audit", href: "/admin/audit" },
@@ -57,7 +58,7 @@ export async function AppHeader({
     <header data-authenticated="true" className="sticky top-0 z-40">
       <div className="layers border-b-[3px] border-ink bg-ink">
         <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-[22px] px-[26.4px] py-[13.2px]">
-          <Link href="/board" aria-label="Pretty Please Print, home">
+          <Link href={user.role === "admin" ? "/queue" : "/board"} aria-label="Pretty Please Print, home">
             {/* On the dark bar the script reads cream, not cherry. */}
             <span className="[&_span]:text-cream">
               <Brand size={34} />

@@ -1,6 +1,14 @@
 import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/authz";
 
-/** Home is the board for everyone; the admin queue is the next slice. */
-export default function Index() {
-  redirect("/board");
+export const dynamic = "force-dynamic";
+
+/**
+ * Home differs by role, exactly as the handoff specifies: the printer owner
+ * starts at the queue, because their job is deciding; everyone else starts at
+ * the rail, because theirs is watching.
+ */
+export default async function Index() {
+  const user = await requireUser("/");
+  redirect(user.role === "admin" ? "/queue" : "/board");
 }

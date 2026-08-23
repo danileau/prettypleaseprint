@@ -5,7 +5,8 @@ import { getStoryOr404, printerName, requireUser, storyRef, FLOW } from "@/lib/a
 import { quantityText, relativeTime } from "@/lib/catalog";
 import { formatBytes } from "@/lib/models";
 import { AppHeader } from "@/components/app-header";
-import { Fact, StatusChip } from "@/components/ui";
+import { Fact, Notice, StatusChip } from "@/components/ui";
+import { AdminActions } from "@/components/admin-actions";
 import { Toast } from "@/components/toast";
 
 export const dynamic = "force-dynamic";
@@ -22,9 +23,9 @@ export default async function StoryPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ sent?: string }>;
+  searchParams: Promise<{ sent?: string; toast?: string; error?: string }>;
 }) {
-  const [{ id }, { sent }] = await Promise.all([params, searchParams]);
+  const [{ id }, { sent, toast, error }] = await Promise.all([params, searchParams]);
   const storyId = Number(id);
   if (!Number.isInteger(storyId)) notFound();
 
@@ -171,11 +172,37 @@ export default async function StoryPage({
                 </ol>
               )}
             </section>
+
+            {/*
+              The printer owner's controls. Rendered only for the admin, and
+              the actions behind them check the role again — drawing a button
+              is not authorisation.
+            */}
+            {user.role === "admin" && (
+              <section className="mt-[26.4px] rounded-panel border-[3px] border-ink bg-aqua-wash p-[22px] shadow-stamp">
+                <h2 className="m-0 mb-[13.2px] font-display text-[20px] text-ink">
+                  {story.status === "Requested" ? "This one needs a yes" : "Move it along"}
+                </h2>
+                {error && (
+                  <div className="mb-[13.2px]">
+                    <Notice tone="warn">{error}</Notice>
+                  </div>
+                )}
+                <AdminActions
+                  storyId={story.id}
+                  status={story.status}
+                  flagged={story.flagged}
+                  flagReason={story.flagReason}
+                  from={`/story/${story.id}`}
+                />
+              </section>
+            )}
           </div>
         </div>
       </main>
 
-      {sent && <Toast>Sent · {owner} has been notified</Toast>}
+      {sent && <Toast>Order in · {owner} has been notified</Toast>}
+      {toast && <Toast>{toast}</Toast>}
     </>
   );
 }
