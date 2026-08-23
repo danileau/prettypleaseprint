@@ -2,6 +2,17 @@
   "name": "pretty-please-print",
   "version": "0.1.0",
   "private": true,
+  "description": "Invite-only 3D print requests for a small office \u2014 upload a model, follow it through the print stages.",
+  "license": "MIT",
+  "author": "Danilo Licitra",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danileau/ppp.git"
+  },
+  "homepage": "https://github.com/danileau/ppp#readme",
+  "bugs": {
+    "url": "https://github.com/danileau/ppp/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "next dev",
