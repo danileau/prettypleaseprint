@@ -131,7 +131,7 @@ The short version: pull a published image, put a reverse proxy in front, point
 
 ```bash
 docker compose --env-file .env.docker \
-  -f docker-compose.prod.yml -f docker-compose.truenas.yml up -d
+  -f docker-compose.prod.yml -f docker-compose.proxy.yml up -d
 ```
 
 `docker-compose.prod.yml` **consumes** images rather than building them, so a

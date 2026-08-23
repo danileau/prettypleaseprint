@@ -128,7 +128,10 @@ if [ -z "$COMPOSE_FILES" ]; then
     || echo "      (none)" >&2
   echo >&2
   echo "  Bring the stack up once by hand, or write deploy.conf:" >&2
-  echo "      PPP_COMPOSE_FILES=\"-f docker-compose.prod.yml -f docker-compose.nas.yml\"" >&2
+  echo "      PPP_COMPOSE_FILES=\"-f docker-compose.prod.yml -f docker-compose.proxy.yml\"" >&2
+  echo >&2
+  echo "  A running stack reports its own file list, if one is up elsewhere:" >&2
+  echo "      docker inspect ppp-app --format '{{index .Config.Labels \"com.docker.compose.project.config_files\"}}'" >&2
   exit 1
 fi
 
