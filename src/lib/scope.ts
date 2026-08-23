@@ -38,13 +38,41 @@ export function storyScope(actor: Actor): Prisma.StoryWhereInput {
  */
 export const storyRef = (id: number) => `PPP-${100 + id}`;
 
+/**
+ * The order a request moves through, and the only order it may move in.
+ *
+ * `Done` is the end, not the middle. It used to sit before `Delivery`, meaning
+ * "off the plate" — which left the board with nowhere to put work that was
+ * genuinely finished, so delivered tickets stayed on the rail forever and the
+ * rail stopped meaning "what is still moving". Now `Delivery` is "printed,
+ * waiting to be collected" and `Done` is "handed over", which is also how
+ * people actually describe it.
+ *
+ * Note the enum in schema.prisma keeps its original member order: Postgres
+ * cannot reorder enum values without rebuilding the type, and the order there
+ * carries no meaning. This array is where the sequence lives.
+ */
 export const FLOW = [
   "Requested",
   "Accepted",
   "Printing",
-  "Done",
   "Delivery",
+  "Done",
 ] as const satisfies readonly StoryStatus[];
+
+/**
+ * The columns the board draws — the flow minus its terminal state.
+ *
+ * The rail carries what is still moving. A finished ticket leaves it and lives
+ * on in the profile, which is the whole point of having an end state: without
+ * one the board only ever grows.
+ */
+export const BOARD = FLOW.slice(0, -1) as readonly StoryStatus[];
+
+/** Is this the end of the line? */
+export function isTerminal(status: StoryStatus): boolean {
+  return status === FLOW[FLOW.length - 1] || status === "Declined";
+}
 
 export function nextStatus(current: StoryStatus): StoryStatus | null {
   const i = (FLOW as readonly string[]).indexOf(current);

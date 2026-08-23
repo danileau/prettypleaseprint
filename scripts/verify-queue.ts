@@ -12,6 +12,7 @@ import "./_env";
  */
 import { db } from "../src/lib/db";
 import { clientIpFrom, ipSource } from "../src/lib/client-ip";
+import { BOARD, nextStatus, storyRef as storyRefOf } from "../src/lib/scope";
 import { ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
@@ -192,7 +193,7 @@ async function main() {
 
   // ------------------------------------------------------------------
   section("the flow only moves forward, one step at a time");
-  for (const expected of ["Printing", "Done", "Delivery"]) {
+  for (const expected of ["Printing", "Delivery", "Done"]) {
     page = await (await ruben.go(`${APP}/queue`)).text();
     const idx = formIndexContaining(page, `Move to ${expected}`);
     check(`the only offer is "Move to ${expected}"`, idx >= 0);
@@ -208,7 +209,7 @@ async function main() {
     body: (() => { const f = new FormData(); f.set("id", String(story.id)); f.set("from", "/queue"); return f; })(),
   });
   row = await db.story.findUnique({ where: { id: story.id } });
-  check("a bare POST cannot drive an action", row?.status === "Delivery",
+  check("a bare POST cannot drive an action", row?.status === "Done",
         `status is now ${row?.status} (raw POST returned ${atEnd.status})`);
 
   // ------------------------------------------------------------------
@@ -465,6 +466,79 @@ async function main() {
   check("the restore is audited",
         (await db.auditEvent.count({
           where: { action: "access.restored", subject: goner.email } })) === 1);
+
+  // ------------------------------------------------------------------
+  section("Done is the end of the line, and leaves the rail");
+
+  const shipped = await makeStory(ayla.id, "Bracket, delivered", "Done");
+  const boardHtml = rendered(await (await client.go(`${APP}/board`)).text());
+  check("a Done ticket is off the board",
+        !boardHtml.includes("Bracket, delivered"),
+        "the rail is supposed to carry only what is still moving");
+  check("but the board still draws the four live rails",
+        ["Requested", "Accepted", "Printing", "Delivery"].every((c) => boardHtml.includes(c)));
+  check("and Done is not one of them",
+        BOARD.length === 4 && !(BOARD as readonly string[]).includes("Done"),
+        BOARD.join(", "));
+
+  const mine = rendered(await (await client.go(`${APP}/me`)).text());
+  check("it is still visible in the profile", mine.includes("Bracket, delivered"),
+        "finished work has to remain findable, or the end state is a delete");
+
+  const doneRow = await db.story.findUnique({ where: { id: shipped.id } });
+  check("nothing moves past Done",
+        doneRow?.status === "Done" && nextStatus("Done") === null);
+  check("and Delivery still moves to Done", nextStatus("Delivery") === "Done");
+  await db.story.delete({ where: { id: shipped.id } });
+
+  // ------------------------------------------------------------------
+  section("the orderer can withdraw their own request");
+
+  const regret = await makeStory(ayla.id, "Changed my mind", "Requested");
+  let storyPage = rendered(await (await client.go(`${APP}/story/${regret.id}`)).text());
+  check("the requester is offered the control", storyPage.includes("Withdraw this request"));
+
+  const adminView = rendered(await (await ruben.go(`${APP}/story/${regret.id}`)).text());
+  check("the printer owner is not — it is not their request",
+        !adminView.includes("Withdraw this request"),
+        "seeing a ticket is not owning it");
+
+  // Not 'name="storyId"' — the conversation composer carries that too, and
+  // matched first. Target the withdraw form by its own button.
+  const wIdx = formIndexContaining(storyPage, "Yes, withdraw it");
+  check("the withdraw form is found", wIdx >= 0);
+  await client.submit(`${APP}/story/${regret.id}`, storyPage, wIdx, {
+    storyId: String(regret.id), from: `/story/${regret.id}`,
+  });
+  check("withdrawing removes the story",
+        (await db.story.count({ where: { id: regret.id } })) === 0);
+  check("and it is audited",
+        (await db.auditEvent.count({
+          where: { action: "story.withdrawn", subject: storyRefOf(regret.id) } })) === 1);
+
+  // Past Requested the printer owner has committed time; it is no longer the
+  // requester's call.
+  const underway = await makeStory(ayla.id, "Already on the bed", "Printing");
+  storyPage = rendered(await (await client.go(`${APP}/story/${underway.id}`)).text());
+  check("a ticket already being printed offers no withdrawal",
+        !storyPage.includes("Withdraw this request"));
+  const force = new FormData();
+  force.set("storyId", String(underway.id));
+  force.set("from", `/story/${underway.id}`);
+  await client.raw(`${APP}/story/${underway.id}`, { method: "POST", body: force });
+  check("and a bare POST cannot force it",
+        (await db.story.count({ where: { id: underway.id } })) === 1,
+        "a printing ticket was destroyed by a hand-rolled request");
+
+  // Somebody else's ticket must not even be visible, let alone withdrawable.
+  const notYours = await makeStory(mallory.id, "Mallory's own", "Requested");
+  const steal = new FormData();
+  steal.set("storyId", String(notYours.id));
+  steal.set("from", `/story/${notYours.id}`);
+  await client.raw(`${APP}/story/${notYours.id}`, { method: "POST", body: steal });
+  check("and a client cannot withdraw somebody else's",
+        (await db.story.count({ where: { id: notYours.id } })) === 1);
+  await db.story.deleteMany({ where: { id: { in: [underway.id, notYours.id] } } });
 
   // ------------------------------------------------------------------
   section("the audit trail believes the right header");

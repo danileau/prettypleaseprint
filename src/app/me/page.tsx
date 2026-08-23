@@ -8,7 +8,18 @@ import { relativeTime } from "@/lib/catalog";
 import { AppHeader } from "@/components/app-header";
 import { Kicker, StatusChip } from "@/components/ui";
 
+import type { StoryStatus } from "@prisma/client";
+
 export const dynamic = "force-dynamic";
+
+/**
+ * What counts as printed: it came off the plate, whether or not it has been
+ * handed over yet. Named rather than repeated as a literal pair, because the
+ * last time the flow was reordered these three call sites had to be found by
+ * grep.
+ */
+const PRINTED: StoryStatus[] = ["Delivery", "Done"];
+
 
 /**
  * The profile. Handoff §6.
@@ -37,10 +48,10 @@ export default async function ProfilePage() {
       orderBy: { createdAt: "desc" },
       include: { uploader: { select: { name: true, initials: true } } },
     }),
-    db.story.count({ where: { AND: [scope, { status: { in: ["Done", "Delivery"] } }] } }),
+    db.story.count({ where: { AND: [scope, { status: { in: PRINTED } }] } }),
     // A beer is owed once the work is actually done — not when it is asked for.
     db.story.count({
-      where: { AND: [scope, { tip: "A beer" }, { status: { in: ["Done", "Delivery"] } }] },
+      where: { AND: [scope, { tip: "A beer" }, { status: { in: PRINTED } }] },
     }),
     db.story.groupBy({
       by: ["material"],
@@ -51,12 +62,13 @@ export default async function ProfilePage() {
     }),
     db.story.count({ where: { AND: [scope, { status: "Requested" }] } }),
     db.story.aggregate({
-      where: { AND: [scope, { status: { in: ["Done", "Delivery"] } }] },
+      where: { AND: [scope, { status: { in: PRINTED } }] },
       _sum: { fileSize: true },
     }),
   ]);
 
-  const inHand = stories.filter((s) => s.status === "Delivery").length;
+  const inHand = stories.filter((s) => s.status === "Done").length;
+  const waitingToCollect = stories.filter((s) => s.status === "Delivery").length;
   const usual = favourite[0]?.material ?? "—";
 
   /*
@@ -76,7 +88,11 @@ export default async function ProfilePage() {
       ]
     : [
         { value: String(stories.length), label: "Requests made", skin: "bg-aqua" },
-        { value: String(inHand), label: "In your hands", skin: "bg-mint" },
+        {
+          value: String(waitingToCollect > 0 ? waitingToCollect : inHand),
+          label: waitingToCollect > 0 ? "Ready to collect" : "In your hands",
+          skin: waitingToCollect > 0 ? "bg-cherry-wash" : "bg-mint",
+        },
         { value: String(beers), label: `Beers owed to ${owner}`, skin: "bg-sun" },
         { value: usual, label: "Your usual material", skin: "bg-cream-2" },
       ];

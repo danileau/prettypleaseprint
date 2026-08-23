@@ -5,20 +5,25 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
-### Changed
+### Added
 
-- **`docker-compose.truenas.yml` and `docker-compose.cf.yml` are replaced by a
-  single `docker-compose.proxy.yml`.** They described the same topology and
-  differed only in that one of them hard-coded `TRUST_PROXY_HEADERS: "true"` —
-  which, because a service-level `environment:` beats `env_file:`, silently
-  overruled `.env.docker`. Behind a proxy that *appends* to `X-Forwarded-For`,
-  such as Cloudflare, that setting is wrong, so the overlay was quietly turning
-  the audit trail into fiction. The overlay now provides the network and
-  nothing else; the mode is stated once, in `.env.docker`.
+- **`Done` is now the end of the flow**, and a ticket marked Done leaves the
+  board. The order was Requested → Accepted → Printing → Done → Delivery, where
+  `Done` meant "off the plate" and `Delivery` was terminal — which left nowhere
+  to put finished work, so delivered tickets stayed on the rail forever and the
+  rail stopped meaning "what is still moving". It is now Requested → Accepted →
+  Printing → Delivery → Done. Finished work remains in *My orders*.
 
-  If you were using either file, switch to `-f docker-compose.proxy.yml` and
-  set `TRUST_PROXY_HEADERS` yourself. `PPP_PROXY_NETWORK` now names the
-  external network, so the overlay is no longer Nginx-Proxy-Manager-specific.
+  Existing rows swap, because their meaning is preserved by swapping and not by
+  leaving them alone: old `Done` ("printed, not yet with you") becomes
+  `Delivery`, old `Delivery` ("with you, finished") becomes `Done`. One
+  migration, one statement.
+
+- **The person who asked for a print can withdraw it**, while it is still
+  `Requested` or has been `Declined` — nobody has committed time to it at that
+  point. The ticket, its conversation and the uploaded file all go. Past
+  `Requested` it is the printer owner's record too, and no longer the
+  requester's call to make.
 
 ## v0.1.0
 

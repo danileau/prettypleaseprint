@@ -13,6 +13,8 @@ export {
   storyScope,
   storyRef,
   FLOW,
+  BOARD,
+  isTerminal,
   nextStatus,
   assertTransition,
   AuthzError,

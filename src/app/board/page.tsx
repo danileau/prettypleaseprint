@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { db } from "@/lib/db";
-import { requireUser, storyScope, printerName, FLOW } from "@/lib/authz";
+import { requireUser, storyScope, printerName, BOARD } from "@/lib/authz";
 import { AppHeader } from "@/components/app-header";
 import { StoryCard, type CardStory } from "@/components/story-card";
 import { Kicker } from "@/components/ui";
@@ -25,16 +25,20 @@ const RAIL: Record<string, { bar: string; note: string }> = {
   Requested: { bar: "bg-chrome", note: "waiting on a yes" },
   Accepted: { bar: "bg-aqua", note: "queued up" },
   Printing: { bar: "bg-sun", note: "on the bed" },
-  Done: { bar: "bg-mint", note: "off the plate" },
   Delivery: { bar: "bg-cherry", note: "come and get it" },
+  // Not a rail — Done is where a ticket leaves the board. Kept in the map so
+  // a chip rendered off-board still finds its colour. The colours did not move
+  // with the order because they were never about position: cherry is the
+  // state that wants somebody to act, mint is the settled one.
+  Done: { bar: "bg-mint", note: "handed over" },
 };
 
 export default async function BoardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sent?: string }>;
+  searchParams: Promise<{ sent?: string; toast?: string }>;
 }) {
-  const [{ sent }, user] = await Promise.all([searchParams, requireUser("/board")]);
+  const [{ sent, toast }, user] = await Promise.all([searchParams, requireUser("/board")]);
   const owner = await printerName();
 
   // The authorisation rule, composed into the query rather than filtered
@@ -82,7 +86,7 @@ export default async function BoardPage({
           <EmptyBoard isAdmin={isAdmin} owner={owner} />
         ) : (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] items-start gap-[13.2px]">
-            {FLOW.map((status) => {
+            {BOARD.map((status) => {
               const column = stories.filter((s) => s.status === status);
               const rail = RAIL[status]!;
               return (
@@ -129,6 +133,10 @@ export default async function BoardPage({
       </main>
 
       {sent && <Toast>Order in · {owner} has been notified</Toast>}
+      {/* Anything else an action wants to report — a withdrawal, say. `sent`
+          stays as its own flag because its wording depends on who owns the
+          printer, which an action would have to look up to say. */}
+      {!sent && toast && <Toast>{toast}</Toast>}
     </>
   );
 }

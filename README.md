@@ -33,8 +33,12 @@ that: there is no multi-tenancy, no billing, and no queue theory.
 - **Upload a model** — `.stl` or `.3mf`, validated against its actual bytes
   rather than its filename, measured for its bounding box, stored in object
   storage and never in the web root.
-- **Follow it on a board** — Requested → Accepted → Printing → Done →
-  Delivery, one step at a time, forwards only. Or Declined, with a reason.
+- **Follow it on a board** — Requested → Accepted → Printing → Delivery, one
+  step at a time, forwards only. Or Declined, with a reason. Marking it **Done**
+  takes it off the board while keeping it in *My orders*, so the rail carries
+  only what is still moving.
+- **Withdraw your own request** while nobody has acted on it — the ticket, the
+  conversation and the uploaded file go with it.
 - **Talk on the ticket** — a conversation thread per request, so "can you do it
   in teal" lives with the model rather than in a chat app.
 - **Revoke access when someone leaves** — suspends the account, signs them out
