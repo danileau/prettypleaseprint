@@ -81,6 +81,20 @@ async function main() {
     });
   }
 
+  // A short exchange on the Printing ticket, so the thread is not empty in
+  // the screenshot — an empty component says nothing about whether it works.
+  const printingSeed = await db.story.findFirst({ where: { status: "Printing" } });
+  if (printingSeed) {
+    await db.comment.createMany({
+      data: [
+        { storyId: printingSeed.id, authorId: ayla.id,
+          body: "Teal if you have it, otherwise anything dark." },
+        { storyId: printingSeed.id, authorId: admin.id,
+          body: "On the bed now, layer 84. Teal it is." },
+      ],
+    });
+  }
+
   const browser = await puppeteer.launch({
     executablePath: CHROME, headless: true,
     args: ["--no-sandbox", "--disable-dev-shm-usage"],

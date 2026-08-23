@@ -7,6 +7,7 @@ import { formatBytes } from "@/lib/models";
 import { AppHeader } from "@/components/app-header";
 import { Fact, Notice, StatusChip } from "@/components/ui";
 import { AdminActions } from "@/components/admin-actions";
+import { Conversation } from "@/components/conversation";
 import { Toast } from "@/components/toast";
 
 export const dynamic = "force-dynamic";
@@ -78,6 +79,12 @@ export default async function StoryPage({
                 </span>
               ))}
             </div>
+            <Conversation
+              storyId={story.id}
+              comments={story.comments}
+              viewerRole={user.role}
+              ownerName={owner}
+            />
           </div>
 
           {/* ---------- right: the wish and the flow ---------- */}

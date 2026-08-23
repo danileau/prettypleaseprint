@@ -51,7 +51,7 @@ Then invite people from `/admin/invites`.
 npm run verify:models         # upload validator vs. hostile fixtures (no server needed)
 npm run verify:auth           # invite + sign-in flow, end to end
 npm run verify:upload         # upload -> board -> story, end to end
-npm run verify:queue          # the admin queue and the status flow
+npm run verify:queue          # the admin queue, status flow and conversation
 npm run verify:passkey        # WebAuthn ceremonies in a real browser
 npm run probe:security        # 56 OWASP-mapped security probes
 ```
@@ -260,8 +260,6 @@ says so at the point where the old heuristic used to live.
 
 ## What is deliberately not built
 
-- **The conversation thread** on story detail — `Comment` exists in the schema
-  and nothing reads or writes it yet.
 - **The 3D viewer.** Needs `STLLoader` / `ThreeMFLoader` per the handoff. The
   geometry is already measured and stored, and `signedModelUrl` in
   `storage.ts` is what will feed it.

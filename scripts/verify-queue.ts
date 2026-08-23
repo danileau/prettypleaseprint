@@ -286,6 +286,84 @@ async function main() {
         (await db.auditEvent.count({ where: { actorId: ayla.id, action: { startsWith: "story." } } })) === 0);
 
   // ------------------------------------------------------------------
+  section("the conversation");
+  const talk = await makeStory(ayla.id, "Something to discuss", "Accepted");
+
+  // The client writes first.
+  let talkPage = await (await client.go(`${APP}/story/${talk.id}`)).text();
+  let sayIdx = formIndexContaining(talkPage, 'name="body"');
+  check("a client gets a composer on their own ticket", sayIdx >= 0);
+  await client.submit(`${APP}/story/${talk.id}`, talkPage, sayIdx, {
+    body: "Slate if you have it, otherwise anything dark.",
+  });
+  let thread = await db.comment.findMany({ where: { storyId: talk.id } });
+  check("the comment is stored", thread.length === 1, `${thread.length} comments`);
+  check("attributed to the client", thread[0]?.authorId === ayla.id);
+  check("and the printer owner is told",
+        (await db.notification.count({
+          where: { recipientId: admin.id, storyId: talk.id },
+        })) === 1);
+  check("the client is not told about their own comment",
+        (await db.notification.count({
+          where: { recipientId: ayla.id, storyId: talk.id },
+        })) === 0);
+
+  // The owner replies.
+  talkPage = await (await ruben.go(`${APP}/story/${talk.id}`)).text();
+  check("the earlier comment is on the page",
+        rendered(talkPage).includes("otherwise anything dark"));
+  sayIdx = formIndexContaining(talkPage, 'name="body"');
+  await ruben.submit(`${APP}/story/${talk.id}`, talkPage, sayIdx, {
+    body: "Only bone white on the spool today — alright?",
+  });
+  check("the reply is stored",
+        (await db.comment.count({ where: { storyId: talk.id } })) === 2);
+  check("and this time the uploader is told",
+        (await db.notification.count({
+          where: { recipientId: ayla.id, storyId: talk.id },
+        })) === 1);
+  check("commenting is audited",
+        (await db.auditEvent.count({ where: { action: "comment.added" } })) === 2);
+
+  // Empty is refused.
+  const emptySaid = await client.submit(
+    `${APP}/story/${talk.id}`,
+    await (await client.go(`${APP}/story/${talk.id}`)).text(),
+    formIndexContaining(await (await client.go(`${APP}/story/${talk.id}`)).text(), 'name="body"'),
+    { body: "   " },
+  );
+  check("an empty comment is refused",
+        paramOf(emptySaid.headers.get("location"), "error").length > 0 &&
+        (await db.comment.count({ where: { storyId: talk.id } })) === 2,
+        paramOf(emptySaid.headers.get("location"), "error"));
+
+  // Someone else's ticket is not a place to talk.
+  const mallory = await db.user.create({
+    data: { email: "mallory@office.example", name: "Mallory Vance", initials: "MA",
+            role: "client", emailVerified: true, invitedById: admin.id },
+  });
+  const other = await signIn(mallory.email);
+  const trespass = new FormData();
+  trespass.set("storyId", String(talk.id));
+  trespass.set("body", "I should not be able to say this");
+  await other.raw(`${APP}/story/${talk.id}`, { method: "POST", body: trespass });
+  check("another client cannot comment on a ticket they cannot see",
+        (await db.comment.count({ where: { storyId: talk.id } })) === 2,
+        "a comment landed on someone else's ticket");
+  check("and is never recorded as having tried successfully",
+        (await db.auditEvent.count({ where: { actorId: mallory.id, action: "comment.added" } })) === 0);
+
+  // A hostile body is rendered as text.
+  talkPage = await (await client.go(`${APP}/story/${talk.id}`)).text();
+  await client.submit(`${APP}/story/${talk.id}`, talkPage,
+    formIndexContaining(talkPage, 'name="body"'),
+    { body: '<img src=x onerror=alert(1)>' });
+  const xssPage = await (await client.go(`${APP}/story/${talk.id}`)).text();
+  check("a hostile comment body is escaped, not rendered",
+        !/<img\s+src=x/.test(xssPage) && xssPage.includes("&lt;img"),
+        "raw markup from a comment reached the page");
+
+  // ------------------------------------------------------------------
   section("the uploader sees what happened");
   const feed = await (await client.go(`${APP}/board`)).text();
   check("their Activity count is not zero", /Activity[\s\S]{0,200}[1-9]/.test(feed));
