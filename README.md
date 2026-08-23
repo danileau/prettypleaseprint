@@ -309,17 +309,27 @@ the basis for deployment:
 ```bash
 cp .env.docker.example .env.docker      # then fill in the secrets
 docker compose --env-file .env.docker \
-  -f docker-compose.prod.yml -f docker-compose.test.yml \
-  --profile mailcatcher up -d --build
+  -f docker-compose.prod.yml -f docker-compose.build.yml \
+  -f docker-compose.test.yml --profile mailcatcher up -d --build
 ```
 
 App on :3000, Mailpit on :8025 — every invitation and sign-in link lands there,
 so the whole flow is clickable without a mail server.
 
-**`docker-compose.prod.yml` publishes no host ports on its own.** On its own
-the stack runs and is unreachable. Each context adds only what it needs:
-`docker-compose.test.yml` for a local run, `docker-compose.truenas.yml` for a
-deployment behind a proxy. Nothing is exposed by default.
+Four compose files, each with one job:
+
+| File | Job |
+| --- | --- |
+| `docker-compose.yml` | dev infrastructure only — the app runs on the host under `npm run dev` |
+| `docker-compose.prod.yml` | the full stack, **consuming published images**. Publishes no host ports. |
+| `docker-compose.build.yml` | puts the build context back, for local work and CI |
+| `docker-compose.test.yml` | publishes the ports a local run and the host-side suites need |
+| `docker-compose.truenas.yml` | the proxy network, for a deployment |
+
+`prod` consumes rather than builds on purpose: a deployment then needs no
+source tree and no toolchain, and what runs there is byte-for-byte what CI
+tested. It also publishes **no host ports at all** — each context adds only
+what it needs, so nothing is exposed by default.
 
 `--env-file` is not optional — compose reads `.env` for `${...}` interpolation,
 and `.env` here belongs to the host-side dev workflow.
@@ -348,6 +358,12 @@ docker network create npm-proxy
 docker network connect npm-proxy <your-nginx-proxy-manager-container>
 ```
 
+**Authenticate to the registry once**, so the NAS can pull what CI publishes:
+
+```bash
+docker login ghcr.io -u <your-github-user> -p <PAT with read:packages>
+```
+
 **In `.env.docker`:**
 
 ```bash
@@ -356,15 +372,26 @@ APP_URL=https://print.example.org
 PASSKEY_RP_ID=print.example.org        # permanent — see below
 TRUST_PROXY_HEADERS=true
 SMTP_URL=smtp://user:pass@mail.example.org:587
+
+PPP_REGISTRY=ghcr.io/danileau
+PPP_TAG=a1b2c3d                        # a commit SHA, not `latest`
 ```
+
+Pin `PPP_TAG` to a SHA rather than `latest`. It is what makes a deploy
+reproducible, and **it is also how you roll back** — set the previous SHA and
+bring the stack up again.
 
 **Bring it up** — without `--profile mailcatcher`, which exists to catch mail
 in development and has no business on a deployed host:
 
 ```bash
 docker compose --env-file .env.docker \
+  -f docker-compose.prod.yml -f docker-compose.truenas.yml pull
+docker compose --env-file .env.docker \
   -f docker-compose.prod.yml -f docker-compose.truenas.yml up -d
 ```
+
+Deploying is a human action by design. Nothing in CI reaches into the NAS.
 
 **In Nginx Proxy Manager**, add a Proxy Host:
 
@@ -434,6 +461,35 @@ files). A ZFS snapshot of the dataset captures both. `.env.docker` holds the
 secrets and is not in the repo — keep it somewhere you will still have it after
 a rebuild, because losing `BETTER_AUTH_SECRET` invalidates every session and
 losing `DB_PASSWORD` locks you out of the database.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and every push to main,
+as four gates that can be required by name in branch protection:
+
+| Gate | What it does |
+| --- | --- |
+| `guard` | typecheck, and the secret scanner over every tracked file |
+| `models` | the upload validator against hostile fixtures — no server needed |
+| `verify` | raises the real compose stack and runs all four integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
+| `trivy` | filesystem scan for vulnerabilities, secrets and misconfiguration; HIGH/CRITICAL fail |
+
+`verify` uses docker compose rather than GitHub `services:` for two reasons:
+`services:` cannot override a container's command, which MinIO needs, and
+running the same command a developer runs puts **the compose files themselves
+under test**. A broken overlay fails in CI rather than on the NAS.
+
+Two more workflows:
+
+- **`release-images.yml`** — every merge to main builds `ppp-app` and
+  `ppp-migrate`, pushes them to ghcr.io tagged with the commit SHA and
+  `latest`, signs them with cosign (keyless, via GitHub OIDC), and scans the
+  *published* image. A base image can carry a CVE that no scan of this
+  checkout would ever see.
+- **`security-scan.yml`** — daily, against a fresh scanner and a fresh
+  database, over the repo *and* the published images. This closes the gap the
+  PR gate cannot: a CVE published after the last commit still lands in the
+  committed lockfile and in the base layers already running on the NAS.
 
 ## Security
 

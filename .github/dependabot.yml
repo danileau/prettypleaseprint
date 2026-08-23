@@ -1,0 +1,45 @@
+# Dependabot.
+#
+# Discipline: never blind-merge a major. A major rides its own pull request,
+# gets its release notes read and a local test pass. Minor and patch are
+# grouped weekly to keep the noise down; they still go through CI.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Next 16 changed caching defaults and removed APIs. It needs a
+      # deliberate migration with a visual pass over every screen, not a
+      # dependabot bump. 15.x minor/patch still flow through.
+      - dependency-name: next
+        update-types: [version-update:semver-major]
+      # Prisma 7 moves the generated client's location and goes ESM-only.
+      # Deliberate migration, together with the Dockerfile's copy paths.
+      - dependency-name: prisma
+        update-types: [version-update:semver-major]
+      - dependency-name: "@prisma/client"
+        update-types: [version-update:semver-major]
+      # @types/node majors track the Node runtime major. This app runs Node 22
+      # (Dockerfile and ci.yml), so the types stay on 22 — types ahead of the
+      # runtime describe APIs that typecheck clean and then throw. Bump only
+      # together with the Node version in both places.
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      # Actions are low-risk infrastructure; their majors rarely change
+      # behaviour. One grouped PR rather than one per action — the
+      # majors-ride-alone rule is for runtime dependencies.
+      actions-all:
+        patterns: ["*"]

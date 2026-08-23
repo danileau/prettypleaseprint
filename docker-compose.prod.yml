@@ -1,13 +1,24 @@
 # Pretty Please Print — the whole stack in containers.
 #
+# This file CONSUMES published images; it does not build them. A deployment
+# pulls a tag that CI built, signed and scanned, exactly like ciphra's VPS —
+# so the NAS never needs the source tree or a toolchain, and what runs there
+# is byte-for-byte what the pipeline tested.
+#
+#   PPP_REGISTRY  default ghcr.io/danileau
+#   PPP_TAG       default latest; pin to a commit SHA for a real deployment,
+#                 because that is also how you roll back.
+#
+# To build locally instead, add -f docker-compose.build.yml.
+#
 # This file alone publishes NO host ports: on its own the stack is running but
 # unreachable. That is deliberate — every context adds only the ports it needs.
 #
-#   Local, everything included and reachable (Mailpit catches the mail):
+#   Local, built from source and reachable (Mailpit catches the mail):
 #     cp .env.docker.example .env.docker
 #     docker compose --env-file .env.docker \
-#       -f docker-compose.prod.yml -f docker-compose.test.yml \
-#       --profile mailcatcher up -d --build
+#       -f docker-compose.prod.yml -f docker-compose.build.yml \
+#       -f docker-compose.test.yml --profile mailcatcher up -d --build
 #
 #   TrueNAS behind Nginx Proxy Manager:
 #     docker compose --env-file .env.docker \
@@ -31,9 +42,7 @@ services:
   # Applies migrations and upserts the admin, then exits. The app waits for it
   # to finish, so a deploy can never serve against an unmigrated schema.
   migrate:
-    build:
-      context: .
-      target: migrator
+    image: ${PPP_REGISTRY:-ghcr.io/danileau}/ppp-migrate:${PPP_TAG:-latest}
     container_name: ppp-migrate
     env_file: [.env.docker]
     environment:
@@ -44,9 +53,7 @@ services:
     restart: "no"
 
   app:
-    build:
-      context: .
-      target: runner
+    image: ${PPP_REGISTRY:-ghcr.io/danileau}/ppp-app:${PPP_TAG:-latest}
     container_name: ppp-app
     <<: *restart
     env_file: [.env.docker]

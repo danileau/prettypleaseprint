@@ -1,0 +1,24 @@
+# Build overlay — for local development and CI.
+#
+# docker-compose.prod.yml pulls published images so a deployment needs no
+# source tree. This puts the build context back, so the same stack can be
+# raised from a working copy:
+#
+#   docker compose --env-file .env.docker \
+#     -f docker-compose.prod.yml -f docker-compose.build.yml \
+#     -f docker-compose.test.yml --profile mailcatcher up -d --build
+#
+# CI uses exactly this combination, so the thing under test is the same
+# artifact the release workflow publishes.
+services:
+  app:
+    build:
+      context: .
+      target: runner
+    image: ${PPP_REGISTRY:-ghcr.io/danileau}/ppp-app:${PPP_TAG:-latest}
+
+  migrate:
+    build:
+      context: .
+      target: migrator
+    image: ${PPP_REGISTRY:-ghcr.io/danileau}/ppp-migrate:${PPP_TAG:-latest}

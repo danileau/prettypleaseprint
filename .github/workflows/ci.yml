@@ -1,0 +1,155 @@
+# CI — every pull request and every push to main.
+#
+# Four independent gates, so branch protection can require them by name:
+#
+#   guard    — typecheck, and the secret scanner over the whole tree. Cheap
+#              and first: a leaked credential should fail in seconds, not
+#              after a six-minute integration run.
+#   models   — the upload validator against hostile fixtures. Needs no
+#              server and no database, so it stays a fast gate of its own.
+#   verify   — raises the REAL compose stack from source and runs every
+#              suite against the built image, including the WebAuthn
+#              ceremonies in a headless Chrome. This is the one that
+#              matters: it exercises the artifact the release workflow
+#              publishes, not a `next dev` approximation.
+#   trivy    — filesystem scan; HIGH/CRITICAL fail the run.
+#
+# `verify` deliberately uses docker compose rather than GitHub `services:`.
+# Two reasons: `services:` cannot override a container's command, which MinIO
+# needs, and running the same command a developer runs means the compose files
+# themselves are under test. A broken overlay fails here rather than on the NAS.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Generate the Prisma client
+        run: npx prisma generate
+      - name: Typecheck
+        run: npx tsc --noEmit
+      # Cross-checks every tracked file against known credential shapes. In CI
+      # there are no local .env files, so the value-matching pass has nothing
+      # to compare against and only the pattern pass runs — which is exactly
+      # the half that catches a secret someone typed straight into a file.
+      - name: Secret scan
+        run: npm run check:secrets -- --all
+
+  models:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Upload validator vs. hostile fixtures
+        run: npm run verify:models
+
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+
+      # Throwaway credentials, generated per run. Nothing here is a secret:
+      # the stack lives for the length of this job and is never reachable from
+      # outside the runner.
+      - name: Compose environment
+        run: |
+          cp .env.docker.example .env.docker
+          {
+            echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)"
+            echo "DB_PASSWORD=$(openssl rand -hex 24)"
+            echo "S3_SECRET_KEY=$(openssl rand -hex 24)"
+            echo "ADMIN_EMAIL=ci-admin@example.test"
+            echo "ADMIN_NAME=Ruben Haas"
+          } >> .env.docker
+
+      - name: Raise the stack
+        run: |
+          docker compose --env-file .env.docker \
+            -f docker-compose.prod.yml -f docker-compose.build.yml \
+            -f docker-compose.test.yml --profile mailcatcher up -d --build
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS -m 3 http://localhost:3000/api/health >/dev/null 2>&1; then
+              echo "healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the app never became healthy"
+          docker compose --env-file .env.docker -f docker-compose.prod.yml \
+            -f docker-compose.build.yml -f docker-compose.test.yml logs --tail=80
+          exit 1
+
+      # The host-side suites read .env; the stack's credentials are generated.
+      - name: Point the suites at the stack
+        run: npm run env:container
+
+      - name: Invite and sign-in flow
+        run: npm run verify:auth
+      - name: Upload, board and story
+        run: npm run verify:upload
+
+      # Registering and using a passkey is a browser ceremony — it cannot be
+      # tested with fetch. The runner ships Chrome; a CDP virtual authenticator
+      # supplies the hardware. Without this, nothing in CI covers the primary
+      # way people are meant to sign in.
+      - name: WebAuthn ceremonies (real browser)
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: npm run verify:passkey
+
+      - name: OWASP-mapped security probes
+        run: npm run probe:security
+
+      - name: Container logs on failure
+        if: failure()
+        run: |
+          docker compose --env-file .env.docker -f docker-compose.prod.yml \
+            -f docker-compose.build.yml -f docker-compose.test.yml logs --tail=200
+
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy fs scan (HIGH/CRITICAL fail)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          # Dockerfile and compose misconfigurations, and any committed
+          # secret, gate the build too — not only dependency CVEs.
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
