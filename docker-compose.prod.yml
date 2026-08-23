@@ -22,7 +22,7 @@
 #
 #   TrueNAS behind Nginx Proxy Manager:
 #     docker compose --env-file .env.docker \
-#       -f docker-compose.prod.yml -f docker-compose.truenas.yml up -d
+#       -f docker-compose.prod.yml -f docker-compose.proxy.yml up -d
 #
 # --env-file is not optional: compose reads .env for ${...} interpolation, and
 # .env here belongs to the host-side dev workflow. Without it the stack builds
@@ -72,10 +72,10 @@ services:
       # including scheme and port.
       BETTER_AUTH_URL: ${APP_URL:-http://localhost:3000}
       # Forwarded client addresses are only believed when a proxy is genuinely
-      # the only way in — see docker-compose.truenas.yml and src/lib/audit.ts.
+      # the only way in — see docker-compose.proxy.yml and src/lib/client-ip.ts.
       TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
     # No ports are published here on purpose. A deployment puts a reverse proxy
-    # in front (docker-compose.truenas.yml); local testing publishes them with
+    # in front (docker-compose.proxy.yml); local testing publishes them with
     # docker-compose.test.yml. Nothing is reachable by default.
     depends_on:
       db:

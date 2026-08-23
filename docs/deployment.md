@@ -28,8 +28,7 @@ Five compose files, each with one job:
 | `docker-compose.prod.yml` | the full stack, **consuming published images**. Publishes no host ports. |
 | `docker-compose.build.yml` | puts the build context back, for local work and CI |
 | `docker-compose.test.yml` | publishes the ports a local run and the host-side suites need |
-| `docker-compose.truenas.yml` | the proxy network, for a deployment behind Nginx Proxy Manager alone |
-| `docker-compose.cf.yml` | the same, but with Cloudflare proxying in front of NPM |
+| `docker-compose.proxy.yml` | the proxy network, for any deployment behind a reverse proxy |
 
 `prod` consumes rather than builds on purpose: a deployment then needs no
 source tree and no toolchain, and what runs there is byte-for-byte what CI
@@ -91,9 +90,9 @@ in development and has no business on a deployed host:
 
 ```bash
 docker compose --env-file .env.docker \
-  -f docker-compose.prod.yml -f docker-compose.truenas.yml pull
+  -f docker-compose.prod.yml -f docker-compose.proxy.yml pull
 docker compose --env-file .env.docker \
-  -f docker-compose.prod.yml -f docker-compose.truenas.yml up -d
+  -f docker-compose.prod.yml -f docker-compose.proxy.yml up -d
 ```
 
 Deploying is a human action by design. Nothing in CI reaches into the NAS.
@@ -183,9 +182,30 @@ arriving with no `CF-Connecting-IP` did not come through Cloudflare, and
 reading `X-Forwarded-For` instead would reopen exactly the hole the mode
 exists to close — so it records nothing.
 
-`docker-compose.truenas.yml` forces `true`, and is also the file that makes it
-true by keeping the app off every host port. `docker-compose.cf.yml` leaves the
-value to `.env.docker` so a Cloudflare-fronted deployment can set `cloudflare`.
+`docker-compose.proxy.yml` is what makes any of these honest, by keeping the
+app off every host port so the proxy really is the only way in. It sets no
+value itself, deliberately: a service-level `environment:` beats `env_file:`,
+so an overlay that hard-codes one silently overrules your configuration. That
+is not hypothetical — an earlier version of this file forced `true`, and a
+Cloudflare-fronted deployment editing `.env.docker` found it had no effect
+while its audit trail filled with client-chosen addresses.
+
+**Publish a host port and the guarantee goes.** If your proxy cannot reach
+containers by name and needs `<host-ip>:<port>` instead, add a small overlay of
+your own:
+
+```yaml
+# docker-compose.published-port.yml
+services:
+  app:
+    ports:
+      - "30222:3000"
+```
+
+and understand what it costs: anyone on the LAN can then reach the app
+directly and send whatever header `TRUST_PROXY_HEADERS` is set to believe.
+Binding to the Docker bridge (`172.17.0.1:30222:3000`) keeps containers able to
+reach it while the LAN cannot.
 
 ### HTTPS is not optional, and here is why
 

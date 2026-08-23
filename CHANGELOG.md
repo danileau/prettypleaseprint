@@ -3,6 +3,23 @@
 Notable changes. Every entry names a released version; deployments pin
 `PPP_TAG` to one of these, or to a commit SHA if they follow `main` closely.
 
+## Unreleased
+
+### Changed
+
+- **`docker-compose.truenas.yml` and `docker-compose.cf.yml` are replaced by a
+  single `docker-compose.proxy.yml`.** They described the same topology and
+  differed only in that one of them hard-coded `TRUST_PROXY_HEADERS: "true"` —
+  which, because a service-level `environment:` beats `env_file:`, silently
+  overruled `.env.docker`. Behind a proxy that *appends* to `X-Forwarded-For`,
+  such as Cloudflare, that setting is wrong, so the overlay was quietly turning
+  the audit trail into fiction. The overlay now provides the network and
+  nothing else; the mode is stated once, in `.env.docker`.
+
+  If you were using either file, switch to `-f docker-compose.proxy.yml` and
+  set `TRUST_PROXY_HEADERS` yourself. `PPP_PROXY_NETWORK` now names the
+  external network, so the overlay is no longer Nginx-Proxy-Manager-specific.
+
 ## v0.1.0
 
 The first release worth naming. Everything the design handoff asked for is
