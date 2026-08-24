@@ -22,7 +22,7 @@ docker run --rm -v "$PWD:/src:ro" semgrep/semgrep semgrep scan \
   --config=p/owasp-top-ten --config=p/security-audit --config=p/nextjs /src/src
 docker run --rm --network host ghcr.io/zaproxy/zaproxy:stable \
   zap-baseline.py -t http://localhost:3000        # DAST
-npm run probe:security                     # DAST, app-specific (62 probes)
+npm run probe:security                     # DAST, app-specific (91 probes)
 ```
 
 ## Result
@@ -34,7 +34,7 @@ npm run probe:security                     # DAST, app-specific (62 probes)
 | Syft + Grype | SBOM, binary contents | **92 (2 crit, 46 high)** | 0 |
 | Semgrep | 153 rules, 37 files | 1 (false positive) | 0 |
 | OWASP ZAP baseline | passive DAST | **1 medium, 3 low** | 0 fail / 63 pass |
-| `probe:security` | 62 app-specific probes | **2 real, 4 artifacts** | 62 pass |
+| `probe:security` | 91 app-specific probes | **2 real, 4 artifacts** | 91 pass |
 | `verify:models` | 29 upload-validator checks | — | 29 pass |
 | `verify:passkey` | WebAuthn in a real browser | *unverified* | 13 pass |
 
@@ -42,7 +42,8 @@ A generic scanner cannot reason about *this* app's authority model, so the
 probe suite in [`scripts/security-probe.ts`](../scripts/security-probe.ts) covers
 what ZAP structurally cannot: whether a client can call the admin API, whether
 an invite is single-use, whether a role can be set from outside, whether a
-captured cookie survives sign-out.
+captured cookie survives sign-out, and — since the JSON API landed — whether
+the same authority model holds when the caller is not a browser.
 
 ## Findings that were real
 
@@ -152,13 +153,13 @@ hit was a false positive *inside* that generated file.
 
 | | Category | Verdict |
 | --- | --- | --- |
-| **A01** | Broken Access Control | **Pass.** Client refused on the admin page (404, not 403 — a 403 confirms existence) and on all six admin-plugin endpoints (`list-users`, `set-role`, `create-user`, `impersonate-user`, `remove-user`, `list-user-sessions`). Role unchanged after escalation attempts; no back-door account. `storyScope` hides another client's story. A forged session cookie reaches nothing. |
+| **A01** | Broken Access Control | **Pass.** Client refused on the admin page (404, not 403 — a 403 confirms existence) and on all six admin-plugin endpoints (`list-users`, `set-role`, `create-user`, `impersonate-user`, `remove-user`, `list-user-sessions`). Role unchanged after escalation attempts; no back-door account. `storyScope` hides another client's story. A forged session cookie reaches nothing. The JSON API is probed as a second front door onto the same operations: a client is refused `advance`, `decline`, `flag` and `clear-flag` (403, and the ticket does not move); another client's ticket, thread and model are each 404 rather than 403; and the printer owner — the widest scope in the app — still cannot withdraw somebody else's request. |
 | **A02** | Cryptographic Failures | **Pass.** Session cookie `HttpOnly`, `SameSite=Lax`, `Secure`, `__Secure-` prefixed. Invite tokens stored as SHA-256 only; set-password tokens hashed at rest (`verification.storeIdentifier: "hashed"`) — both verified against the live database. Passwords are stored as Better Auth's scrypt digest, asserted against the live `account` row rather than assumed. |
 | **A03** | Injection | **Pass.** SQL metacharacters in the username field handled (Prisma parameterises); no 5xx, table intact. Stored XSS via display name escaped in both DOM and flight payload. Reflected XSS via `?error=` and via the invite-token path segment both escaped. CRLF in the email field does not reach the mailer. Uploads are validated against their bytes, not their filename — a PDF, an ELF binary and an HTML page renamed `.stl` are all refused, as is an STL that lies about its triangle count. |
 | **A04** | Insecure Design | **Pass.** No public registration route: `/signup` and `/register` do not exist, and the sign-up endpoint that *does* exist — the one an invitation link posts to — answers 403 to anybody without a pending invite, leaving no row. Invite-only enforced in one hook across every auth method. Invites single-use, expiring, revocable, rotated on resend. Password guessing rate-limited and confirmed firing. |
-| **A05** | Security Misconfiguration | **Pass, after fixes 2 and 3.** Full header set; `X-Powered-By` suppressed; `.env`, `.git/config`, `package.json` and the Prisma schema all unreachable; malformed input returns no stack trace. |
+| **A05** | Security Misconfiguration | **Pass, after fixes 2 and 3.** Full header set; `X-Powered-By` suppressed; `.env`, `.git/config`, `package.json` and the Prisma schema all unreachable; malformed input returns no stack trace. A write to the API carrying a foreign `Origin` is refused. Neither `/api/openapi.json` nor the console at `/docs` is served to a stranger, and the console loads no subresource from another origin — Swagger UI is vendored into `public/` at build time rather than pulled from a CDN, so the CSP needed no relaxation. |
 | **A06** | Vulnerable Components | **Pass, after fixes 4 and 5.** Zero across three independent scanners. |
-| **A07** | Auth Failures | **Pass, after fix 1.** Passwords: ≥10 characters, breach-checked against HIBP by k-anonymity, guessing capped at 10/min per IP. No user enumeration — a wrong password and an invented username give byte-identical responses, and an unknown username still pays for a hash so the wall clock does not answer either. Set-password links single-use, 30-minute TTL, hashed at rest, and they establish **no session**. Setting a password revokes the sessions the old one opened. Off-site and protocol-relative redirect targets refused, both via `?next=` and via the API's `callbackURL`. Sign-out kills the session server-side. See the section below. |
+| **A07** | Auth Failures | **Pass, after fix 1.** Passwords: ≥10 characters, breach-checked against HIBP by k-anonymity, guessing capped at 10/min per IP. No user enumeration — a wrong password and an invented username give byte-identical responses, and an unknown username still pays for a hash so the wall clock does not answer either. Set-password links single-use, 30-minute TTL, hashed at rest, and they establish **no session**. Setting a password revokes the sessions the old one opened. Off-site and protocol-relative redirect targets refused, both via `?next=` and via the API's `callbackURL`. Sign-out kills the session server-side. A bearer token is the session token rather than a separate credential: an invented one grants nothing, and sign-out revokes the token at the same instant it revokes the cookie — probed, because a token that outlived sign-out would be a way back into an account whose owner believes they have left. See the section below. |
 | **A08** | Integrity Failures | **Pass.** `role`, `initials` and `invitedById` cannot be set from the request body: declared `input: false`, and Better Auth refuses the whole sign-up with `FIELD_NOT_ALLOWED` rather than silently trimming it. A chosen `id` and a posted `emailVerified` reach the endpoint undeclared and are overruled server-side from the invite. Both halves probed. On upload, `uploaderId` comes from the session and a posted `status` is ignored, both probed. Storage keys are generated, never derived from the filename. Lockfile committed. |
 | **A09** | Logging & Monitoring | **Pass.** An append-only `AuditEvent` table records invitations sent, resent, revoked, accepted and *rejected*; access revoked and restored; password resets requested and completed; sign-in and sign-out; story creation and refused uploads. The client address is recorded only from a header the deployment has explicitly named as trustworthy (`TRUST_PROXY_HEADERS`), and no address at all otherwise — a blank rather than a fiction. Rows are denormalised (`actorEmail`, `subject`) so the trail still reads correctly after the user or story it refers to is deleted, and a probe asserts no token or secret reaches `detail`. |
 | **A10** | SSRF | **Pass (low exposure).** The app makes no outbound request from user input. A link-local `callbackURL` (`169.254.169.254`) is refused. |
@@ -317,13 +318,17 @@ README now says.
   oversight — revisit if the group grows or the app is ever exposed beyond
   the office.
 - **No authenticated active scan.** ZAP ran a passive baseline against the
-  unauthenticated surface. The authenticated surface is covered by the 62
+  unauthenticated surface. The authenticated surface is covered by the 91
   custom probes instead, which is better for authorisation logic and worse for
   generic injection classes. Once the board and upload screens land, an
   authenticated ZAP active scan is worth configuring.
-- **CSP verified against served markup, not a live browser.** Every script is
-  nonced and there are no external subresources, but a browser smoke test
-  should confirm nothing is blocked at runtime.
+- **CSP verified against served markup, not a live browser** — except at
+  `/docs`, which was. Building the API console forced the issue: its stylesheet
+  had to move out of an inline `<style>` block and into a file, because
+  `style-src 'self'` drops the block and the page renders *unstyled* rather
+  than failing. That is the failure mode this item is about — a policy
+  violation that looks like a design bug. The rest of the app still deserves
+  the same browser check.
 - **Signed model URLs are minted but nothing serves them yet.**
   `signedModelUrl` exists with a 10-minute expiry and the ownership check
   gates it, but the download route lands with the 3D viewer. When it does,
@@ -339,6 +344,18 @@ README now says.
 - **CSRF rests on Origin checking plus `SameSite=Lax`**, which is Better
   Auth's model and is sound for this threat profile. There are no
   per-form tokens; if the app ever needs to accept cross-site POSTs, that
-  changes.
+  changes. The JSON API keeps to the same model: a write arriving with an
+  `Origin` naming somewhere else is refused, while one with no `Origin` at all
+  is allowed — that is `curl`, not a browser being driven by somebody else's
+  page. A bearer token cannot be attached cross-origin at all, because the app
+  serves no CORS headers and the preflight fails.
+- **A bearer token is a long-lived credential in a shell history.** It lasts
+  as long as the session (30 days), carries the full authority of the account,
+  and — unlike the cookie — is neither `HttpOnly` nor `SameSite`-protected. It
+  is revocable by signing out, by an admin revoking access and by a password
+  reset, which is what makes it acceptable at this size; there is no scoped or
+  read-only variant, and adding one would mean a credential store this app
+  does not otherwise need. [`docs/api.md`](api.md) says to sign in fresh for a
+  script rather than reusing the browser's token.
 - **No second factor, and no self-service password change.** Both are in
   [Residual risk accepted](#residual-risk-accepted) above with the reasoning.

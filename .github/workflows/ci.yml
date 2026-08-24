@@ -132,6 +132,12 @@ jobs:
         run: npm run verify:upload
       - name: Admin queue and the status flow
         run: npm run verify:queue
+      # The second front door onto the same operations. Runs against the built
+      # image, which is the only place the production CSP is in force — the
+      # console's inline-script nonce and its stylesheet-in-a-file are both
+      # things that render a page either way and only *work* under that policy.
+      - name: The JSON API, the OpenAPI document and the console
+        run: npm run verify:api
 
       # Registering and using a passkey is a browser ceremony — it cannot be
       # tested with fetch. The runner ships Chrome; a CDP virtual authenticator

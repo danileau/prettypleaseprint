@@ -74,6 +74,23 @@ export function UserMenu({
             </a>
           </div>
 
+          {/* The API console. In the account menu rather than the nav because
+              it is a tool for the person, not a place the work lives — and
+              because somebody who wants it goes looking here first. Not
+              admin-only: a client's own tickets are as reachable over HTTP as
+              they are on the board, under exactly the same scope. */}
+          <div className="mt-[13.2px] border-t-2 border-dashed border-rule pt-[13.2px]">
+            <a
+              href="/docs"
+              className="font-bold text-[14px] text-cherry-dk underline underline-offset-2 hover:text-cherry"
+            >
+              API &amp; docs →
+            </a>
+            <p className="m-0 mt-[2px] font-mono text-[11.5px] text-ink-3">
+              Every endpoint, and a console to call them from.
+            </p>
+          </div>
+
           <button
             type="button"
             onClick={async () => {

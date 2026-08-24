@@ -46,6 +46,25 @@ export function middleware(request: NextRequest) {
     return res;
   };
 
+  /**
+   * Better Auth's `openAPI()` plugin is enabled so `src/lib/openapi.ts` can
+   * ask it to describe the auth surface — in process, as
+   * `auth.api.generateOpenAPISchema()`. The plugin also mounts that as an
+   * HTTP endpoint, and answers it to anybody with no session at all.
+   *
+   * Nothing calls it over HTTP, so it is closed here rather than left open on
+   * the reasoning that it "only" leaks metadata. It would tell a stranger
+   * which auth plugins this deployment runs and every path they expose, which
+   * is precisely what /api/health is deliberately terse about. 404 rather
+   * than 401, because as far as any caller is concerned it does not exist.
+   *
+   * The plugin offers no option to skip mounting it; if it ever does, this
+   * goes away.
+   */
+  if (pathname.startsWith("/api/auth/open-api")) {
+    return withCsp(new NextResponse(null, { status: 404 }));
+  }
+
   // API routes are never redirected. A caller that is not signed in needs a
   // 401 with a JSON body, not a 307 to an HTML page it cannot parse — an XHR
   // upload following that redirect would report a mystifying success.

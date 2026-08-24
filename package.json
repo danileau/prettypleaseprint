@@ -15,7 +15,9 @@
   },
   "type": "module",
   "scripts": {
+    "predev": "npm run vendor:swagger",
     "dev": "next dev",
+    "prebuild": "npm run vendor:swagger",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
@@ -36,7 +38,9 @@
     "hooks:install": "git config core.hooksPath .githooks && echo \"pre-commit hook active\"",
     "shots": "tsx scripts/screenshot.ts",
     "env:container": "tsx scripts/use-container-env.ts",
-    "verify:queue": "tsx scripts/verify-queue.ts"
+    "verify:queue": "tsx scripts/verify-queue.ts",
+    "verify:api": "tsx scripts/verify-api.ts",
+    "vendor:swagger": "tsx scripts/vendor-swagger.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -65,6 +69,7 @@
     "@types/three": "^0.185.4",
     "prisma": "6.19.3",
     "puppeteer-core": "^25.8.0",
+    "swagger-ui-dist": "^5.32.14",
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.12",
     "typescript": "5.9.3"
