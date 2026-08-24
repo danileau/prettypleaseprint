@@ -12,3 +12,8 @@ README.md
 SECURITY.md
 # The design handoff is reference material, not application source.
 Pretty Please Print/
+# Swagger UI is vendored into here by `prebuild`, inside the builder stage.
+# Copying a developer's working copy in first would put whatever happens to be
+# on their disk into the build context, when the version the lockfile pins is
+# the one that should ship.
+public/docs/

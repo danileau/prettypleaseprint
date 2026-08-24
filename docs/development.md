@@ -36,8 +36,9 @@ npm run verify:models         # upload validator vs. hostile fixtures (no server
 npm run verify:auth           # registration, sign-in and password reset, end to end
 npm run verify:upload         # upload -> board -> story, end to end
 npm run verify:queue          # the admin queue, status flow and conversation
+npm run verify:api            # the JSON API, the OpenAPI document and the console
 npm run verify:passkey        # WebAuthn ceremonies in a real browser
-npm run probe:security        # 62 OWASP-mapped security probes
+npm run probe:security        # 91 OWASP-mapped security probes
 ```
 
 ## Verifying it

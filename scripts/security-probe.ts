@@ -270,6 +270,199 @@ async function main() {
         !!spoofed && !spoofed.storageKey.includes("spoof"),
         spoofed?.storageKey ?? "");
 
+  // -------------------------------------------------------------------
+  // The JSON API.
+  //
+  // It is a second front door onto the same operations as the pages, so it
+  // needs the same probes rather than the same *reasoning*. Both go through
+  // src/lib/stories.ts, and the point of these is to catch the day one of them
+  // stops doing so — a rule that holds only for the caller that remembered it
+  // is not a rule.
+  //
+  // It also departs from the app's usual 404-not-403 answer, on purpose: these
+  // paths are published in /api/openapi.json, so hiding their existence is
+  // theatre. What is still hidden is whether a *ticket* exists, which is what
+  // the two IDOR probes below are about.
+  const apiAdmin = await signIn(admin);
+  const mallorysStory = await db.story.create({
+    data: {
+      title: "Mallory's own", uploaderId: mallory.id, colorName: "Slate",
+      colorHex: "#4a5d78", tip: "A beer", filename: "m.stl", fileSize: 1,
+      mimeType: "model/stl", storageKey: "secret-key-m1",
+    },
+  });
+
+  for (const [method, path] of [
+    ["GET", "/api/stories"],
+    ["GET", `/api/stories/${aylaStory.id}`],
+    ["POST", `/api/stories/${aylaStory.id}/advance`],
+    ["GET", `/api/stories/${aylaStory.id}/comments`],
+    ["GET", "/api/notifications"],
+    ["GET", "/api/openapi.json"],
+  ] as const) {
+    const r = await anon.raw(APP + path, { method });
+    probe(`A01-api-anon ${method} ${path.replace(/\d+/, "{id}")}`,
+          "an unauthenticated API call is 401, not a redirect",
+          r.status === 401,
+          `expected 401, got ${r.status} -> ${r.headers.get("location") ?? ""}`);
+  }
+
+  // Vertical: rendering no button is not authorisation, and neither is
+  // documenting an endpoint without one.
+  for (const [name, method, path, body] of [
+    ["advance", "POST", `/api/stories/${aylaStory.id}/advance`, null],
+    ["decline", "POST", `/api/stories/${aylaStory.id}/decline`, null],
+    ["flag", "POST", `/api/stories/${aylaStory.id}/flag`, { reason: "let me in" }],
+    ["clear-flag", "DELETE", `/api/stories/${aylaStory.id}/flag`, null],
+  ] as const) {
+    const r = await client.raw(APP + path, {
+      method,
+      headers: { "content-type": "application/json" },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    probe(`A01-api-${name}`, `the API's "${name}" refuses a client`,
+          r.status === 403, `expected 403, got ${r.status}`);
+  }
+  const untouched = await db.story.findUnique({ where: { id: aylaStory.id } });
+  probe("A01-api-noop", "and none of it moved the ticket or flagged it",
+        untouched?.status === "Requested" && untouched?.flagged === false,
+        `${untouched?.status} flagged=${untouched?.flagged}`);
+
+  // Horizontal, over HTTP this time rather than against the data layer: a
+  // ticket outside the caller's scope is indistinguishable from one that does
+  // not exist.
+  for (const [name, path] of [
+    ["read", `/api/stories/${mallorysStory.id}`],
+    ["thread", `/api/stories/${mallorysStory.id}/comments`],
+    ["model", `/api/models/${mallorysStory.id}`],
+  ] as const) {
+    const r = await client.raw(APP + path);
+    probe(`A01-api-idor-${name}`, `another client's ${name} is 404, never 403`,
+          r.status === 404, `expected 404, got ${r.status}`);
+  }
+
+  const said = await client.raw(APP + `/api/stories/${mallorysStory.id}/comments`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ body: "hello" }),
+  });
+  probe("A01-api-idor-write", "and writing to it is refused",
+        said.status === 404 &&
+        (await db.comment.count({ where: { authorId: ayla.id } })) === 0,
+        `status ${said.status}`);
+
+  // Seeing every story is not being allowed to withdraw one. The printer
+  // owner has the widest scope in the app and still cannot delete a request
+  // that is not theirs.
+  const adminDelete = await apiAdmin.raw(APP + `/api/stories/${mallorysStory.id}`, {
+    method: "DELETE",
+  });
+  probe("A01-api-withdraw", "the printer owner cannot withdraw somebody's request",
+        adminDelete.status === 403 &&
+        (await db.story.count({ where: { id: mallorysStory.id } })) === 1,
+        `status ${adminDelete.status}`);
+
+  // Notifications are per recipient, and naming somebody else's id changes
+  // nothing rather than erroring — an error would be an oracle for whose is
+  // whose.
+  const adminNote = await db.notification.create({
+    data: { recipientId: admin.id, text: "for the printer owner only" },
+  });
+  await client.raw(`${APP}/api/notifications/read`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: adminNote.id }),
+  });
+  probe("A01-api-notification", "a client cannot mark somebody else's notification read",
+        (await db.notification.findUnique({ where: { id: adminNote.id } }))?.read === false);
+
+  const feed = await (await client.raw(`${APP}/api/notifications`)).text();
+  probe("A01-api-feed", "and never sees it in their own feed",
+        !feed.includes("for the printer owner only"), feed.slice(0, 120));
+
+  // The wire format is a place data leaks by omission — one spread of a
+  // database row and the object key is public. src/lib/api.ts names every
+  // field it emits for exactly this reason.
+  const own = await (await client.raw(`${APP}/api/stories/${aylaStory.id}`)).text();
+  probe("A02-api-key", "the object's storage key is not on the wire",
+        !own.includes("storageKey") && !own.includes("k1"), own.slice(0, 200));
+  probe("A02-api-email", "and neither is anybody's e-mail address",
+        !own.includes("@office.example") && !own.includes(admin.email), own.slice(0, 200));
+
+  // CSRF: SameSite=Lax plus an Origin check is the app's model, and the API
+  // keeps to it. A browser always sends Origin on a cross-site write.
+  //
+  // Deliberately NOT through `Browser.raw`: that helper stamps this app's own
+  // Origin on last, so a probe written through it would send the honest header
+  // and pass without testing anything. The jar is borrowed, the headers are
+  // built here.
+  const foreign = await fetch(APP + `/api/stories/${aylaStory.id}/advance`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      ...apiAdmin.headers(),
+      origin: "https://attacker.example",
+      "content-type": "application/json",
+    },
+  });
+  probe("A05-api-csrf", "a write carrying a foreign Origin is refused",
+        foreign.status === 403 &&
+        (await db.story.findUnique({ where: { id: aylaStory.id } }))?.status === "Requested",
+        `status ${foreign.status}`);
+
+  // A bearer token is the session token. If sign-out did not kill it, it
+  // would be a way back into an account whose owner believes they have left.
+  const bearerBrowser = await signIn(mallory);
+  const signInAgain = await signInWithPassword(bearerBrowser, APP, usernameFor(mallory.email));
+  const bearerToken = signInAgain.headers.get("set-auth-token") ?? "";
+  const withToken = await fetch(`${APP}/api/stories`, {
+    headers: { authorization: `Bearer ${bearerToken}` },
+  });
+  probe("A07-bearer-works", "a bearer token authenticates (or the probe below is vacuous)",
+        withToken.status === 200, `status ${withToken.status}`);
+  const forgedToken = await fetch(`${APP}/api/stories`, {
+    headers: { authorization: "Bearer forged.token" },
+  });
+  probe("A07-bearer-forged", "an invented bearer token grants nothing",
+        forgedToken.status === 401, `status ${forgedToken.status}`);
+  await bearerBrowser.json("/api/auth/sign-out", {});
+  const bearerAfterSignOut = await fetch(`${APP}/api/stories`, {
+    headers: { authorization: `Bearer ${bearerToken}` },
+  });
+  probe("A07-bearer-revoked", "and sign-out revokes the bearer token, not only the cookie",
+        bearerAfterSignOut.status === 401, `status ${bearerAfterSignOut.status}`);
+
+  // The document and the console describe an invite-only app. Handing that
+  // description to a stranger is a free map of the authority model.
+  for (const [id, path] of [
+    ["A05-openapi-anon", "/api/openapi.json"],
+    ["A05-docs-anon", "/docs"],
+  ] as const) {
+    const r = await anon.raw(APP + path);
+    probe(id, `${path} is not served to a stranger`,
+          r.status === 401 || (r.status >= 300 && r.status < 400),
+          `status ${r.status}`);
+  }
+
+  // Enabling an OpenAPI generator is a classic way to acquire an
+  // unauthenticated metadata endpoint without noticing: Better Auth's plugin
+  // mounts one that answers 200 to anybody. It is called in process here and
+  // never over HTTP, so the route is shut — and shut for signed-in callers
+  // too, because nothing legitimate reaches for it.
+  for (const [who, b] of [["anonymous", anon], ["a client", client]] as const) {
+    const r = await b.raw(`${APP}/api/auth/open-api/generate-schema`);
+    probe(`A05-authschema-${who === "anonymous" ? "anon" : "user"}`,
+          `the auth plugin's schema endpoint is closed to ${who}`,
+          r.status === 404, `status ${r.status}`);
+  }
+
+  const docsHtml = await (await client.raw(`${APP}/docs`)).text();
+  const docsExternal = [
+    ...docsHtml.matchAll(/<(?:script|link|img|iframe)\b[^>]*\b(?:src|href)="([^"]+)"/g),
+  ].map((m) => m[1]!).filter((u) => /^(?:https?:)?\/\//.test(u));
+  probe("A05-docs-selfhosted", "the API console fetches nothing from another origin",
+        docsExternal.length === 0, docsExternal.join(" "));
+
   const anonHome = await anon.raw(`${APP}/`);
   probe("A01-anon", "unauthenticated request is redirected",
         anonHome.status === 307 || anonHome.status === 302,

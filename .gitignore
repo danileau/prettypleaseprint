@@ -14,3 +14,8 @@ next-env.d.ts
 /storage
 shots/
 .env.backup
+
+# Swagger UI, copied out of node_modules by `npm run vendor:swagger` (which
+# `predev` and `prebuild` run for you). Somebody else's build output — the
+# package manager owns it, not the repository.
+public/docs/

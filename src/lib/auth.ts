@@ -2,6 +2,8 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { admin } from "better-auth/plugins/admin";
+import { bearer } from "better-auth/plugins/bearer";
+import { openAPI } from "better-auth/plugins";
 import { haveIBeenPwned } from "better-auth/plugins/haveibeenpwned";
 import { username } from "better-auth/plugins/username";
 import { passkey } from "@better-auth/passkey";
@@ -319,6 +321,61 @@ export const auth = betterAuth({
       defaultRole: "client",
       adminRoles: ["admin"],
     }),
+
+    /**
+     * Let a caller hold the session token in an `Authorization: Bearer`
+     * header instead of a cookie.
+     *
+     * This exists for the API console at `/docs` and for anything driving the
+     * app from a terminal: a cookie jar is awkward in `curl` and impossible in
+     * most one-liners, and the alternative people reach for otherwise is
+     * pasting a session cookie out of devtools, which is worse.
+     *
+     * Three things are worth being clear-eyed about, because a second way in
+     * is a second thing to get wrong:
+     *
+     *   - **It is the session token, not a new kind of credential.** There is
+     *     no separate API-key table, no separate lifetime and no separate
+     *     revocation path. Signing out, revoking access or a password reset
+     *     kills the bearer token at the same instant it kills the cookie,
+     *     because they are the same row in `session`. Suspension is caught by
+     *     `currentUser()` either way.
+     *   - **It is not `SameSite`-protected**, which is the one property the
+     *     cookie has that this does not. It does not need to be: a page on
+     *     another origin cannot attach an `Authorization` header to a
+     *     cross-site request without a CORS preflight, and this app serves no
+     *     CORS headers, so the preflight fails. Writes are Origin-checked as
+     *     well — see `src/lib/api.ts`.
+     *   - **It ends up in shell history and in logs** in a way a cookie does
+     *     not. `docs/api.md` says so, and says to use a fresh sign-in for a
+     *     script rather than the token from the browser you are sitting in.
+     *
+     * `requireSignature` is left at its default. Better Auth verifies the
+     * token's HMAC either way — the option only decides whether an unsigned
+     * token may be re-signed on the way in, and the token this app hands out
+     * in `set-auth-token` is already the signed one.
+     */
+    bearer(),
+
+    /**
+     * Describes every endpoint above, for `src/lib/openapi.ts` to fold into
+     * the app's own document.
+     *
+     * Only ever called in process, as `auth.api.generateOpenAPISchema()`. The
+     * two HTTP endpoints the plugin comes with are both closed:
+     *
+     *   - `/api/auth/reference` would load Scalar from `cdn.jsdelivr.net`,
+     *     which `script-src 'self'` refuses — the page would render an empty
+     *     frame with nothing to say why. `disableDefaultReference` turns it
+     *     off; the console at `/docs` serves its own copy of Swagger UI from
+     *     this origin instead.
+     *   - `/api/auth/open-api/generate-schema` answers **200 to anybody**,
+     *     with no session. Nothing here calls it over HTTP, and handing a
+     *     stranger the list of which auth plugins this deployment runs is the
+     *     kind of thing `/api/health` is deliberately terse about. The plugin
+     *     offers no way to unmount it, so middleware answers 404 for it.
+     */
+    openAPI({ disableDefaultReference: true }),
 
     // Must stay last: it copies Set-Cookie out of Better Auth responses into
     // the Next.js cookie store so server actions can establish a session.

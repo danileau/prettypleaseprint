@@ -1,43 +1,32 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { notFound, redirect } from "next/navigation";
-import { z } from "zod";
+import { redirect } from "next/navigation";
 
-import { db } from "@/lib/db";
-import { record } from "@/lib/audit";
+import { requireAdmin, requireUser } from "@/lib/authz";
 import {
-  AuthzError,
-  assertTransition,
-  nextStatus,
-  notify,
-  printerName,
-  printerOwner,
-  requireAdmin,
-  requireUser,
-  storyRef,
-  storyScope,
-} from "@/lib/authz";
-import { deleteModel } from "@/lib/storage";
+  StoryProblem,
+  advanceStory as advance,
+  clearFlag as clear,
+  declineStory as decline,
+  flagStory as flag,
+  storyIdOr400,
+  withdrawStory as withdraw,
+} from "@/lib/stories";
 
 /**
- * Everything the printer owner can do to a ticket.
+ * The printer owner's panel, as plain forms.
  *
- * Four rules hold for all of them, and they are why these live in one file:
+ * What each of these *does* lives in `src/lib/stories.ts`, which the JSON API
+ * calls too — the rules about who may move a ticket, from which state, who
+ * gets told and what goes in the trail are enforced there so both front doors
+ * cannot drift apart. This file is the adapter: read a `FormData`, call the
+ * operation, turn the outcome into a redirect.
  *
- *   1. `requireAdmin()` first, every time. Rendering a button is not
- *      authorisation — a client posting this form directly must be refused
- *      here, not in the markup that did not draw it.
- *   2. The transition is checked by `assertTransition`, which is the same
- *      guard the tests exercise directly. Status can only move forward, one
- *      step, along the flow — and `Declined` only from `Requested`.
- *   3. Every one of them notifies the uploader. The handoff is explicit that
- *      the person waiting finds out, and it is the whole point of the
- *      Activity panel.
- *   4. Every one of them writes an audit event, after the change commits.
+ * `requireAdmin()` still runs first, and is not redundant with the role check
+ * inside the service. It is the one that answers 404 rather than 403, which is
+ * what a page owes a client poking at a control that was never drawn for
+ * them — the API answers differently, and deliberately. See `src/lib/api.ts`.
  */
-
-const IdSchema = z.coerce.number().int().positive();
 
 /**
  * Where to send the browser afterwards, with a message.
@@ -57,252 +46,78 @@ function back(from: FormDataEntryValue | null, params: Record<string, string>): 
   redirect(`${safe}?${q}`);
 }
 
-/** Loads a story for an admin action, or explains why it cannot proceed. */
-async function loadForAction(formData: FormData) {
-  const parsed = IdSchema.safeParse(formData.get("id"));
-  if (!parsed.success) back(formData.get("from"), { error: "That is not a ticket." });
-
-  const story = await db.story.findUnique({
-    where: { id: parsed.data },
-    include: { uploader: { select: { id: true, name: true } } },
-  });
-  if (!story) back(formData.get("from"), { error: "That ticket no longer exists." });
-  return story;
-}
-
-function refresh(id: number) {
-  revalidatePath("/queue");
-  revalidatePath("/board");
-  revalidatePath(`/story/${id}`);
-}
-
 /**
- * Move a ticket one step along the flow. This is both "Accept it" — which is
- * simply `Requested → Accepted` — and every later hop; the button label
- * differs, the operation does not.
+ * Run one operation and land the browser somewhere sensible either way.
+ *
+ * A `StoryProblem` is the expected shape of "no": it already carries a
+ * sentence written for a person, so it goes straight into the toast. Anything
+ * else is a bug and is left to throw — an error page is the honest answer to
+ * something we did not anticipate, and swallowing it into a toast would make
+ * the failure quiet, which is exactly what this repo tries not to do.
  */
+async function run(
+  formData: FormData,
+  operation: (id: number) => Promise<{ toast: string }>,
+): Promise<never> {
+  try {
+    const id = storyIdOr400(formData.get("id") ?? formData.get("storyId"));
+    const { toast } = await operation(id);
+    back(formData.get("from"), { toast });
+  } catch (error) {
+    if (error instanceof StoryProblem) back(formData.get("from"), { error: error.message });
+    throw error;
+  }
+}
+
 export async function advanceStory(formData: FormData): Promise<void> {
   const admin = await requireAdmin();
-  const story = await loadForAction(formData);
-
-  const next = nextStatus(story.status);
-  if (!next) back(formData.get("from"), { error: `${story.status} is the end of the line.` });
-
-  try {
-    assertTransition(admin, story.status, next);
-  } catch (e) {
-    if (e instanceof AuthzError) back(formData.get("from"), { error: e.message });
-    throw e;
-  }
-
-  await db.story.update({ where: { id: story.id }, data: { status: next } });
-
-  await notify({
-    recipientId: story.uploaderId,
-    storyId: story.id,
-    text: `${admin.name.split(" ")[0]} moved “${story.title}” to ${next}.`,
-  });
-  await record({
-    action: "story.status_changed",
-    actor: admin,
-    subject: storyRef(story.id),
-    detail: { from: story.status, to: next, title: story.title },
-  });
-
-  refresh(story.id);
-  back(formData.get("from"), {
-    toast: `“${story.title}” → ${next} · ${story.uploader.name} notified`,
+  await run(formData, async (id) => {
+    const done = await advance(admin, id);
+    return { toast: `“${done.title}” → ${done.to} · ${done.uploaderName} notified` };
   });
 }
 
-/**
- * Decline. Terminal, and only reachable from `Requested` — once the printer
- * owner has said yes, saying no is a conversation, not a state change.
- */
 export async function declineStory(formData: FormData): Promise<void> {
   const admin = await requireAdmin();
-  const story = await loadForAction(formData);
-
-  try {
-    assertTransition(admin, story.status, "Declined");
-  } catch (e) {
-    if (e instanceof AuthzError) back(formData.get("from"), { error: e.message });
-    throw e;
-  }
-
-  await db.story.update({ where: { id: story.id }, data: { status: "Declined" } });
-
-  await notify({
-    recipientId: story.uploaderId,
-    storyId: story.id,
-    text: `${admin.name.split(" ")[0]} declined “${story.title}”.`,
+  await run(formData, async (id) => {
+    const done = await decline(admin, id);
+    return { toast: `Declined · ${done.uploaderName} notified` };
   });
-  await record({
-    action: "story.declined",
-    actor: admin,
-    subject: storyRef(story.id),
-    detail: { title: story.title },
-  });
-
-  refresh(story.id);
-  back(formData.get("from"), { toast: `Declined · ${story.uploader.name} notified` });
 }
 
-const ReasonSchema = z
-  .string()
-  .trim()
-  .min(3, "Say what is wrong with it — that is the whole point of a flag.")
-  .max(200, "Keep the reason short.");
-
-/**
- * Flag a model problem.
- *
- * Deliberately does NOT change the status: a flagged ticket is still wherever
- * it was, it just has a note on it saying why it cannot proceed as-is. The
- * reason is required, because "flagged" with no explanation tells the person
- * waiting nothing they can act on.
- */
 export async function flagStory(formData: FormData): Promise<void> {
   const admin = await requireAdmin();
-  const story = await loadForAction(formData);
-
-  const reason = ReasonSchema.safeParse(formData.get("reason") ?? "");
-  if (!reason.success) {
-    back(formData.get("from"), {
-      error: reason.error.issues[0]?.message ?? "Give a reason.",
-    });
-  }
-
-  await db.story.update({
-    where: { id: story.id },
-    data: { flagged: true, flagReason: reason.data },
+  await run(formData, async (id) => {
+    const done = await flag(admin, id, formData.get("reason") ?? "");
+    return { toast: `Flagged · ${done.uploaderName} notified` };
   });
-
-  await notify({
-    recipientId: story.uploaderId,
-    storyId: story.id,
-    text: `${admin.name.split(" ")[0]} flagged “${story.title}”: ${reason.data}`,
-  });
-  await record({
-    action: "story.flagged",
-    actor: admin,
-    subject: storyRef(story.id),
-    detail: { title: story.title, reason: reason.data },
-  });
-
-  refresh(story.id);
-  back(formData.get("from"), { toast: `Flagged · ${story.uploader.name} notified` });
 }
 
-/**
- * Clear a flag once it has been dealt with.
- *
- * Not in the handoff, but a flag with no way off is a dead end: the ticket
- * would carry "needs a look" for the rest of its life even after the model
- * was fixed. The uploader is told, because they are the one who fixed it.
- */
 export async function clearFlag(formData: FormData): Promise<void> {
   const admin = await requireAdmin();
-  const story = await loadForAction(formData);
-
-  if (!story.flagged) back(formData.get("from"), { error: "That ticket is not flagged." });
-
-  await db.story.update({
-    where: { id: story.id },
-    data: { flagged: false, flagReason: null },
+  await run(formData, async (id) => {
+    const done = await clear(admin, id);
+    return { toast: `Flag cleared · ${done.uploaderName} notified` };
   });
-
-  await notify({
-    recipientId: story.uploaderId,
-    storyId: story.id,
-    text: `${admin.name.split(" ")[0]} cleared the flag on “${story.title}”.`,
-  });
-  await record({
-    action: "story.flag_cleared",
-    actor: admin,
-    subject: storyRef(story.id),
-    detail: { title: story.title },
-  });
-
-  refresh(story.id);
-  back(formData.get("from"), { toast: `Flag cleared · ${story.uploader.name} notified` });
 }
 
 /**
- * The person who asked for a print withdraws it.
+ * The requester takes their own back. The only action here that is not the
+ * printer owner's, which is why it takes `requireUser` — the ownership check
+ * itself is the service's, and applies to the API call just the same.
  *
- * The only action in this file that is not the printer owner's, which is why
- * it takes `requireUser` and checks ownership itself rather than leaning on
- * `requireAdmin`.
- *
- * **Only while nobody has acted on it.** `Requested` means it is still sitting
- * in the queue untouched; `Declined` means it is already dead. Past that the
- * printer owner has committed time, filament and bed space, and a ticket
- * vanishing from under them — along with the conversation and the audit
- * trail's subject — is not the requester's call to make. They can ask.
- *
- * The stored file goes with it. Leaving 50 MB of geometry in object storage
- * for a request nobody can see any more is a slow leak and, for somebody who
- * withdrew a model on purpose, arguably not what they asked for. Comments and
- * notifications cascade at the database.
+ * It lands on the board rather than `from`: the ticket it came from no longer
+ * exists, and redirecting to a page that is now a 404 is a poor way to say
+ * "that worked".
  */
 export async function withdrawStory(formData: FormData): Promise<void> {
   const user = await requireUser();
-  const id = IdSchema.parse(formData.get("storyId"));
-
-  // Scoped read: a client asking after somebody else's story gets the same
-  // answer as one asking after a story that does not exist.
-  const story = await db.story.findFirst({
-    where: { AND: [{ id }, storyScope(user)] },
-    select: {
-      id: true, title: true, status: true, storageKey: true,
-      uploaderId: true, uploader: { select: { name: true } },
-    },
-  });
-  if (!story) notFound();
-
-  // An admin can see every story; being able to see one is not being allowed
-  // to withdraw it. Only the person who asked for it may take it back.
-  if (story.uploaderId !== user.id) {
-    back(`/story/${id}`, { toast: "Only the person who asked for it can withdraw it." });
-  }
-
-  if (story.status !== "Requested" && story.status !== "Declined") {
-    back(`/story/${id}`, {
-      toast:
-        `${storyRef(story.id)} is already ${story.status.toLowerCase()} — ` +
-        `ask ${await printerName()} instead.`,
-    });
-  }
-
-  const ref = storyRef(story.id);
-  const owner = await printerOwner();
-
-  await db.story.delete({ where: { id: story.id } });
-
-  // After the row is gone, so a failure here cannot leave a story pointing at
-  // an object that is not there. The reverse would be worse: an orphaned
-  // object is invisible, a story with no file is broken in the viewer.
+  const id = storyIdOr400(formData.get("storyId"));
   try {
-    await deleteModel(story.storageKey);
+    const done = await withdraw(user, id);
+    back("/board", { toast: `${done.ref} withdrawn.` });
   } catch (error) {
-    console.error(`[withdraw] ${ref}: object ${story.storageKey} not removed`, error);
+    if (error instanceof StoryProblem) back(`/story/${id}`, { toast: error.message });
+    throw error;
   }
-
-  // Only worth telling the printer owner if it was still waiting on them.
-  if (owner && story.status === "Requested" && owner.id !== user.id) {
-    await notify({
-      recipientId: owner.id,
-      text: `${user.name} withdrew ${ref} — “${story.title}”.`,
-    });
-  }
-
-  await record({
-    action: "story.withdrawn",
-    actor: user,
-    subject: ref,
-    detail: { title: story.title, wasStatus: story.status },
-  });
-
-  back("/board", { toast: `${ref} withdrawn.` });
 }
