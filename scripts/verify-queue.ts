@@ -498,6 +498,15 @@ async function main() {
   let storyPage = rendered(await (await client.go(`${APP}/story/${regret.id}`)).text());
   check("the requester is offered the control", storyPage.includes("Withdraw this request"));
 
+  // The "Open in PrusaSlicer" bridge is a bare ppp:// link the story page
+  // carries; a local helper handles it (docs/prusaslicer.md). Assert the link
+  // is present and carries this ticket's id, so the wiring cannot silently
+  // rot — the click's other half lives outside the app and cannot be tested
+  // here, but a missing or misnumbered link is the failure that would matter.
+  check("the story page offers Open in PrusaSlicer",
+        storyPage.includes(`ppp://slice/${regret.id}`),
+        "the ppp:// bridge link is missing or has the wrong id");
+
   const adminView = rendered(await (await ruben.go(`${APP}/story/${regret.id}`)).text());
   check("the printer owner is not — it is not their request",
         !adminView.includes("Withdraw this request"),
