@@ -327,8 +327,14 @@ read -r ans; case "$ans" in y|Y|yes|YES) ;; *) echo "aborted."; exit 0 ;; esac
 # registry-to-NAS link against a substituted or tampered image, so it is
 # checked BEFORE anything is swapped — and its absence is reported, never
 # silently skipped.
-if command -v cosign >/dev/null; then
-  echo "${DIM}→ verifying signatures…${R}"
+# TrueNAS and friends replace the OS filesystem on update, taking anything
+# installed into it. So look beside the project as well as on PATH: a binary on
+# the data dataset survives, and one in /usr/local/bin does not.
+COSIGN="$(command -v cosign 2>/dev/null || true)"
+[ -z "$COSIGN" ] && [ -x "$PROJECT_DIR/bin/cosign" ] && COSIGN="$PROJECT_DIR/bin/cosign"
+
+if [ -n "$COSIGN" ]; then
+  echo "${DIM}→ verifying signatures with ${COSIGN}…${R}"
   # Keyless signing embeds the workflow's identity, and that identity contains
   # the repository PATH — so renaming the repository splits the published
   # images in two: everything built before it carries the old path, everything
@@ -339,9 +345,21 @@ if command -v cosign >/dev/null; then
   # The signature itself is unaffected: it is over the digest, and the old ones
   # remain valid. Only the pattern has to admit both names. Drop the old
   # alternative once nothing you would roll back to predates the rename.
-  IDENTITY="^https://github\.com/danileau/(prettypleaseprint|ppp)/\.github/workflows/release-images\.yml@refs/heads/main$"
+  # Two alternations, both learned by verifying a real signature rather than
+  # by reading the workflow.
+  #
+  # The REF: a tag build signs with refs/tags/<tag>, not refs/heads/main. So
+  # every release image — the thing a deployment is meant to pin — failed
+  # verification, while branch builds passed. The bug was invisible until
+  # cosign was actually installed somewhere, because without it the wizard
+  # skips the check and says so.
+  #
+  # The REPO NAME: keyless signing embeds the repository path, so images built
+  # before the rename carry the old one. Both are admitted; a fork, another
+  # workflow, another branch and a non-version tag are not.
+  IDENTITY="^https://github\.com/danileau/(prettypleaseprint|ppp)/\.github/workflows/release-images\.yml@refs/(heads/main|tags/v[0-9][0-9A-Za-z.\-]*)$"
   for img in $IMAGES; do
-    if cosign verify \
+    if "$COSIGN" verify \
         --certificate-identity-regexp "$IDENTITY" \
         --certificate-oidc-issuer https://token.actions.githubusercontent.com \
         "ghcr.io/${REGISTRY_OWNER}/${img}:${TARGET}" >/dev/null 2>&1; then
@@ -351,10 +369,18 @@ if command -v cosign >/dev/null; then
     fi
   done
 else
-  echo "${YLW}⚠ cosign is not installed — signatures were NOT checked.${R}"
+  echo "${YLW}⚠ cosign was not found — signatures were NOT checked.${R}"
   echo "  ${DIM}The images are still pulled by tag over TLS, but nothing proves they"
-  echo "  came from this repo's workflow. Install cosign to close that gap:"
-  echo "  https://docs.sigstore.dev/cosign/installation/${R}"
+  echo "  came from this repo's workflow. One static binary closes that gap, and"
+  echo "  on a host whose OS is replaced by updates it belongs beside the"
+  echo "  project rather than in /usr/local/bin:"
+  echo
+  echo "      mkdir -p ${PROJECT_DIR}/bin"
+  echo "      curl -fsSL -o ${PROJECT_DIR}/bin/cosign \\"
+  echo "        https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
+  echo "      chmod +x ${PROJECT_DIR}/bin/cosign"
+  echo
+  echo "  This wizard looks there as well as on PATH.${R}"
   printf "Continue without verification? [y/N] "
   read -r ans; case "$ans" in y|Y|yes|YES) ;; *) echo "aborted."; exit 0 ;; esac
 fi
