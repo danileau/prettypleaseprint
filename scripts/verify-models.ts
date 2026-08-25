@@ -92,6 +92,38 @@ function threeMf(x: number, y: number, z: number, unit = "millimeter"): Uint8Arr
   });
 }
 
+/**
+ * A 3MF in the shape the *production extension* emits: the root part carries no
+ * geometry of its own, only a component that references a mesh in a separate
+ * `3D/Objects/*.model` part. Bambu Studio, OrcaSlicer multi-object plates and
+ * several CAD exporters write this — and it was being refused because the
+ * validator read only the root part. Regression guard for that bug.
+ */
+function threeMfProduction(x: number, y: number, z: number): Uint8Array {
+  const p = [
+    [0, 0, 0], [x, 0, 0], [x, y, 0], [0, y, 0],
+    [0, 0, z], [x, 0, z], [x, y, z], [0, y, z],
+  ];
+  const objectPart =
+    `<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter">\n<resources>` +
+    `<object id="2" type="model"><mesh><vertices>` +
+    p.map((v) => `<vertex x="${v[0]}" y="${v[1]}" z="${v[2]}"/>`).join("") +
+    `</vertices><triangles>` +
+    boxTriangles(1, 1, 1).map(() => `<triangle v1="0" v2="1" v3="2"/>`).join("") +
+    `</triangles></mesh></object></resources>\n</model>`;
+  const root =
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<model unit="millimeter" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">\n` +
+    `<resources><object id="1" type="model"><components>` +
+    `<component objectid="2" p:path="/3D/Objects/object_1.model"/>` +
+    `</components></object></resources><build><item objectid="1"/></build>\n</model>`;
+  return zipSync({
+    "[Content_Types].xml": new TextEncoder().encode(`<?xml version="1.0"?><Types/>`),
+    "3D/3dmodel.model": new TextEncoder().encode(root),
+    "3D/Objects/object_1.model": new TextEncoder().encode(objectPart),
+  });
+}
+
 const ok = (r: ReturnType<typeof inspectModel>) => (r.ok ? r : null);
 const why = (r: ReturnType<typeof inspectModel>): Rejection | "accepted" =>
   r.ok ? "accepted" : r.reason;
@@ -119,6 +151,13 @@ check("3MF unit attribute is honoured (inch -> mm)",
 
 const microns = inspectModel("tiny.3mf", threeMf(10000, 20000, 5000, "micron"));
 check("3MF micron unit is honoured", ok(microns)?.dims === "10 × 20 × 5 mm", ok(microns)?.dims);
+
+// The bug this guards: a production-extension 3MF (geometry in a separate
+// component part) was refused because only the root part was read.
+const prod = inspectModel("plate.3mf", threeMfProduction(30, 20, 10));
+check("3MF production extension accepted (geometry in a component part)", prod.ok, why(prod));
+check("its dimensions come from the referenced part",
+      ok(prod)?.dims === "30 × 20 × 10 mm", ok(prod)?.dims);
 
 // A binary STL whose 80-byte header begins with the word "solid" — the classic
 // way a naive sniffer misreads the format.
