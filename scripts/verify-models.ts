@@ -124,6 +124,33 @@ function threeMfProduction(x: number, y: number, z: number): Uint8Array {
   });
 }
 
+/**
+ * A 3MF in the shape Cura writes: the mesh is stored in a scaled-down local
+ * space and the real size lives in the `<build>` `<item>` transform. Reading
+ * the raw vertices reports a box a thousandth of the true size — the bug that
+ * showed real models as "0 × 0 × 0 mm". The item here scales by 1000, so a
+ * mesh spanning `dim/1000` locally must come back as `dim` millimetres.
+ */
+function threeMfScaled(x: number, y: number, z: number): Uint8Array {
+  const s = 1000;
+  const p = [
+    [0, 0, 0], [x / s, 0, 0], [x / s, y / s, 0], [0, y / s, 0],
+    [0, 0, z / s], [x / s, 0, z / s], [x / s, y / s, z / s], [0, y / s, z / s],
+  ];
+  const model =
+    `<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter">\n<resources>` +
+    `<object id="1" type="model"><mesh><vertices>` +
+    p.map((v) => `<vertex x="${v[0]}" y="${v[1]}" z="${v[2]}"/>`).join("") +
+    `</vertices><triangles>` +
+    boxTriangles(1, 1, 1).map(() => `<triangle v1="0" v2="1" v3="2"/>`).join("") +
+    `</triangles></mesh></object></resources>` +
+    `<build><item objectid="1" transform="${s} 0 0 0 ${s} 0 0 0 ${s} 0 0 0"/></build>\n</model>`;
+  return zipSync({
+    "[Content_Types].xml": new TextEncoder().encode(`<?xml version="1.0"?><Types/>`),
+    "3D/3dmodel.model": new TextEncoder().encode(model),
+  });
+}
+
 const ok = (r: ReturnType<typeof inspectModel>) => (r.ok ? r : null);
 const why = (r: ReturnType<typeof inspectModel>): Rejection | "accepted" =>
   r.ok ? "accepted" : r.reason;
@@ -158,6 +185,12 @@ const prod = inspectModel("plate.3mf", threeMfProduction(30, 20, 10));
 check("3MF production extension accepted (geometry in a component part)", prod.ok, why(prod));
 check("its dimensions come from the referenced part",
       ok(prod)?.dims === "30 × 20 × 10 mm", ok(prod)?.dims);
+
+// The bug this guards: a Cura-style 3MF measured 0 × 0 × 0 because the size
+// lived in the build item's transform, which was not applied.
+const scaled = inspectModel("cura.3mf", threeMfScaled(30, 20, 10));
+check("3MF build-item transform is applied (not 0 × 0 × 0)",
+      ok(scaled)?.dims === "30 × 20 × 10 mm", ok(scaled)?.dims);
 
 // A binary STL whose 80-byte header begins with the word "solid" — the classic
 // way a naive sniffer misreads the format.
