@@ -94,3 +94,52 @@ export function relativeTime(date: Date): string {
   }
   return "just now";
 }
+
+// ---------------------------------------------------------------------------
+// Feature requests — the 'frr' track
+//
+// The fixed choices a feature request is made from, exactly like the print
+// catalogue above: the form renders from these and the server validates
+// against them, so the two cannot drift.
+// ---------------------------------------------------------------------------
+
+export const FEATURE_PRIORITIES = ["low", "medium", "high"] as const;
+export const DEFAULT_FEATURE_PRIORITY = "medium";
+
+export const FEATURE_CATEGORIES = ["ui", "api", "bug", "other"] as const;
+export const DEFAULT_FEATURE_CATEGORY = "other";
+
+/** How each priority reads and colours, loudest first. */
+export const PRIORITY_CHIP: Record<string, { bg: string; label: string }> = {
+  high: { bg: "bg-cherry", label: "High" },
+  medium: { bg: "bg-sun", label: "Medium" },
+  low: { bg: "bg-chrome", label: "Low" },
+};
+
+/** Human labels for the category enum. */
+export const CATEGORY_LABEL: Record<string, string> = {
+  ui: "UI",
+  api: "API",
+  bug: "Bug",
+  other: "Other",
+};
+
+const priorityValues = FEATURE_PRIORITIES as unknown as [string, ...string[]];
+const categoryValues = FEATURE_CATEGORIES as unknown as [string, ...string[]];
+
+export const FeatureWishSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(3, "Give it a title — a few words is plenty.")
+    .max(120, "Keep the title under 120 characters."),
+  description: z
+    .string()
+    .trim()
+    .min(1, "Say what you are hoping for.")
+    .max(4000, "That description is very long."),
+  priority: z.enum(priorityValues),
+  category: z.enum(categoryValues),
+});
+
+export type FeatureWish = z.infer<typeof FeatureWishSchema>;

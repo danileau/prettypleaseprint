@@ -48,6 +48,11 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   auto-framed, drag to rotate.
 - **An audit trail** of everything that changes who can get in or what happens
   to someone's model, readable at `/admin/audit`, never edited or deleted.
+- **Ask for features, triaged like the backlog** — a parallel "frr" board at
+  `/frr` where anyone files a feature request (title, priority, category) and
+  the owner moves it through the same stages, conversation, notifications and
+  audit trail a print goes through. Its own tables; the print flow is untouched.
+  See **[Feature requests](docs/feature-requests.md)**.
 - **Drive it over HTTP** — every ticket, transition, comment and notification
   is a JSON endpoint, described by an OpenAPI 3.1 document and callable from a
   Swagger console at `/docs`. Same session, same scope, same audit trail as the
@@ -340,12 +345,13 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 | **[Authentication](docs/authentication.md)** | invite-only registration, passwords, passkeys, resets, and why each decision went the way it did |
 | **[Architecture](docs/architecture.md)** | the viewer, upload validation, decisions taken against the design handoff, and the file layout |
 | **[Deployment](docs/deployment.md)** | containers, reverse proxies, the deploy wizard, TLS, first run |
+| **[Feature requests](docs/feature-requests.md)** | the `/frr` track — file a request, triage it exactly like the print backlog |
 | **[The API](docs/api.md)** | the JSON surface, bearer tokens, the OpenAPI document and the console at `/docs` |
 | **[Open in PrusaSlicer](docs/prusaslicer.md)** | the one-click "send to the slicer" bridge, the helper, and why the deep link cannot be used |
 | **[Development](docs/development.md)** | stack, local setup, the verification suites, CI |
 | **[Security audit](docs/security-audit.md)** | the OWASP Top 10 assessment, findings, and residual risk accepted |
 | **[Security policy](SECURITY.md)** | how to report a vulnerability |
-| **[Contributing](CONTRIBUTING.md)** | the seven suites are the contract; what a good change looks like |
+| **[Contributing](CONTRIBUTING.md)** | the eight suites are the contract; what a good change looks like |
 | **[Changelog](CHANGELOG.md)** | what changed in each release |
 
 ## Security
@@ -364,7 +370,7 @@ something, see [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
-Issues and pull requests are welcome. The seven verification suites in
+Issues and pull requests are welcome. The eight verification suites in
 `scripts/` are the contract — `npm run verify:auth`, `verify:upload`,
 `verify:queue`, `verify:models`, `verify:passkey` and `probe:security` all run
 in CI against the built container image, not a dev server. If a change makes

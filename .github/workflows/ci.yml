@@ -132,6 +132,10 @@ jobs:
         run: npm run verify:upload
       - name: Admin queue and the status flow
         run: npm run verify:queue
+      # The 'frr' feature-request track — the same board/queue/flow mechanics as
+      # prints, on its own tables. Drives the real forms exactly as verify:queue.
+      - name: Feature requests, filed and triaged
+        run: npm run verify:frr
       # The second front door onto the same operations. Runs against the built
       # image, which is the only place the production CSP is in force — the
       # console's inline-script nonce and its stylesheet-in-a-file are both

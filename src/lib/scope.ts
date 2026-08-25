@@ -6,7 +6,7 @@
  * imported by tests and probes and exercised directly, rather than being
  * re-implemented (and drifting) wherever they need checking.
  */
-import type { Prisma, StoryStatus } from "@prisma/client";
+import type { FeatureStatus, Prisma, StoryStatus } from "@prisma/client";
 
 export type Actor = {
   id: string;
@@ -102,5 +102,100 @@ export function assertTransition(
   }
   if (nextStatus(from) !== to) {
     throw new AuthzError(`${from} → ${to} is not a step along the flow.`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Feature requests — the 'frr' track
+//
+// The same pure rules as the print backlog above, for the parallel
+// feature-request flow. Kept here beside them, and deliberately NOT merged
+// into one generic helper: the print rules are load-bearing and exercised
+// directly by the suites, so the two stay legible and independently testable
+// rather than sharing a cleverness that a change to one could quietly bend for
+// the other. The *shape* is identical on purpose — forward-only, one step,
+// Done leaves the board, Declined terminal from Requested — so the owner
+// handles a feature request exactly as they handle a print.
+// ---------------------------------------------------------------------------
+
+/**
+ * A feature request's flow. Same shape as `FLOW`, feature-appropriate names.
+ * `Shipped` is "released, go and check it"; `Done` is "closed and off the
+ * board", the way `Delivery`/`Done` work for a print.
+ */
+export const FEATURE_FLOW = [
+  "Requested",
+  "Accepted",
+  "InProgress",
+  "Shipped",
+  "Done",
+] as const satisfies readonly FeatureStatus[];
+
+/** The board columns — the flow minus its terminal state. */
+export const FEATURE_BOARD = FEATURE_FLOW.slice(0, -1) as readonly FeatureStatus[];
+
+/**
+ * Display labels. The enum can carry no space, so `InProgress` is written out
+ * for people. Everything else reads as-is.
+ */
+export const FEATURE_STATUS_LABEL: Record<FeatureStatus, string> = {
+  Requested: "Requested",
+  Accepted: "Accepted",
+  InProgress: "In progress",
+  Shipped: "Shipped",
+  Done: "Done",
+  Declined: "Declined",
+};
+
+export const featureLabel = (status: FeatureStatus): string =>
+  FEATURE_STATUS_LABEL[status] ?? status;
+
+/**
+ * Display ref: FRR-101 for feature request 1. Recognisable when pasted into
+ * chat, and parallel to `PPP-` for a print.
+ */
+export const featureRef = (id: number) => `FRR-${100 + id}`;
+
+/**
+ * The scope rule, mirroring `storyScope`:
+ *   Client -> only their own requests
+ *   Admin  -> everything
+ */
+export function featureScope(actor: Actor): Prisma.FeatureRequestWhereInput {
+  return actor.role === "admin" ? {} : { requesterId: actor.id };
+}
+
+export function isFeatureTerminal(status: FeatureStatus): boolean {
+  return status === FEATURE_FLOW[FEATURE_FLOW.length - 1] || status === "Declined";
+}
+
+export function nextFeatureStatus(current: FeatureStatus): FeatureStatus | null {
+  const i = (FEATURE_FLOW as readonly string[]).indexOf(current);
+  if (i < 0 || i === FEATURE_FLOW.length - 1) return null;
+  return FEATURE_FLOW[i + 1]!;
+}
+
+/**
+ * Only the owner moves a request, only forwards, only one step at a time.
+ * `Declined` is reachable from `Requested` alone.
+ */
+export function assertFeatureTransition(
+  actor: Actor,
+  from: FeatureStatus,
+  to: FeatureStatus,
+): void {
+  if (actor.role !== "admin") {
+    throw new AuthzError("Only the printer owner moves a request along.");
+  }
+  if (to === "Declined") {
+    if (from !== "Requested") {
+      throw new AuthzError(`Cannot decline a request that is already ${featureLabel(from)}.`);
+    }
+    return;
+  }
+  if (nextFeatureStatus(from) !== to) {
+    throw new AuthzError(
+      `${featureLabel(from)} → ${featureLabel(to)} is not a step along the flow.`,
+    );
   }
 }

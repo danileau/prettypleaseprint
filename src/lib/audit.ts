@@ -41,7 +41,13 @@ export type AuditAction =
   | "story.flag_cleared"
   | "comment.added"
   | "file.downloaded"
-  | "file.refused";
+  | "file.refused"
+  // feature requests (the 'frr' track)
+  | "feature.created"
+  | "feature.status_changed"
+  | "feature.declined"
+  | "feature.withdrawn"
+  | "feature.comment_added";
 
 function clientIp(h: Headers): string | null {
   return clientIpFrom(h, ipSource());

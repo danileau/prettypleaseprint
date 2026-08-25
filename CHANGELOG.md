@@ -5,6 +5,30 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+### Added
+
+- **A feature-request track — the 'frr' backlog.** Anyone can file a feature
+  request (title, description, priority, category) at `/frr`, and the printer
+  owner triages it exactly as they triage a print: the same board, an
+  owner-only queue, a forward-only status flow (Requested → Accepted → In
+  progress → Shipped → Done, or Declined), the conversation, notifications and
+  the audit trail. The requester can withdraw their own while nobody has
+  started on it.
+
+  It is a deliberate parallel of the print backlog, not a fold into it. New
+  tables (`featureRequest`, `featureComment`) and a `src/lib/features.ts`
+  service that mirrors `stories.ts`; the print flow, upload, viewer and API are
+  untouched. The pure rules (`featureScope`, `FEATURE_FLOW`,
+  `assertFeatureTransition`, `featureRef`) sit beside the print ones in
+  `scope.ts`, kept separate on purpose so a change to one backlog cannot
+  quietly bend the other. Shared infrastructure is extended additively: a
+  notification can now reference a feature (`featureId`) and the Activity feed
+  routes to `/frr` or `/story` accordingly; the audit trail gains `feature.*`
+  verbs. `npm run verify:frr` (51 checks) drives the real forms end to end and
+  runs in CI. There is no JSON API for it yet — see
+  [`docs/feature-requests.md`](docs/feature-requests.md).
+
+
 ### Fixed
 
 - **3MF files with geometry in a separate part were refused.** The validator

@@ -196,6 +196,7 @@ src/app/
   notifications.ts       the Activity feed, scoped by recipient
   api.ts                 the JSON boundary: 401/403, Origin, wire format
   openapi.ts             the OpenAPI 3.1 document, app half + Better Auth half
+  features.ts            every operation on a feature request — the 'frr' track
 src/app/
   board/                 the kanban backlog, scoped per role
   upload/                dropzone, wish form, XHR progress
@@ -205,6 +206,7 @@ src/app/
   api/notifications/     the Activity feed
   api/openapi.json/      the document
   docs/                  the Swagger console (a route, not a page)
+  frr/                   the feature-request track: board, new, queue, [id]
 scripts/
   deploy-wizard.sh       pick an image, verify it, deploy, auto-rollback
   vendor-swagger.ts      copies Swagger UI into public/docs at build time
@@ -213,6 +215,7 @@ scripts/
   verify-upload.ts       upload -> board -> story
   verify-passkey.ts      WebAuthn in a real browser
   verify-api.ts          the JSON API, the document and the console
+  verify-frr.ts          the feature-request track, filed and triaged
   security-probe.ts      OWASP-mapped security probes
 src/app/admin/
   invites/               the guest list
