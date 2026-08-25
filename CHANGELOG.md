@@ -7,6 +7,22 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Added
 
+- **Open a model straight in PrusaSlicer**, from a control on every ticket. A
+  click hands the model to a slicer running on the person's own machine.
+
+  The obvious route does not exist: PrusaSlicer's `prusaslicer://open?file=`
+  deep link only downloads from a hardcoded allowlist — Printables, Thingiverse,
+  Cults — with no setting to add a self-hosted host, and the requests to make it
+  configurable were closed as not planned. So instead of asking the slicer to
+  download, a small helper the printer owner installs once
+  (`scripts/prusa-open.sh`, registered for a `ppp://` scheme by
+  `scripts/install-slicer-handler.sh`) fetches the bytes through the API added
+  below and hands the slicer a *local file* — which has no domain to check. It
+  adds nothing to the server and needs no client bundle: a `ppp://` link invokes
+  the OS handler rather than making a request, so the CSP does not govern it.
+  Docs at [`docs/prusaslicer.md`](docs/prusaslicer.md); works with OrcaSlicer or
+  any slicer that opens a file from the command line.
+
 - **A JSON API, an OpenAPI document, and a console at `/docs`.** Everything the
   board and the queue can do is now reachable over HTTP: list and read tickets,
   move one along, decline, flag and unflag, comment, withdraw, read and clear

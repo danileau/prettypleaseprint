@@ -53,6 +53,10 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   Swagger console at `/docs`. Same session, same scope, same audit trail as the
   UI; the rules live in one place, so the API cannot enforce less than the
   board does. See **[the API](docs/api.md)**.
+- **Open a model straight in PrusaSlicer** — one click on a ticket hands the
+  model to a slicer running on your own machine. A small helper the printer
+  owner installs once does the fetch, because PrusaSlicer's own deep link
+  refuses any host but Printables. See **[Open in PrusaSlicer](docs/prusaslicer.md)**.
 
 ## Requirements
 
@@ -337,6 +341,7 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 | **[Architecture](docs/architecture.md)** | the viewer, upload validation, decisions taken against the design handoff, and the file layout |
 | **[Deployment](docs/deployment.md)** | containers, reverse proxies, the deploy wizard, TLS, first run |
 | **[The API](docs/api.md)** | the JSON surface, bearer tokens, the OpenAPI document and the console at `/docs` |
+| **[Open in PrusaSlicer](docs/prusaslicer.md)** | the one-click "send to the slicer" bridge, the helper, and why the deep link cannot be used |
 | **[Development](docs/development.md)** | stack, local setup, the verification suites, CI |
 | **[Security audit](docs/security-audit.md)** | the OWASP Top 10 assessment, findings, and residual risk accepted |
 | **[Security policy](SECURITY.md)** | how to report a vulnerability |

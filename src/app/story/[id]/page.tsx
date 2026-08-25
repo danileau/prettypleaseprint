@@ -9,6 +9,7 @@ import { Fact, Notice, StatusChip } from "@/components/ui";
 import { AdminActions } from "@/components/admin-actions";
 import { Conversation } from "@/components/conversation";
 import { ModelViewer } from "@/components/model-viewer";
+import { OpenInSlicer } from "@/components/open-in-slicer";
 import { Toast } from "@/components/toast";
 import { WithdrawStory } from "@/components/withdraw-story";
 
@@ -73,6 +74,12 @@ export default async function StoryPage({
                 </span>
               ))}
             </div>
+
+            {/* Send the model to a PrusaSlicer on the viewer's own machine.
+                The bytes are fetched by a local helper, not by the slicer —
+                see the component and docs/prusaslicer.md for why. */}
+            <OpenInSlicer storyId={story.id} />
+
             <Conversation
               storyId={story.id}
               comments={story.comments}
