@@ -57,9 +57,35 @@ That registers `ppp://` links to open with
 ```sh
 PPP_BASE="https://print.example"      # your instance, no trailing slash
 PPP_TOKEN="…"                          # a bearer token — see below
-# PPP_SLICER="prusa-slicer"            # or the full path to an AppImage
+# PPP_SLICER=…                         # only if auto-detect misses — see below
 # PPP_DOWNLOAD_DIR="$HOME/.cache/ppp/models"
 ```
+
+### Finding the slicer
+
+Left unset, the helper looks for PrusaSlicer in the places it usually is, in
+order: a binary on `PATH` (`prusa-slicer`, `prusaslicer`, `PrusaSlicer`), a
+Flatpak install, then an AppImage in `~/Applications`, `~/Downloads` or
+`~/.local/bin`. On most machines that just works — including a Flathub install,
+which nothing puts on `PATH`.
+
+Set `PPP_SLICER` only when that misses, in whichever form matches your install:
+
+```sh
+PPP_SLICER="prusa-slicer"                             # a binary name
+PPP_SLICER="$HOME/Applications/PrusaSlicer-2.9.0.AppImage"  # an AppImage
+PPP_SLICER="flatpak run com.prusa3d.PrusaSlicer"      # a Flatpak
+PPP_SLICER="orca-slicer"                              # or any other slicer
+```
+
+A multi-word command (the Flatpak form) is split on spaces and run as-is, so
+a path that itself contains spaces is the one thing this cannot express — put
+the AppImage somewhere without them.
+
+**Flatpak note:** the slicer must be allowed to read the downloaded file. The
+default `PPP_DOWNLOAD_DIR` is under `~/.cache`, which a Flatpak with home access
+can see; if yours is sandboxed tighter, grant it with
+`flatpak override --user --filesystem=xdg-cache/ppp com.prusa3d.PrusaSlicer`.
 
 Get a token by signing in — and keep it out of your shell history:
 
@@ -96,7 +122,9 @@ indistinguishable from one that was never wired up. Common lines:
 | `no config at …` | The installer has not run, or `$PPP_SLICER_CONF` points elsewhere. |
 | `not authorised (HTTP 401)` | The token is wrong, expired, or was revoked by signing out. Mint a new one. |
 | `story N … not one this account may see (HTTP 404)` | That ticket is not yours, or does not exist. |
-| `slicer '…' not found on PATH` | Set `PPP_SLICER` to the binary — an AppImage needs its full path. |
+| `could not find PrusaSlicer` | Auto-detect missed it. Set `PPP_SLICER` — see *Finding the slicer* above. |
+| `slicer '…' is not runnable` | `PPP_SLICER` points at something that is not a command or an executable file. |
+| loads then says *empty file* / *loading failed* | The bytes did arrive; the slicer could not read them (a truncated or non-model file). Check the ticket's file. |
 | `WARNING: … is group/world-readable` | `chmod 600 ~/.config/ppp/slicer.conf`. |
 
 ## macOS and Windows

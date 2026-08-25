@@ -94,8 +94,15 @@ PPP_BASE="https://print.example"
 #     -d '{"username":"you","password":"..."}' | grep -i '^set-auth-token:'
 PPP_TOKEN="paste-the-set-auth-token-value-here"
 
-# Optional. The slicer binary; give a full path for an AppImage.
-# PPP_SLICER="prusa-slicer"
+# Optional. Left unset, the helper finds PrusaSlicer on its own — a binary on
+# PATH (prusa-slicer / prusaslicer / PrusaSlicer), a Flatpak install, or an
+# AppImage in ~/Applications, ~/Downloads or ~/.local/bin. Set it only to point
+# somewhere else, in any of these forms:
+#   PPP_SLICER="prusa-slicer"                              # a binary name
+#   PPP_SLICER="$HOME/Applications/PrusaSlicer-2.9.0.AppImage"   # an AppImage
+#   PPP_SLICER="flatpak run com.prusa3d.PrusaSlicer"      # a Flatpak
+#   PPP_SLICER="orca-slicer"                              # any slicer works
+# (A path containing spaces is the one form this cannot express.)
 
 # Optional. Where fetched models are cached (pruned after a day).
 # PPP_DOWNLOAD_DIR="$HOME/.cache/ppp/models"
