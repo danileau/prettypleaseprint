@@ -154,33 +154,12 @@ const UNIT_TO_MM: Record<string, number> = {
   meter: 1000,
 };
 
-function measure3mf(bytes: Uint8Array): { box: Box; triangles: number } | null {
-  let files: Record<string, Uint8Array>;
-  try {
-    let inflated = 0;
-    files = unzipSync(bytes, {
-      filter: (file) => {
-        inflated += file.originalSize ?? 0;
-        if (inflated > MAX_INFLATED_BYTES) {
-          throw new Error("archive inflates to an implausible size");
-        }
-        // Only the model part is needed; thumbnails and metadata are skipped.
-        return /3dmodel\.model$/i.test(file.name);
-      },
-    });
-  } catch {
-    return null;
-  }
-
-  const key = Object.keys(files).find((k) => /3dmodel\.model$/i.test(k));
-  if (!key) return null;
-
-  const xml = new TextDecoder("utf-8", { fatal: false }).decode(files[key]!);
-
+/** Pull the bounding box and triangle count out of one `<model>` part's XML. */
+function measureModelPart(xml: string, box: Box): { vertices: number; triangles: number } {
+  // Each part declares its own unit — a component part need not match the root.
   const unit = /<model[^>]*\bunit\s*=\s*"([^"]+)"/i.exec(xml)?.[1]?.toLowerCase();
   const scale = UNIT_TO_MM[unit ?? "millimeter"] ?? 1;
 
-  const box = emptyBox();
   let vertices = 0;
   // Attribute order is not fixed by the spec, so each is matched separately
   // within the tag rather than assuming x, y, z appear in order.
@@ -195,8 +174,53 @@ function measure3mf(bytes: Uint8Array): { box: Box; triangles: number } | null {
     expand(box, parseFloat(x) * scale, parseFloat(y) * scale, parseFloat(z) * scale);
     vertices++;
   }
+  return { vertices, triangles: (xml.match(/<triangle\b/g) ?? []).length };
+}
 
-  const triangles = (xml.match(/<triangle\b/g) ?? []).length;
+function measure3mf(bytes: Uint8Array): { box: Box; triangles: number } | null {
+  let files: Record<string, Uint8Array>;
+  try {
+    let inflated = 0;
+    files = unzipSync(bytes, {
+      filter: (file) => {
+        // EVERY model part, not only `3dmodel.model`. The 3MF production
+        // extension (Bambu, OrcaSlicer multi-object plates, several CAD
+        // exporters) puts each object's geometry in its own
+        // `3D/Objects/*.model` and leaves the root part merely referencing
+        // them — so reading the root alone finds no geometry and the whole
+        // file was being refused. Some exporters also name the root part
+        // something other than `3dmodel.model`. Reading any `*.model` covers
+        // both. Nothing is ever written from these names (storage keys are
+        // generated), so an odd or traversal-shaped member name is harmless.
+        if (!/\.model$/i.test(file.name)) return false;
+        inflated += file.originalSize ?? 0;
+        if (inflated > MAX_INFLATED_BYTES) {
+          throw new Error("archive inflates to an implausible size");
+        }
+        return true;
+      },
+    });
+  } catch {
+    return null;
+  }
+
+  const box = emptyBox();
+  let vertices = 0;
+  let triangles = 0;
+  for (const name of Object.keys(files)) {
+    if (!/\.model$/i.test(name)) continue;
+    const xml = new TextDecoder("utf-8", { fatal: false }).decode(files[name]!);
+    const part = measureModelPart(xml, box);
+    vertices += part.vertices;
+    triangles += part.triangles;
+  }
+
+  // Component transforms (<component>/<item> matrices) are deliberately not
+  // applied: this measures the raw union of every part's vertices, so an
+  // assembly whose components are translated or rotated may report a slightly
+  // loose box. That is the right trade — the dimensions are display-only and
+  // already disclaimed as approximate, and accepting the file beats refusing a
+  // perfectly printable model over a bounding box that is a few mm out.
   return vertices > 0 ? { box, triangles } : null;
 }
 

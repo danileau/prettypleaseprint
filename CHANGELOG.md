@@ -5,6 +5,22 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+### Fixed
+
+- **3MF files with geometry in a separate part were refused.** The validator
+  read only the archive's root `3D/3dmodel.model` and counted vertices there,
+  so a 3MF written in the *production extension* shape — each object's mesh in
+  its own `3D/Objects/*.model`, the root merely referencing them — looked empty
+  and was rejected as "not a model". That shape is what Bambu Studio, OrcaSlicer
+  multi-object plates and several CAD exporters emit, so a lot of perfectly
+  printable files bounced. It now reads every `*.model` part in the archive
+  (which also covers exporters that name the root part something other than
+  `3dmodel.model`), summing geometry across them, with the zip-bomb guard still
+  applied to the total. Component transforms are not applied, so an assembly's
+  reported bounding box may be a few mm loose — a deliberate trade, since the
+  dimensions are display-only and accepting the file beats refusing it. A
+  regression test covers a production-extension 3MF end to end.
+
 ### Added
 
 - **Open a model straight in PrusaSlicer**, from a control on every ticket. A
