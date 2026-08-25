@@ -154,27 +154,117 @@ const UNIT_TO_MM: Record<string, number> = {
   meter: 1000,
 };
 
-/** Pull the bounding box and triangle count out of one `<model>` part's XML. */
-function measureModelPart(xml: string, box: Box): { vertices: number; triangles: number } {
-  // Each part declares its own unit — a component part need not match the root.
-  const unit = /<model[^>]*\bunit\s*=\s*"([^"]+)"/i.exec(xml)?.[1]?.toLowerCase();
-  const scale = UNIT_TO_MM[unit ?? "millimeter"] ?? 1;
+// --- 3MF geometry, honouring the transform tree ------------------------------
+//
+// A 3MF's real size is not the raw union of its vertices. Objects carry their
+// coordinates in a local space and are placed by a transform on the `<build>`
+// `<item>` (and, in the production extension, by a transform on each
+// `<component>`). Cura is the case that makes this non-optional: it stores the
+// mesh in a scaled-down space and puts the true size in the item matrix, so
+// reading the raw vertices reports a box of a fraction of a millimetre — a
+// model that measured "0 × 0 × 0 mm". Applying the transforms is what turns
+// that back into the real dimensions.
+//
+// Matrices are row-major 4×4 in the row-vector convention (a point is p·M, so
+// translation lives in the last row) — the same convention the 3MF `transform`
+// attribute uses.
 
-  let vertices = 0;
-  // Attribute order is not fixed by the spec, so each is matched separately
-  // within the tag rather than assuming x, y, z appear in order.
-  const vertexTag = /<vertex\b[^>]*\/?>/g;
-  let tag: RegExpExecArray | null;
-  while ((tag = vertexTag.exec(xml)) !== null) {
-    const s = tag[0];
-    const x = /\bx\s*=\s*"(-?[\d.eE+-]+)"/.exec(s)?.[1];
-    const y = /\by\s*=\s*"(-?[\d.eE+-]+)"/.exec(s)?.[1];
-    const z = /\bz\s*=\s*"(-?[\d.eE+-]+)"/.exec(s)?.[1];
-    if (x === undefined || y === undefined || z === undefined) continue;
-    expand(box, parseFloat(x) * scale, parseFloat(y) * scale, parseFloat(z) * scale);
-    vertices++;
+type Mat = number[]; // length 16
+const IDENTITY_MAT: Mat = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+/** A 3MF `transform="m00 m01 m02 m10 … m30 m31 m32"` (12 values) → 4×4. */
+function parseTransform(s: string | undefined): Mat {
+  if (!s) return IDENTITY_MAT;
+  const n = s.trim().split(/\s+/).map(Number);
+  if (n.length !== 12 || n.some((v) => !Number.isFinite(v))) return IDENTITY_MAT;
+  const [a, b, c, d, e, f, g, h, i, j, k, l] = n as number[];
+  return [a!, b!, c!, 0, d!, e!, f!, 0, g!, h!, i!, 0, j!, k!, l!, 1];
+}
+
+/** Child-then-parent for row vectors: the point p·A·B, i.e. standard A·B. */
+function matMul(a: Mat, b: Mat): Mat {
+  const out = new Array(16).fill(0) as Mat;
+  for (let r = 0; r < 4; r++) {
+    for (let col = 0; col < 4; col++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) sum += a[r * 4 + k]! * b[k * 4 + col]!;
+      out[r * 4 + col] = sum;
+    }
   }
-  return { vertices, triangles: (xml.match(/<triangle\b/g) ?? []).length };
+  return out;
+}
+
+type Obj3mf = {
+  /** Flat x,y,z triples in the part's local space. */
+  verts: number[];
+  components: { objectid: string; path: string | null; tf: Mat }[];
+};
+
+type Part3mf = {
+  /** Multiply a local coordinate by this to reach millimetres. */
+  unitScale: number;
+  objects: Map<string, Obj3mf>;
+  buildItems: { objectid: string; tf: Mat }[];
+};
+
+const attr = (tag: string, name: string): string | undefined =>
+  new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, "i").exec(tag)?.[1];
+
+/** Zip member names have no leading slash; a 3MF `p:path` usually does. */
+const normalizePart = (p: string): string => p.replace(/^\/+/, "").toLowerCase();
+
+function parsePart(xml: string): Part3mf {
+  const unit = /<model[^>]*\bunit\s*=\s*"([^"]+)"/i.exec(xml)?.[1]?.toLowerCase();
+  const unitScale = UNIT_TO_MM[unit ?? "millimeter"] ?? 1;
+
+  const objects = new Map<string, Obj3mf>();
+  // Objects do not nest, so a non-greedy body match is safe. Self-closing
+  // objects carry no geometry and are simply skipped.
+  const objRe = /<object\b([^>]*)>([\s\S]*?)<\/object>/gi;
+  let om: RegExpExecArray | null;
+  while ((om = objRe.exec(xml)) !== null) {
+    const id = attr(om[1]!, "id");
+    if (id === undefined) continue;
+    const body = om[2]!;
+
+    const verts: number[] = [];
+    const vertexTag = /<vertex\b[^>]*\/?>/g;
+    let vt: RegExpExecArray | null;
+    while ((vt = vertexTag.exec(body)) !== null) {
+      const s = vt[0];
+      // Attribute order is not fixed by the spec, so match each separately.
+      const x = /\bx\s*=\s*"(-?[\d.eE+-]+)"/.exec(s)?.[1];
+      const y = /\by\s*=\s*"(-?[\d.eE+-]+)"/.exec(s)?.[1];
+      const z = /\bz\s*=\s*"(-?[\d.eE+-]+)"/.exec(s)?.[1];
+      if (x === undefined || y === undefined || z === undefined) continue;
+      verts.push(parseFloat(x), parseFloat(y), parseFloat(z));
+    }
+
+    const components: Obj3mf["components"] = [];
+    const compTag = /<component\b[^>]*\/?>/g;
+    let ct: RegExpExecArray | null;
+    while ((ct = compTag.exec(body)) !== null) {
+      const objectid = attr(ct[0], "objectid");
+      if (objectid === undefined) continue;
+      // The path attribute is namespaced (`p:path`); match it prefix-agnostically.
+      const path = /\b[\w]*:?path\s*=\s*"([^"]+)"/i.exec(ct[0])?.[1] ?? null;
+      components.push({ objectid, path, tf: parseTransform(attr(ct[0], "transform")) });
+    }
+
+    objects.set(id, { verts, components });
+  }
+
+  const buildItems: Part3mf["buildItems"] = [];
+  const buildBlock = /<build\b[^>]*>([\s\S]*?)<\/build>/i.exec(xml)?.[1] ?? "";
+  const itemTag = /<item\b[^>]*\/?>/g;
+  let it: RegExpExecArray | null;
+  while ((it = itemTag.exec(buildBlock)) !== null) {
+    const objectid = attr(it[0], "objectid");
+    if (objectid === undefined) continue;
+    buildItems.push({ objectid, tf: parseTransform(attr(it[0], "transform")) });
+  }
+
+  return { unitScale, objects, buildItems };
 }
 
 function measure3mf(bytes: Uint8Array): { box: Box; triangles: number } | null {
@@ -204,24 +294,76 @@ function measure3mf(bytes: Uint8Array): { box: Box; triangles: number } | null {
     return null;
   }
 
-  const box = emptyBox();
-  let vertices = 0;
+  const parts = new Map<string, Part3mf>();
   let triangles = 0;
   for (const name of Object.keys(files)) {
     if (!/\.model$/i.test(name)) continue;
     const xml = new TextDecoder("utf-8", { fatal: false }).decode(files[name]!);
-    const part = measureModelPart(xml, box);
-    vertices += part.vertices;
-    triangles += part.triangles;
+    parts.set(name.toLowerCase(), parsePart(xml));
+    triangles += (xml.match(/<triangle\b/g) ?? []).length;
+  }
+  if (parts.size === 0) return null;
+
+  const box = emptyBox();
+  let placed = 0;
+
+  // Walk from each build item down through components, composing transforms and
+  // expanding the box with every mesh vertex in its final placed position. A
+  // visited set (keyed by part+object at a given depth) plus a depth cap guards
+  // against a malformed file whose components reference each other in a cycle.
+  const walk = (partKey: string, objectId: string, m: Mat, depth: number) => {
+    if (depth > 50) return;
+    const part = parts.get(partKey);
+    const obj = part?.objects.get(objectId);
+    if (!part || !obj) return;
+
+    const s = part.unitScale;
+    for (let i = 0; i + 2 < obj.verts.length; i += 3) {
+      const x = obj.verts[i]!, y = obj.verts[i + 1]!, z = obj.verts[i + 2]!;
+      expand(
+        box,
+        (x * m[0]! + y * m[4]! + z * m[8]! + m[12]!) * s,
+        (x * m[1]! + y * m[5]! + z * m[9]! + m[13]!) * s,
+        (x * m[2]! + y * m[6]! + z * m[10]! + m[14]!) * s,
+      );
+      placed++;
+    }
+    for (const c of obj.components) {
+      const childKey = c.path ? normalizePart(c.path) : partKey;
+      walk(childKey, c.objectid, matMul(c.tf, m), depth + 1);
+    }
+  };
+
+  // The root part is the one that carries the build. Fall back to any part with
+  // items, then — for a file that omits <build> entirely — to placing every
+  // object at identity so such a file is still measured rather than refused.
+  const roots = [...parts].filter(([, p]) => p.buildItems.length > 0);
+  if (roots.length > 0) {
+    for (const [key, part] of roots) {
+      for (const item of part.buildItems) walk(key, item.objectid, item.tf, 0);
+    }
+  } else {
+    for (const [key, part] of parts) {
+      for (const id of part.objects.keys()) walk(key, id, IDENTITY_MAT, 0);
+    }
   }
 
-  // Component transforms (<component>/<item> matrices) are deliberately not
-  // applied: this measures the raw union of every part's vertices, so an
-  // assembly whose components are translated or rotated may report a slightly
-  // loose box. That is the right trade — the dimensions are display-only and
-  // already disclaimed as approximate, and accepting the file beats refusing a
-  // perfectly printable model over a bounding box that is a few mm out.
-  return vertices > 0 ? { box, triangles } : null;
+  // Last resort: if the transform walk placed nothing (an object graph we could
+  // not resolve — an unusual production layout, say), fall back to the raw
+  // union of every vertex so a printable file is still accepted, only with a
+  // looser box. Acceptance must never regress on account of the maths above.
+  if (placed === 0) {
+    for (const part of parts.values()) {
+      for (const obj of part.objects.values()) {
+        for (let i = 0; i + 2 < obj.verts.length; i += 3) {
+          expand(box, obj.verts[i]! * part.unitScale, obj.verts[i + 1]! * part.unitScale, obj.verts[i + 2]! * part.unitScale);
+          placed++;
+        }
+      }
+    }
+  }
+
+  return placed > 0 ? { box, triangles } : null;
 }
 
 // ---------------------------------------------------------------------------

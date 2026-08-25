@@ -15,11 +15,20 @@ Notable changes. Every entry names a released version; deployments pin
   multi-object plates and several CAD exporters emit, so a lot of perfectly
   printable files bounced. It now reads every `*.model` part in the archive
   (which also covers exporters that name the root part something other than
-  `3dmodel.model`), summing geometry across them, with the zip-bomb guard still
-  applied to the total. Component transforms are not applied, so an assembly's
-  reported bounding box may be a few mm loose — a deliberate trade, since the
-  dimensions are display-only and accepting the file beats refusing it. A
-  regression test covers a production-extension 3MF end to end.
+  `3dmodel.model`), with the zip-bomb guard still applied to the total.
+
+- **3MF dimensions were wrong when the size lived in a transform** — a Cura
+  export measured `0 × 0 × 0 mm`. A 3MF places geometry through the transform
+  matrices on the `<build>` `<item>` and on each `<component>`, and Cura in
+  particular stores the mesh in a scaled-down space with the true size in that
+  matrix; the validator read the raw vertices and so reported a box a thousandth
+  of the real thing. It now walks the build → component tree, composes the
+  transforms and measures the geometry in its placed position — so a single
+  model reads its true size, and a multi-object plate reads the footprint of the
+  whole arrangement (the number that says whether it fits the bed). Both this
+  and the production-extension case above were reproduced against a shelf of
+  real Bambu, OrcaSlicer and Cura files; regression tests cover a
+  production-extension 3MF and a scaled build-item 3MF.
 
 ### Added
 
