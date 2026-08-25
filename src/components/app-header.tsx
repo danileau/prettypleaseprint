@@ -21,11 +21,13 @@ const NAV: Record<Actor["role"], Array<{ label: string; href: string }>> = {
     { label: "The rail", href: "/board" },
     { label: "Order up", href: "/upload" },
     { label: "My orders", href: "/me" },
+    { label: "Requests", href: "/frr" },
   ],
   admin: [
     { label: "The pass", href: "/queue" },
     { label: "The rail", href: "/board" },
     { label: "The books", href: "/me" },
+    { label: "Requests", href: "/frr/queue" },
     { label: "Guest list", href: "/admin/invites" },
     { label: "Audit", href: "/admin/audit" },
   ],
@@ -53,6 +55,7 @@ export async function AppHeader({
     when: relativeTime(n.createdAt),
     read: n.read,
     storyId: n.storyId,
+    featureId: n.featureId,
   }));
   const unread = items.filter((i) => !i.read).length;
 

@@ -185,13 +185,20 @@ const CHIP_SKIN: Record<string, string> = {
   Delivery: "bg-cherry text-ink",
   Done: "bg-mint text-ink",
   Declined: "bg-cream-3 text-ink-2",
+  // Feature-request states (see FEATURE_FLOW). Reuse the print palette's roles:
+  // sun = in-progress/warning, cherry = wants-you-to-act.
+  InProgress: "bg-sun text-ink",
+  Shipped: "bg-cherry text-ink",
 };
 
 export function StatusChip({
   status,
+  label,
   className = "",
 }: {
   status: string;
+  /** Display text when it differs from the enum value (e.g. "In progress"). */
+  label?: string;
   className?: string;
 }) {
   return (
@@ -200,7 +207,7 @@ export function StatusChip({
         CHIP_SKIN[status] ?? CHIP_SKIN.Requested
       } ${className}`}
     >
-      {status}
+      {label ?? status}
     </span>
   );
 }

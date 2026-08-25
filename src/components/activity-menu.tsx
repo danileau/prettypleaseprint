@@ -9,6 +9,7 @@ export type FeedItem = {
   when: string;
   read: boolean;
   storyId: number | null;
+  featureId: number | null;
 };
 
 /**
@@ -94,6 +95,16 @@ export function ActivityMenu({
                 type="button"
                 onClick={() => {
                   if (!item.read) startTransition(() => void markRead(item.id));
+                  // Take them to whatever the notification is about. A feature
+                  // request goes to /frr, a print to /story; a reference-less
+                  // one (a withdrawal) just marks read.
+                  const href =
+                    item.featureId !== null
+                      ? `/frr/${item.featureId}`
+                      : item.storyId !== null
+                        ? `/story/${item.storyId}`
+                        : null;
+                  if (href) window.location.assign(href);
                 }}
                 className={`flex cursor-pointer gap-[13.2px] rounded-card border-2 border-transparent px-[13.2px] py-[11px] text-left hover:border-ink hover:bg-cream-2 ${
                   item.read ? "bg-transparent" : "bg-sun-wash"

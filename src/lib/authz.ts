@@ -18,6 +18,15 @@ export {
   nextStatus,
   assertTransition,
   AuthzError,
+  // feature-request rules (the 'frr' track)
+  featureScope,
+  featureRef,
+  featureLabel,
+  FEATURE_FLOW,
+  FEATURE_BOARD,
+  isFeatureTerminal,
+  nextFeatureStatus,
+  assertFeatureTransition,
   type Actor,
 } from "@/lib/scope";
 
@@ -126,12 +135,15 @@ export const printerName = cache(async (): Promise<string> => {
 export async function notify(opts: {
   recipientId: string;
   storyId?: number;
+  /** A feature request this is about, for the 'frr' track. */
+  featureId?: number;
   text: string;
 }): Promise<void> {
   await db.notification.create({
     data: {
       recipientId: opts.recipientId,
       storyId: opts.storyId ?? null,
+      featureId: opts.featureId ?? null,
       text: opts.text,
     },
   });

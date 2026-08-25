@@ -73,6 +73,10 @@ model User {
   comments      Comment[]
   notifications Notification[]
 
+  /// The 'frr' feature-request track — a parallel backlog to the print one.
+  featureRequests FeatureRequest[]
+  featureComments FeatureComment[]
+
   @@index([role])
   @@map("user")
 }
@@ -317,10 +321,84 @@ model Notification {
   recipient   User     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   storyId     Int?
   story       Story?   @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  /// A notification points at a print story OR a feature request (or neither,
+  /// for a withdrawal). The two id columns are mutually exclusive in practice;
+  /// the Activity feed routes to /story or /frr on whichever is set.
+  featureId   Int?
+  feature     FeatureRequest? @relation(fields: [featureId], references: [id], onDelete: Cascade)
   text        String
   read        Boolean  @default(false)
   createdAt   DateTime @default(now())
 
   @@index([recipientId, read])
   @@map("notification")
+}
+
+// ===========================================================================
+// Feature requests — the 'frr' track
+//
+// A parallel backlog: users file feature requests, the printer owner triages
+// them with the same flow, conversation, notifications and audit trail as a
+// print. Kept in its own tables rather than folded into Story, which stays
+// purely about printed models. The status flow mirrors the print one's shape
+// (forward-only, one step, Done leaves the board, Declined terminal from
+// Requested) with feature-appropriate names — see FEATURE_FLOW in scope.ts.
+// ===========================================================================
+
+enum FeatureStatus {
+  Requested
+  Accepted
+  InProgress
+  Shipped
+  Done
+  Declined
+}
+
+enum FeaturePriority {
+  low
+  medium
+  high
+}
+
+enum FeatureCategory {
+  ui
+  api
+  bug
+  other
+}
+
+model FeatureRequest {
+  /// Autoincrement so the display ref stays "FRR-" + (100 + id).
+  id          Int             @id @default(autoincrement())
+  title       String
+  description String          @default("")
+  status      FeatureStatus   @default(Requested)
+  priority    FeaturePriority @default(medium)
+  category    FeatureCategory @default(other)
+
+  requesterId String
+  requester   User   @relation(fields: [requesterId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  comments      FeatureComment[]
+  notifications Notification[]
+
+  @@index([requesterId])
+  @@index([status])
+  @@map("featureRequest")
+}
+
+model FeatureComment {
+  id        String         @id @default(cuid())
+  featureId Int
+  feature   FeatureRequest @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime       @default(now())
+
+  @@index([featureId])
+  @@map("featureComment")
 }

@@ -39,6 +39,7 @@
     "shots": "tsx scripts/screenshot.ts",
     "env:container": "tsx scripts/use-container-env.ts",
     "verify:queue": "tsx scripts/verify-queue.ts",
+    "verify:frr": "tsx scripts/verify-frr.ts",
     "verify:api": "tsx scripts/verify-api.ts",
     "vendor:swagger": "tsx scripts/vendor-swagger.ts"
   },
