@@ -73,8 +73,47 @@ fi
 
 : "${PPP_BASE:?PPP_BASE is not set in $CONF}"
 : "${PPP_TOKEN:?PPP_TOKEN is not set in $CONF}"
-SLICER="${PPP_SLICER:-prusa-slicer}"
 DOWNLOAD_DIR="${PPP_DOWNLOAD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/ppp/models}"
+
+# --- locate the slicer ------------------------------------------------------
+# There is no one name for "PrusaSlicer on Linux": a distro package is
+# `prusa-slicer`, the official download is an AppImage nobody puts on PATH, and
+# Flathub installs it as an app id you reach through `flatpak run`. Defaulting
+# to a single binary name meant the common cases all failed with "not found".
+#
+# PPP_SLICER may therefore be a bare name, a full path to an AppImage, or a
+# multi-word command like "flatpak run com.prusa3d.PrusaSlicer" — it is split
+# on whitespace into a command + args. Left unset, the cases above are probed
+# in turn. (A path containing spaces is the one thing this cannot express; put
+# the AppImage somewhere without them.)
+if [ -n "${PPP_SLICER:-}" ]; then
+  read -r -a SLICER_CMD <<<"$PPP_SLICER"
+else
+  SLICER_CMD=()
+  # 1. a binary on PATH, under the names distros and builds actually use.
+  for cand in prusa-slicer prusaslicer PrusaSlicer prusa-slicer-gui; do
+    if command -v "$cand" >/dev/null 2>&1; then SLICER_CMD=("$cand"); break; fi
+  done
+  # 2. a Flatpak install.
+  if [ "${#SLICER_CMD[@]}" -eq 0 ] && command -v flatpak >/dev/null 2>&1 &&
+    flatpak info com.prusa3d.PrusaSlicer >/dev/null 2>&1; then
+    SLICER_CMD=(flatpak run com.prusa3d.PrusaSlicer)
+  fi
+  # 3. an AppImage in the usual spots. A glob that matches nothing stays a
+  #    literal with a `*` in it, which is never -x, so it is simply skipped.
+  if [ "${#SLICER_CMD[@]}" -eq 0 ]; then
+    for g in \
+      "$HOME"/Applications/*[Pp]rusa*[Ss]licer*.AppImage \
+      "$HOME"/Downloads/*[Pp]rusa*[Ss]licer*.AppImage \
+      "$HOME"/.local/bin/*[Pp]rusa*[Ss]licer*.AppImage \
+      /opt/*[Pp]rusa*[Ss]licer*/*.AppImage; do
+      [ -x "$g" ] && { SLICER_CMD=("$g"); break; }
+    done
+  fi
+fi
+
+[ "${#SLICER_CMD[@]}" -gt 0 ] || fail \
+  "could not find PrusaSlicer. Set PPP_SLICER in $CONF — a binary name, the full path to an AppImage, or 'flatpak run com.prusa3d.PrusaSlicer'."
 
 # --- parse the link ---------------------------------------------------------
 # Accept ppp://slice/<id>, with or without a trailing slash. The id is the ONLY
@@ -90,8 +129,11 @@ case "$id" in
 esac
 
 command -v curl >/dev/null 2>&1 || fail "curl is not installed"
-command -v "$SLICER" >/dev/null 2>&1 ||
-  fail "slicer '$SLICER' not found on PATH — set PPP_SLICER in $CONF (AppImage users: give the full path)"
+# The head of the command has to be runnable — a binary on PATH, or a file we
+# can execute (an AppImage). Everything after it is arguments to that.
+slicer_head="${SLICER_CMD[0]}"
+command -v "$slicer_head" >/dev/null 2>&1 || [ -x "$slicer_head" ] ||
+  fail "slicer '$slicer_head' is not runnable — fix PPP_SLICER in $CONF (a name on PATH, an AppImage path, or 'flatpak run com.prusa3d.PrusaSlicer')"
 
 # --- fetch ------------------------------------------------------------------
 tmp="$(mktemp -d)"
@@ -126,6 +168,11 @@ name="$(
     sed -n 's/.*filename="\([^"]*\)".*/\1/p' | head -n1
 )"
 name="$(basename "${name:-model-$id.stl}")"
+# Make the on-disk name safe for every launcher. This is only the local temp
+# file's name — the app keeps the real display name — so we can be strict:
+# spaces to underscores (Flatpak's entrypoint splits its argument on spaces and
+# mangles a path that contains one), and nothing outside a conservative set.
+name="$(printf '%s' "$name" | tr ' ' '_' | tr -cd 'A-Za-z0-9._-')"
 case "$name" in "" | .*) name="model-$id.stl" ;; esac
 
 mkdir -p "$DOWNLOAD_DIR"
@@ -140,6 +187,6 @@ note "saved $out"
 # --- open -------------------------------------------------------------------
 # --single-instance so a second click loads the model into the window already
 # open rather than starting a race between two PrusaSlicers over the same file.
-note "opening in $SLICER"
-setsid "$SLICER" --single-instance "$out" >>"$LOG" 2>&1 &
+note "opening with: ${SLICER_CMD[*]}"
+setsid "${SLICER_CMD[@]}" --single-instance "$out" >>"$LOG" 2>&1 &
 note "handed off story $id"

@@ -20,6 +20,9 @@ Notable changes. Every entry names a released version; deployments pin
   below and hands the slicer a *local file* — which has no domain to check. It
   adds nothing to the server and needs no client bundle: a `ppp://` link invokes
   the OS handler rather than making a request, so the CSP does not govern it.
+  The helper finds PrusaSlicer across the ways Linux installs it — a binary on
+  `PATH`, a Flatpak, or an AppImage in the usual folders — and takes an explicit
+  `PPP_SLICER` (a name, an AppImage path, or `flatpak run …`) when it cannot.
   Docs at [`docs/prusaslicer.md`](docs/prusaslicer.md); works with OrcaSlicer or
   any slicer that opens a file from the command line.
 
