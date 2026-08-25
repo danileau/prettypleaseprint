@@ -155,6 +155,32 @@ Swagger UI itself is copied out of `node_modules` at build time by
 would be unreachable on a NAS with no outbound internet, and would put a third
 party in the request path of an otherwise entirely first-party tool.
 
+## The feature-request track ('frr')
+
+A second backlog lives at `/frr`: anyone files a feature request, and the owner
+triages it through the same board, queue, status flow, conversation,
+notifications and audit trail as a print — see
+[Feature requests](feature-requests.md).
+
+It is built as a deliberate **parallel** of the print backlog, not folded into
+it. There is a `FeatureRequest`/`FeatureComment` pair of tables and a
+`src/lib/features.ts` service that mirrors `stories.ts` operation-for-operation;
+`Story`, the upload, the viewer and the JSON API are untouched, with no `kind`
+flag threading feature logic through them. The pure rules sit beside the print
+ones in `scope.ts` — `featureScope`, `FEATURE_FLOW`, `assertFeatureTransition`,
+`featureRef` — and are kept parallel rather than merged into one generic helper
+on purpose: the print rules are load-bearing and exercised directly by the
+suites, so a shared cleverness a change to one backlog could bend for the other
+is a worse trade than a little duplication. The *shape* is identical, which is
+what makes the owner handle a request exactly as they handle a print.
+
+Where the two backlogs meet is shared infrastructure, extended additively: one
+`Notification` row can point at a story or a feature (a nullable `featureId`,
+and the Activity feed routes to `/story` or `/frr` on whichever is set), and the
+audit trail gained `feature.*` verbs. Neither change alters how a print behaves.
+`npm run verify:frr` drives the whole track the way `verify:queue` drives the
+print one.
+
 ## What is deliberately not built
 
 - **Email/Slack notification delivery.** `Notification` rows and the `notify()`
