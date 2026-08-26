@@ -402,3 +402,24 @@ model FeatureComment {
   @@index([featureId])
   @@map("featureComment")
 }
+
+/// A "benefit" — the tip a requester offers the printer owner ("what's in it
+/// for you"). Owner-managed data, replacing the old hardcoded TIPS const, so
+/// the owner defines the list and marks which ones they currently prefer.
+///
+/// `Story.tip` stays a plain string with no FK: a past request keeps the exact
+/// tip it was made with even after the list is edited or a benefit retired.
+/// `active` retires a benefit without deleting that history; `preferred` is
+/// what the upload form highlights.
+model Benefit {
+  id        String   @id @default(cuid())
+  label     String   @unique
+  preferred Boolean  @default(false)
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
+  @@map("benefit")
+}

@@ -42,6 +42,9 @@ export type AuditAction =
   | "comment.added"
   | "file.downloaded"
   | "file.refused"
+  // benefits (the owner-managed tip catalogue)
+  | "benefit.created"
+  | "benefit.updated"
   // feature requests (the 'frr' track)
   | "feature.created"
   | "feature.status_changed"

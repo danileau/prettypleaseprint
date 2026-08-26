@@ -7,6 +7,20 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Added
 
+- **The benefits (tip options) are owner-managed.** What used to be a hardcoded
+  list of tips ("A beer", "A coffee", …) is now data the printer owner edits at
+  `/admin/benefits`: add, rename, retire/restore, and mark which they currently
+  **prefer** — the preferred ones are starred on the upload form under a
+  "*Danilo currently prefers: …*" line so people pick what the owner actually
+  wants. `Story.tip` stays a plain string, so editing or retiring a benefit
+  never rewrites a request that already offered it; a retired one is kept rather
+  than deleted. The upload endpoint validates the tip against the current
+  *active* list server-side, so the managed catalogue — not the form — is
+  authoritative. New `Benefit` table, seeded with the previous five tips on
+  first run (idempotently, never clobbering the owner's edits). `verify:benefits`
+  covers it (19 checks); every change is audited (`benefit.created`,
+  `benefit.updated`).
+
 - **A feature request's priority can be changed after it is filed** (FRR-104).
   Requirements shift, so a request's priority is a knob rather than a
   one-shot: the requester may re-set the priority of their own request while it

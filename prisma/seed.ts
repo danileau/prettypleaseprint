@@ -72,6 +72,27 @@ async function main() {
 
   console.info(`Printer owner ready: ${admin.name} <${admin.email}>`);
 
+  // The default benefits (tip options). Idempotent and non-destructive: an
+  // upsert per label with an empty update, so a re-run (the migrator runs the
+  // seed on every deploy) never overwrites the owner's edits — a renamed,
+  // retired or preferred benefit is left exactly as they set it, and a retired
+  // default is not resurrected. New default labels are appended.
+  const DEFAULT_BENEFITS = [
+    "A beer",
+    "A coffee",
+    "A spool of filament",
+    "Nerd stuff",
+    "Nothing, sorry",
+  ];
+  for (let i = 0; i < DEFAULT_BENEFITS.length; i++) {
+    await db.benefit.upsert({
+      where: { label: DEFAULT_BENEFITS[i]! },
+      update: {},
+      create: { label: DEFAULT_BENEFITS[i]!, sortOrder: i + 1 },
+    });
+  }
+  console.info(`Benefits ready: ${DEFAULT_BENEFITS.length} default tip(s) present.`);
+
   // A `credential` account with a password is the thing that makes signing in
   // possible. A passkey creates no such row, so somebody who enrolled one and
   // never set a password still counts as needing this — which is correct: the
