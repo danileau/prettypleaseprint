@@ -145,6 +145,67 @@ export const STORY_FIELDS = {
 
 export type StoryRow = Prisma.StoryGetPayload<{ select: typeof STORY_FIELDS }>;
 
+// ---------------------------------------------------------------------------
+// History — the prints that have left, or are leaving, the active rail
+// ---------------------------------------------------------------------------
+
+/**
+ * What the History view lists: work that is no longer moving through the
+ * board. `Delivery` (printed, waiting to be collected) and `Done` (handed
+ * over) are the finished states; `Declined` is the terminal branch. Anything
+ * still `Requested`/`Accepted`/`Printing` belongs on the rail, not here.
+ */
+export const HISTORY_STATUSES = ["Delivery", "Done", "Declined"] as const satisfies readonly StoryStatus[];
+
+export type HistoryFilters = {
+  /** One of HISTORY_STATUSES, or undefined for all of them. */
+  status?: StoryStatus;
+  material?: string;
+  /** Only tickets filed within this many days; undefined = all time. */
+  sinceDays?: number;
+};
+
+/** Fields the history rows render. Named, so no column leaks by a spread. */
+const HISTORY_FIELDS = {
+  id: true,
+  title: true,
+  status: true,
+  material: true,
+  colorHex: true,
+  filename: true,
+  tip: true,
+  flagged: true,
+  createdAt: true,
+  uploaderId: true,
+  uploader: { select: { name: true, initials: true } },
+} satisfies Prisma.StorySelect;
+
+export type HistoryRow = Prisma.StoryGetPayload<{ select: typeof HISTORY_FIELDS }>;
+
+/**
+ * A person's history, newest first. Scoped exactly like the board — a client
+ * sees only their own, the owner sees the group — with the filters ANDed onto
+ * the scope so no combination of them can widen the set.
+ */
+export function listHistory(actor: Actor, filters: HistoryFilters = {}): Promise<HistoryRow[]> {
+  const inHistory = filters.status && (HISTORY_STATUSES as readonly string[]).includes(filters.status)
+    ? { status: filters.status }
+    : { status: { in: [...HISTORY_STATUSES] } };
+
+  const where: Prisma.StoryWhereInput = {
+    AND: [
+      storyScope(actor),
+      inHistory,
+      ...(filters.material ? [{ material: filters.material as Prisma.StoryWhereInput["material"] }] : []),
+      ...(filters.sinceDays
+        ? [{ createdAt: { gte: new Date(Date.now() - filters.sinceDays * 86_400_000) } }]
+        : []),
+    ],
+  };
+
+  return db.story.findMany({ where, select: HISTORY_FIELDS, orderBy: { createdAt: "desc" } });
+}
+
 export type StoryQuery = {
   status?: StoryStatus[];
   flagged?: boolean;

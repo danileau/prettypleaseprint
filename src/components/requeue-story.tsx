@@ -16,12 +16,33 @@ export function RequeueStory({
   storyId,
   label,
   from,
+  compact = false,
 }: {
   storyId: number;
   /** The display ref, e.g. "PPP-104". Not `ref` — React reserves it. */
   label: string;
   from: string;
+  /** A tight, label-free button for a list row (the History view). */
+  compact?: boolean;
 }) {
+  if (compact) {
+    return (
+      <form action={requeueStory}>
+        <input type="hidden" name="storyId" value={storyId} />
+        <input type="hidden" name="from" value={from} />
+        <button
+          type="submit"
+          aria-label={`Print ${label} again`}
+          title="Opens a fresh request from the same file — no re-upload"
+          className="stamp inline-flex cursor-pointer items-center gap-[6px] rounded-chip border-[3px] border-ink bg-aqua px-[13.2px] py-[6px] text-[13px] font-bold text-ink hover:bg-sun"
+        >
+          <span aria-hidden className="font-mono text-[14px] leading-none">↻</span>
+          Print again
+        </button>
+      </form>
+    );
+  }
+
   return (
     <form action={requeueStory} className="mt-[17.6px]">
       <input type="hidden" name="storyId" value={storyId} />
