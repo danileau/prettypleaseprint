@@ -55,11 +55,15 @@ export function StoryCard({
         </div>
 
         <div className="mb-[11px] flex items-start gap-[8.8px]">
-          <span className="flex-1 font-display text-[15.5px] leading-[1.2] text-ink">
+          {/* `min-w-0` lets the flex child shrink to the card, and
+              `break-words` breaks a long unbroken token (a filename-derived
+              title like `2.5_SSD_lightened_bracket`) instead of letting the
+              fat display face overflow the box and get clipped by the rail. */}
+          <span className="min-w-0 flex-1 break-words font-display text-[15.5px] leading-[1.2] text-ink">
             {story.title}
           </span>
           {story.quantity > 1 && (
-            <span className="rounded-[6px] border-2 border-ink bg-sun px-[6px] py-[1px] font-mono text-[12px] font-bold text-ink">
+            <span className="flex-none rounded-[6px] border-2 border-ink bg-sun px-[6px] py-[1px] font-mono text-[12px] font-bold text-ink">
               ×{story.quantity}
             </span>
           )}

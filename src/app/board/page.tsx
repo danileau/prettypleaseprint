@@ -55,15 +55,15 @@ export default async function BoardPage({
     <>
       <AppHeader user={user} active="/board" />
 
-      <main className="mx-auto w-full max-w-[1180px] px-[26.4px] pb-[80px] pt-[35.2px]">
+      <main className="mx-auto w-full max-w-[1180px] px-[16px] pb-[80px] pt-[26.4px] sm:px-[26.4px] sm:pt-[35.2px]">
         {/* The menu board. */}
         <div className="starburst mb-[26.4px] overflow-hidden rounded-panel border-[3px] border-ink bg-cream-2 shadow-stamp-lg">
-          <div className="flex flex-wrap items-end justify-between gap-[22px] p-[26.4px]">
+          <div className="flex flex-wrap items-end justify-between gap-[17.6px] p-[17.6px] sm:gap-[22px] sm:p-[26.4px]">
             <div className="max-w-[620px]">
               <Kicker>
                 {isAdmin ? "Admin view · every ticket, with who asked" : `Private to you and ${owner}`}
               </Kicker>
-              <h1 className="m-0 mb-[11px] text-[46px] leading-[0.95] text-ink">
+              <h1 className="m-0 mb-[11px] text-[34px] leading-[0.98] text-ink sm:text-[40px] sm:leading-[0.95] lg:text-[46px]">
                 The backlog
               </h1>
               <p className="m-0 text-[16.5px] leading-[1.5] text-ink-2 text-pretty">

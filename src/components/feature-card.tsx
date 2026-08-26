@@ -44,7 +44,7 @@ export function FeatureCard({
           </span>
         </div>
 
-        <div className="mb-[11px] font-display text-[15.5px] leading-[1.2] text-ink">
+        <div className="mb-[11px] break-words font-display text-[15.5px] leading-[1.2] text-ink">
           {feature.title}
         </div>
 
