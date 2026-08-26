@@ -2,10 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireUser, printerName } from "@/lib/authz";
-import { FEATURE_FLOW, featureLabel, featureRef } from "@/lib/scope";
+import { FEATURE_FLOW, featureLabel, featureRef, isFeatureTerminal } from "@/lib/scope";
 import { findFeature, listFeatureComments } from "@/lib/features";
-import { withdrawFeature } from "@/app/actions/features";
-import { relativeTime, PRIORITY_CHIP, CATEGORY_LABEL } from "@/lib/catalog";
+import { changeFeaturePriority, withdrawFeature } from "@/app/actions/features";
+import { relativeTime, PRIORITY_CHIP, CATEGORY_LABEL, FEATURE_PRIORITIES } from "@/lib/catalog";
 import { AppHeader } from "@/components/app-header";
 import { Fact, Notice, StatusChip } from "@/components/ui";
 import { FeatureActions } from "@/components/feature-actions";
@@ -44,6 +44,11 @@ export default async function FeaturePage({
   const canWithdraw =
     feature.requester.id === user.id &&
     (feature.status === "Requested" || feature.status === "Declined");
+  // Reprioritise: the owner any time, the requester on their own while it is
+  // still live. Matches `changeFeaturePriority` in the service.
+  const canReprioritise =
+    user.role === "admin" ||
+    (feature.requester.id === user.id && !isFeatureTerminal(feature.status));
 
   return (
     <>
@@ -85,6 +90,44 @@ export default async function FeaturePage({
             <Fact label="Category">{CATEGORY_LABEL[feature.category] ?? feature.category}</Fact>
             <Fact label="Filed">{relativeTime(feature.createdAt)}</Fact>
           </div>
+
+          {/* Change the priority after filing. A plain form + submit, so it
+              works with JS off; no auto-submit-on-change. */}
+          {canReprioritise && (
+            <form
+              action={changeFeaturePriority}
+              className="mt-[17.6px] flex flex-wrap items-end gap-[8.8px] border-t-2 border-dashed border-rule pt-[17.6px]"
+            >
+              <input type="hidden" name="id" value={feature.id} />
+              <input type="hidden" name="from" value={`/frr/${feature.id}`} />
+              <div>
+                <label
+                  htmlFor="priority"
+                  className="mb-[4px] block font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink-3"
+                >
+                  Change priority
+                </label>
+                <select
+                  id="priority"
+                  name="priority"
+                  defaultValue={feature.priority}
+                  className="rounded-card border-[3px] border-ink bg-porcelain px-[13px] py-[8px] text-[15px] font-bold text-ink"
+                >
+                  {FEATURE_PRIORITIES.map((p) => (
+                    <option key={p} value={p}>
+                      {PRIORITY_CHIP[p]?.label ?? p}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="stamp cursor-pointer rounded-chip border-[3px] border-ink bg-aqua px-[18px] py-[9px] text-[14px] font-bold text-ink hover:bg-sun"
+              >
+                Set
+              </button>
+            </form>
+          )}
         </div>
 
         <section className="mt-[26.4px]">

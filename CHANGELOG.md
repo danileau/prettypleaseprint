@@ -7,6 +7,15 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Added
 
+- **A feature request's priority can be changed after it is filed** (FRR-104).
+  Requirements shift, so a request's priority is a knob rather than a
+  one-shot: the requester may re-set the priority of their own request while it
+  is still live (not `Done`/`Declined`), and the printer owner may re-set any,
+  any time, since triaging by priority is their job. The change notifies the
+  other side, is written to the audit trail (`feature.priority_changed`), and
+  is refused for a request that is not yours or is already closed. Priority
+  lives only on feature requests; prints are unaffected.
+
 - **A feature-request track — the 'frr' backlog.** Anyone can file a feature
   request (title, description, priority, category) at `/frr`, and the printer
   owner triages it exactly as they triage a print: the same board, an

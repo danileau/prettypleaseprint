@@ -12,10 +12,11 @@ import {
   featureLabel,
   featureRef,
   featureScope,
+  isFeatureTerminal,
   nextFeatureStatus,
   type Actor,
 } from "@/lib/scope";
-import { FeatureWishSchema } from "@/lib/catalog";
+import { FEATURE_PRIORITIES, FeatureWishSchema } from "@/lib/catalog";
 import { BodySchema } from "@/lib/stories";
 
 /**
@@ -212,6 +213,76 @@ export async function withdrawFeature(actor: Actor, id: number) {
 
   refresh(feature.id);
   return { id: feature.id, ref, title: feature.title, wasStatus: feature.status };
+}
+
+/**
+ * Change a request's priority after it has been filed. Requirements change,
+ * so a "low" from last month may be "high" today, and re-filing to fix a
+ * dropdown would be silly.
+ *
+ * Who may: the **requester** on their own request while it is still live (not
+ * `Done`/`Declined` — a closed request's priority is history, not a knob), and
+ * the **owner** on any request, at any time, because triaging by priority is
+ * their job. Anyone else — a client naming somebody else's id — is refused,
+ * and indistinguishably from "does not exist" via `featureScope`.
+ */
+export async function changeFeaturePriority(actor: Actor, id: number, rawPriority: unknown) {
+  const priority = typeof rawPriority === "string" ? rawPriority : "";
+  if (!(FEATURE_PRIORITIES as readonly string[]).includes(priority)) {
+    throw problem(400, "That is not a priority.");
+  }
+
+  // Scoped read: a client asking after another's request is told it does not
+  // exist, not that they may not touch it.
+  const feature = await db.featureRequest.findFirst({
+    where: { AND: [{ id }, featureScope(actor)] },
+    select: { id: true, title: true, status: true, priority: true, requesterId: true },
+  });
+  if (!feature) throw problem(404, "That request no longer exists.");
+
+  if (actor.role !== "admin" && feature.requesterId !== actor.id) {
+    throw problem(403, "Only the person who asked for it, or the printer owner, can reprioritise it.");
+  }
+  if (actor.role !== "admin" && isFeatureTerminal(feature.status)) {
+    throw problem(
+      409,
+      `${featureRef(feature.id)} is ${featureLabel(feature.status).toLowerCase()} — its priority is settled.`,
+    );
+  }
+
+  if (priority === feature.priority) {
+    // A no-op change writes nothing and tells nobody — pressing a select back
+    // onto its current value is not an event.
+    return { id: feature.id, ref: featureRef(feature.id), title: feature.title, from: feature.priority, to: priority, unchanged: true };
+  }
+
+  await db.featureRequest.update({
+    where: { id: feature.id },
+    data: { priority: priority as Prisma.FeatureRequestUpdateInput["priority"] },
+  });
+
+  // Tell the other side, the same direction a comment does: a requester's
+  // change reaches the owner (who triages by it); the owner's reaches the
+  // requester (whose ask it re-ranks).
+  const owner = await printerOwner();
+  const recipientId = actor.role === "admin" ? feature.requesterId : owner?.id;
+  if (recipientId && recipientId !== actor.id) {
+    await notify({
+      recipientId,
+      featureId: feature.id,
+      text: `${firstName(actor.name)} set “${feature.title}” to ${priority} priority.`,
+    });
+  }
+
+  await record({
+    action: "feature.priority_changed",
+    actor,
+    subject: featureRef(feature.id),
+    detail: { title: feature.title, from: feature.priority, to: priority },
+  });
+
+  refresh(feature.id);
+  return { id: feature.id, ref: featureRef(feature.id), title: feature.title, from: feature.priority, to: priority, unchanged: false };
 }
 
 // ---------------------------------------------------------------------------
