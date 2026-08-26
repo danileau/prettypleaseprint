@@ -45,6 +45,10 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   print that worked, a declined one you have fixed) as a fresh request, without
   hunting down and re-uploading the file. The model is copied server-side, so
   the two tickets own independent files.
+- **Note print settings** — an optional free-text field on a request for the
+  slicer specifics that come with some files (layer height, infill, supports,
+  temperatures). The printer owner sees them on the ticket, so they do not
+  become a back-and-forth, and a re-print keeps them.
 - **Browse your history** — a dedicated `/history` view of the prints that have
   left the rail (delivered, done, declined), filterable by status, material and
   when, with **Print again** on every row. It is where you go to re-run an old

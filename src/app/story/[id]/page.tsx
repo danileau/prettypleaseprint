@@ -133,6 +133,20 @@ export default async function StoryPage({
               </div>
             </div>
 
+            {/* Optional slicer settings the requester noted (FRR-103). Shown so
+                the specifics live on the ticket rather than in a chat thread.
+                React escapes the body; a hostile value renders as text. */}
+            {story.printSettings && (
+              <div className="mt-[17.6px] rounded-panel border-[3px] border-ink bg-cream-2 p-[17.6px]">
+                <div className="mb-[6px] font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink-3">
+                  Print settings
+                </div>
+                <p className="m-0 whitespace-pre-wrap font-mono text-[14px] leading-[1.5] text-ink">
+                  {story.printSettings}
+                </p>
+              </div>
+            )}
+
             <section className="mt-[26.4px]">
               <h2 className="m-0 mb-[13.2px] font-display text-[22px] text-ink">
                 Where it&rsquo;s at
