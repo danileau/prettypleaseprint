@@ -36,6 +36,13 @@ Notable changes. Every entry names a released version; deployments pin
   other side, is written to the audit trail (`feature.priority_changed`), and
   is refused for a request that is not yours or is already closed. Priority
   lives only on feature requests; prints are unaffected.
+- **A History Prints view (`/history`).** A dedicated home for the prints that
+  have left the active rail — `Delivery`, `Done` and `Declined` — separate from
+  the profile at `/me`. Filter by status, material and how recently it was
+  filed; every row you own carries a **Print again** that re-queues it from the
+  same file (FRR-102). Scoped exactly like the board: a client sees only their
+  own, the owner sees the group. New nav entry for both roles.
+
 - **Print an old request again (FRR-102).** Re-queue any of your past tickets —
   a test print that worked, a declined one you have since fixed — as a fresh
   `Requested` request, without finding and re-uploading the file. The stored

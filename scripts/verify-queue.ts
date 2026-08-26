@@ -630,6 +630,37 @@ async function main() {
   await db.user.deleteMany({ where: { email: "goner@office.example" } });
 
   // ------------------------------------------------------------------
+  section("History Prints — old work, scoped, filterable, re-queueable");
+  const hDone = await makeStory(ayla.id, "Bracket, delivered and done", "Done");
+  const hDelivery = await makeStory(ayla.id, "Clip, awaiting collection", "Delivery");
+  const hDeclined = await makeStory(ayla.id, "Too thin, declined", "Declined");
+  const hActive = await makeStory(ayla.id, "Still on the rail", "Printing");
+  const hMallory = await makeStory(mallory.id, "Mallory's finished thing", "Done");
+
+  const hist = rendered(await (await client.go(`${APP}/history`)).text());
+  check("history lists the requester's delivered / done / declined",
+        hist.includes(storyRefOf(hDone.id)) &&
+        hist.includes(storyRefOf(hDelivery.id)) &&
+        hist.includes(storyRefOf(hDeclined.id)));
+  check("history hides work still on the rail",
+        !hist.includes(storyRefOf(hActive.id)), "an active ticket leaked into history");
+  check("history is scoped — never another client's",
+        !hist.includes(storyRefOf(hMallory.id)) && !hist.includes("Mallory's finished thing"));
+  check("each of the requester's own rows offers Print again",
+        (hist.match(/Print again/g) ?? []).length >= 3);
+
+  const adminHist = rendered(await (await ruben.go(`${APP}/history`)).text());
+  check("the owner's history carries the whole group",
+        adminHist.includes(storyRefOf(hDone.id)) && adminHist.includes(storyRefOf(hMallory.id)));
+
+  const doneOnly = rendered(await (await client.go(`${APP}/history?status=Done`)).text());
+  check("the status filter narrows to Done only",
+        doneOnly.includes(storyRefOf(hDone.id)) && !doneOnly.includes(storyRefOf(hDeclined.id)));
+  const tpuOnly = rendered(await (await client.go(`${APP}/history?material=TPU`)).text());
+  check("a material filter that matches nothing empties the list",
+        !tpuOnly.includes(storyRefOf(hDone.id)));
+
+  // ------------------------------------------------------------------
   section("the uploader sees what happened");
   const feed = await (await client.go(`${APP}/board`)).text();
   check("their Activity count is not zero", /Activity[\s\S]{0,200}[1-9]/.test(feed));
