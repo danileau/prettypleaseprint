@@ -5,6 +5,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  CopyObjectCommand,
   HeadBucketCommand,
   CreateBucketCommand,
 } from "@aws-sdk/client-s3";
@@ -90,6 +91,24 @@ export async function putModel(
 
 export async function deleteModel(key: string): Promise<void> {
   await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+}
+
+/**
+ * Server-side copy of one stored object to a new key, for re-queueing a print
+ * without re-uploading. The copy is independent: the two stories own separate
+ * objects, so withdrawing one never removes the other's file. `CopySource` is
+ * `bucket/key`, URL-encoded, as the S3 API wants it — MinIO honours the same.
+ */
+export async function copyModel(srcKey: string, destKey: string): Promise<void> {
+  await s3.send(
+    new CopyObjectCommand({
+      Bucket: bucket,
+      CopySource: encodeURIComponent(`${bucket}/${srcKey}`),
+      Key: destKey,
+      ContentDisposition: "attachment",
+      MetadataDirective: "COPY",
+    }),
+  );
 }
 
 /*

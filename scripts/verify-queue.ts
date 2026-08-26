@@ -525,8 +525,27 @@ async function main() {
         (await db.auditEvent.count({
           where: { action: "story.withdrawn", subject: storyRefOf(regret.id) } })) === 1);
 
-  // Past Requested the printer owner has committed time; it is no longer the
-  // requester's call.
+  // FRR-101: the window now reaches Accepted — a requester can still pull out
+  // after the owner has said yes, as long as it has not reached the bed.
+  const acceptedRegret = await makeStory(ayla.id, "Accepted then regretted", "Accepted");
+  const accPage = rendered(await (await client.go(`${APP}/story/${acceptedRegret.id}`)).text());
+  check("an Accepted ticket now offers withdrawal",
+        accPage.includes("Withdraw this request"));
+  const accIdx = formIndexContaining(accPage, "Yes, withdraw it");
+  await client.submit(`${APP}/story/${acceptedRegret.id}`, accPage, accIdx, {
+    storyId: String(acceptedRegret.id), from: `/story/${acceptedRegret.id}`,
+  });
+  check("an Accepted ticket can be withdrawn",
+        (await db.story.count({ where: { id: acceptedRegret.id } })) === 0);
+  check("and it is audited as withdrawn",
+        (await db.auditEvent.count({
+          where: { action: "story.withdrawn", subject: storyRefOf(acceptedRegret.id) } })) === 1);
+  check("the owner is told the accepted one is gone",
+        (await db.notification.count({
+          where: { recipientId: admin.id, text: { contains: "Accepted then regretted" } } })) === 1);
+
+  // Past Accepted the owner has committed the bed and the material; it is no
+  // longer the requester's call.
   const underway = await makeStory(ayla.id, "Already on the bed", "Printing");
   storyPage = rendered(await (await client.go(`${APP}/story/${underway.id}`)).text());
   check("a ticket already being printed offers no withdrawal",

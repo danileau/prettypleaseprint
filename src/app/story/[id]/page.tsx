@@ -12,6 +12,7 @@ import { ModelViewer } from "@/components/model-viewer";
 import { OpenInSlicer } from "@/components/open-in-slicer";
 import { Toast } from "@/components/toast";
 import { WithdrawStory } from "@/components/withdraw-story";
+import { RequeueStory } from "@/components/requeue-story";
 
 export const dynamic = "force-dynamic";
 
@@ -192,13 +193,27 @@ export default async function StoryPage({
               the action refuses on ownership rather than on role.
             */}
             {story.uploader.id === user.id &&
-              (story.status === "Requested" || story.status === "Declined") && (
+              (story.status === "Requested" ||
+                story.status === "Accepted" ||
+                story.status === "Declined") && (
                 <WithdrawStory
                   storyId={story.id}
                   label={storyRef(story.id)}
                   from={`/story/${story.id}`}
                 />
               )}
+
+            {/*
+              Print again — the requester's, on any of their own tickets. Like
+              withdraw, gated on ownership rather than role; the action re-checks.
+            */}
+            {story.uploader.id === user.id && (
+              <RequeueStory
+                storyId={story.id}
+                label={storyRef(story.id)}
+                from={`/story/${story.id}`}
+              />
+            )}
 
             {user.role === "admin" && (
               <section className="mt-[26.4px] rounded-panel border-[3px] border-ink bg-aqua-wash p-[22px] shadow-stamp">
