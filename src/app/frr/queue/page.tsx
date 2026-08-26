@@ -1,12 +1,12 @@
 import Link from "next/link";
 
-import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
 import { featureLabel, featureRef } from "@/lib/scope";
-import { FEATURE_FIELDS } from "@/lib/features";
+import { coerceFeatureFilter, listFeatures } from "@/lib/features";
 import { relativeTime, PRIORITY_CHIP, CATEGORY_LABEL } from "@/lib/catalog";
 import { AppHeader } from "@/components/app-header";
 import { FeatureActions } from "@/components/feature-actions";
+import { FeatureFilterBar } from "@/components/feature-filter";
 import { Kicker, Notice, StatusChip } from "@/components/ui";
 import { Toast } from "@/components/toast";
 
@@ -21,14 +21,21 @@ export const dynamic = "force-dynamic";
 export default async function FeatureQueuePage({
   searchParams,
 }: {
-  searchParams: Promise<{ toast?: string; error?: string }>;
+  searchParams: Promise<{
+    toast?: string;
+    error?: string;
+    priority?: string;
+    status?: string;
+    category?: string;
+  }>;
 }) {
-  const [{ toast, error }, admin] = await Promise.all([searchParams, requireAdmin()]);
+  const [params, admin] = await Promise.all([searchParams, requireAdmin()]);
+  const { toast, error } = params;
 
-  const features = await db.featureRequest.findMany({
-    select: FEATURE_FIELDS,
-    orderBy: { createdAt: "asc" },
-  });
+  // The owner sees everyone's, so scope is `{}` — the filter is all the query
+  // narrows by here. Oldest-first, the order a triage queue wants.
+  const filter = coerceFeatureFilter(params);
+  const features = await listFeatures(admin, filter, "asc");
 
   // Priority order for the eye: high first. Within a priority, oldest first.
   const rank = { high: 0, medium: 1, low: 2 } as Record<string, number>;
@@ -48,6 +55,8 @@ export default async function FeatureQueuePage({
         <h1 className="m-0 mt-[6px] mb-[22px] font-display text-[30px] leading-[1.05] text-ink">
           Requests to triage
         </h1>
+
+        <FeatureFilterBar action="/frr/queue" filter={filter} />
 
         {error && (
           <div className="mb-[17.6px]">

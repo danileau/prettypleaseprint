@@ -8,15 +8,15 @@ import { record } from "@/lib/audit";
 import { notify, printerName, printerOwner } from "@/lib/authz";
 import {
   AuthzError,
+  FEATURE_FLOW,
   assertFeatureTransition,
   featureLabel,
   featureRef,
   featureScope,
-  isFeatureTerminal,
   nextFeatureStatus,
   type Actor,
 } from "@/lib/scope";
-import { FEATURE_PRIORITIES, FeatureWishSchema } from "@/lib/catalog";
+import { FEATURE_CATEGORIES, FEATURE_PRIORITIES, FeatureWishSchema } from "@/lib/catalog";
 import { BodySchema } from "@/lib/stories";
 
 /**
@@ -87,12 +87,64 @@ export const FEATURE_FIELDS = {
 
 export type FeatureRow = Prisma.FeatureRequestGetPayload<{ select: typeof FEATURE_FIELDS }>;
 
-/** The requests this actor may see — their own, or all of them for the owner. */
-export function listFeatures(actor: Actor): Promise<FeatureRow[]> {
+/**
+ * The set of values a request may be filtered by. Empty/absent means "any".
+ * Priority, status and category are the three enum columns; a filter can only
+ * ever narrow a caller's scope, never widen it — `featureScope` stays the
+ * first term of every query below.
+ */
+export type FeatureFilter = { priority?: string; status?: string; category?: string };
+
+/** Every status a request can be in — the flow plus the terminal `Declined`. */
+const FEATURE_STATUSES = [...FEATURE_FLOW, "Declined"] as readonly string[];
+
+/**
+ * Keep only recognised filter values; anything unknown (a stray query string,
+ * a removed enum member) is dropped to "any" rather than erroring, so a
+ * hand-edited URL degrades to a wider result instead of a 500.
+ */
+export function coerceFeatureFilter(raw: {
+  priority?: string;
+  status?: string;
+  category?: string;
+}): FeatureFilter {
+  const pick = (v: string | undefined, allowed: readonly string[]) =>
+    v && allowed.includes(v) ? v : undefined;
+  return {
+    priority: pick(raw.priority, FEATURE_PRIORITIES),
+    status: pick(raw.status, FEATURE_STATUSES),
+    category: pick(raw.category, FEATURE_CATEGORIES),
+  };
+}
+
+/** True when at least one filter is set — for the "clear" affordance / count. */
+export const hasFeatureFilter = (f: FeatureFilter): boolean =>
+  Boolean(f.priority || f.status || f.category);
+
+function featureWhere(actor: Actor, filter: FeatureFilter): Prisma.FeatureRequestWhereInput {
+  const and: Prisma.FeatureRequestWhereInput[] = [featureScope(actor)];
+  if (filter.priority) and.push({ priority: filter.priority as Prisma.EnumFeaturePriorityFilter });
+  if (filter.status) and.push({ status: filter.status as Prisma.EnumFeatureStatusFilter });
+  if (filter.category) and.push({ category: filter.category as Prisma.EnumFeatureCategoryFilter });
+  return { AND: and };
+}
+
+/**
+ * The requests this actor may see — their own, or all of them for the owner —
+ * optionally narrowed by a filter. The scope predicate is always the first
+ * term of the AND, so no combination of filters can surface a request the
+ * caller is not entitled to. `order` is newest-first for the board and
+ * oldest-first for the owner's triage queue.
+ */
+export function listFeatures(
+  actor: Actor,
+  filter: FeatureFilter = {},
+  order: "asc" | "desc" = "desc",
+): Promise<FeatureRow[]> {
   return db.featureRequest.findMany({
-    where: featureScope(actor),
+    where: featureWhere(actor, filter),
     select: FEATURE_FIELDS,
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: order },
   });
 }
 
@@ -220,11 +272,11 @@ export async function withdrawFeature(actor: Actor, id: number) {
  * so a "low" from last month may be "high" today, and re-filing to fix a
  * dropdown would be silly.
  *
- * Who may: the **requester** on their own request while it is still live (not
- * `Done`/`Declined` — a closed request's priority is history, not a knob), and
- * the **owner** on any request, at any time, because triaging by priority is
- * their job. Anyone else — a client naming somebody else's id — is refused,
- * and indistinguishably from "does not exist" via `featureScope`.
+ * Who may: the **requester** on their own request in **any** status — a
+ * closed request can still be re-ranked, because hindsight and plans keep
+ * changing after the fact — and the **owner** on any request, since triaging
+ * by priority is their job. Anyone else — a client naming somebody else's id
+ * — is refused, indistinguishably from "does not exist" via `featureScope`.
  */
 export async function changeFeaturePriority(actor: Actor, id: number, rawPriority: unknown) {
   const priority = typeof rawPriority === "string" ? rawPriority : "";
@@ -242,12 +294,6 @@ export async function changeFeaturePriority(actor: Actor, id: number, rawPriorit
 
   if (actor.role !== "admin" && feature.requesterId !== actor.id) {
     throw problem(403, "Only the person who asked for it, or the printer owner, can reprioritise it.");
-  }
-  if (actor.role !== "admin" && isFeatureTerminal(feature.status)) {
-    throw problem(
-      409,
-      `${featureRef(feature.id)} is ${featureLabel(feature.status).toLowerCase()} — its priority is settled.`,
-    );
   }
 
   if (priority === feature.priority) {

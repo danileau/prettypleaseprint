@@ -356,11 +356,59 @@ async function main() {
   check("the owner can change any request's priority",
         (await db.featureRequest.findUnique({ where: { id: mine.id } }))?.priority === "medium");
 
-  // A closed request offers the requester no priority control.
+  // Priority is editable in EVERY status now — a closed request included.
   const closedPr = await makeFeature(ayla.id, "Long since closed", "Done");
   const closedPage = await (await client.go(`${APP}/frr/${closedPr.id}`)).text();
-  check("a Done request offers the requester no priority control",
-        !closedPage.includes("Change priority"));
+  const closedIdx = formIndexContaining(closedPage, 'name="priority"');
+  check("a Done request still offers the requester the priority control", closedIdx >= 0);
+  await client.submit(`${APP}/frr/${closedPr.id}`, closedPage, closedIdx, {
+    id: String(closedPr.id), priority: "high",
+  });
+  check("the requester reprioritises a Done request",
+        (await db.featureRequest.findUnique({ where: { id: closedPr.id } }))?.priority === "high");
+  check("and it is audited",
+        (await db.auditEvent.count({ where: { action: "feature.priority_changed", subject: refOf(closedPr.id) } })) === 1);
+
+  const declinedPr = await makeFeature(ayla.id, "Turned down but still ranked", "Declined");
+  const declinedPage = await (await client.go(`${APP}/frr/${declinedPr.id}`)).text();
+  await client.submit(`${APP}/frr/${declinedPr.id}`, declinedPage,
+    formIndexContaining(declinedPage, 'name="priority"'), { id: String(declinedPr.id), priority: "low" });
+  check("a Declined request's priority is editable too",
+        (await db.featureRequest.findUnique({ where: { id: declinedPr.id } }))?.priority === "low");
+
+  // ------------------------------------------------------------------
+  section("filtering by priority, status and category");
+  // A known spread the owner can filter over. Ayla owns them all here.
+  const fHigh = await makeFeature(ayla.id, "High UI thing", "Requested");
+  await db.featureRequest.update({ where: { id: fHigh.id }, data: { priority: "high", category: "ui" } });
+  const fLowApi = await makeFeature(ayla.id, "Low API thing", "Accepted");
+  await db.featureRequest.update({ where: { id: fLowApi.id }, data: { priority: "low", category: "api" } });
+
+  const q = async (query: string) =>
+    rendered(await (await ruben.go(`${APP}/frr/queue?${query}`)).text());
+
+  const byHigh = await q("priority=high");
+  check("filter priority=high shows the high one", byHigh.includes("High UI thing"));
+  check("and hides the low one", !byHigh.includes("Low API thing"));
+
+  const byApi = await q("category=api");
+  check("filter category=api shows the API one", byApi.includes("Low API thing"));
+  check("and hides the UI one", !byApi.includes("High UI thing"));
+
+  const byCombo = await q("priority=high&category=api");
+  check("a combined filter that matches nothing shows neither",
+        !byCombo.includes("High UI thing") && !byCombo.includes("Low API thing"));
+
+  // Scope holds under a filter: a client's filter never surfaces another's.
+  const malloryHigh = await makeFeature(mallory.id, "Mallory high UI", "Requested");
+  await db.featureRequest.update({ where: { id: malloryHigh.id }, data: { priority: "high", category: "ui" } });
+  const aylaFiltered = rendered(await (await client.go(`${APP}/frr?priority=high`)).text());
+  check("a client's priority filter still hides another client's matching request",
+        aylaFiltered.includes("High UI thing") && !aylaFiltered.includes("Mallory high UI"));
+
+  // A garbage filter value degrades to "any" rather than erroring.
+  const garbage = await ruben.go(`${APP}/frr/queue?priority=urgent`);
+  check("an unknown filter value is ignored (no error)", garbage.status === 200);
 
   // ------------------------------------------------------------------
   section("the board draws the four live rails, closed items leave");
