@@ -314,6 +314,55 @@ async function main() {
         (await db.featureRequest.count({ where: { id: mine.id } })) === 1);
 
   // ------------------------------------------------------------------
+  section("priority is editable after filing");
+  // `mine` is Ayla's, still Requested. The requester changes it through the
+  // rendered form.
+  const beforePriority = (await db.featureRequest.findUnique({ where: { id: mine.id } }))?.priority;
+  const pPage = await (await client.go(`${APP}/frr/${mine.id}`)).text();
+  const pIdx = formIndexContaining(pPage, 'name="priority"');
+  check("the requester is offered a priority control on their own request", pIdx >= 0);
+  await client.submit(`${APP}/frr/${mine.id}`, pPage, pIdx, { id: String(mine.id), priority: "high" });
+  check("the requester changes their own request's priority",
+        (await db.featureRequest.findUnique({ where: { id: mine.id } }))?.priority === "high",
+        `was ${beforePriority}`);
+  check("the change is audited",
+        (await db.auditEvent.count({ where: { action: "feature.priority_changed", subject: refOf(mine.id) } })) === 1);
+  check("the owner is notified of the requester's change",
+        (await db.notification.count({
+          where: { recipientId: admin.id, featureId: mine.id },
+        })) >= 1);
+
+  // An invalid priority is refused. Replay the real form (so the action runs)
+  // but override the select to a value it never offers.
+  const badPage = await (await client.go(`${APP}/frr/${mine.id}`)).text();
+  await client.submit(`${APP}/frr/${mine.id}`, badPage,
+    formIndexContaining(badPage, 'name="priority"'), { id: String(mine.id), priority: "urgent" });
+  check("an invalid priority is refused",
+        (await db.featureRequest.findUnique({ where: { id: mine.id } }))?.priority === "high");
+
+  // Another client cannot even see the request, so is never offered the
+  // control; scope makes the guard unreachable through the UI.
+  const intruderView = await other.go(`${APP}/frr/${mine.id}`);
+  check("another client cannot see the request (404), so cannot reprioritise it",
+        intruderView.status === 404 &&
+        (await db.featureRequest.findUnique({ where: { id: mine.id } }))?.priority === "high",
+        `status ${intruderView.status}`);
+
+  // The owner can change any request's priority, through the same form.
+  const ownerView = await (await ruben.go(`${APP}/frr/${mine.id}`)).text();
+  const ownerPIdx = formIndexContaining(ownerView, 'name="priority"');
+  check("the owner is offered the priority control too", ownerPIdx >= 0);
+  await ruben.submit(`${APP}/frr/${mine.id}`, ownerView, ownerPIdx, { id: String(mine.id), priority: "medium" });
+  check("the owner can change any request's priority",
+        (await db.featureRequest.findUnique({ where: { id: mine.id } }))?.priority === "medium");
+
+  // A closed request offers the requester no priority control.
+  const closedPr = await makeFeature(ayla.id, "Long since closed", "Done");
+  const closedPage = await (await client.go(`${APP}/frr/${closedPr.id}`)).text();
+  check("a Done request offers the requester no priority control",
+        !closedPage.includes("Change priority"));
+
+  // ------------------------------------------------------------------
   section("the board draws the four live rails, closed items leave");
   const board = rendered(await (await ruben.go(`${APP}/frr`)).text());
   for (const rail of FEATURE_BOARD) {
