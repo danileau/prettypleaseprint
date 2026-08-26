@@ -9,6 +9,7 @@ import {
   clearFlag as clear,
   declineStory as decline,
   flagStory as flag,
+  requeueStory as requeue,
   storyIdOr400,
   withdrawStory as withdraw,
 } from "@/lib/stories";
@@ -116,6 +117,22 @@ export async function withdrawStory(formData: FormData): Promise<void> {
   try {
     const done = await withdraw(user, id);
     back("/board", { toast: `${done.ref} withdrawn.` });
+  } catch (error) {
+    if (error instanceof StoryProblem) back(`/story/${id}`, { toast: error.message });
+    throw error;
+  }
+}
+
+/**
+ * Re-queue a past request as a fresh one (FRR-102). Lands on the NEW ticket,
+ * which is what the requester wants to watch now — the old one is history.
+ */
+export async function requeueStory(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = storyIdOr400(formData.get("storyId"));
+  try {
+    const done = await requeue(user, id);
+    back(`/story/${done.id}`, { toast: `Re-queued ${done.fromRef} as ${done.ref}` });
   } catch (error) {
     if (error instanceof StoryProblem) back(`/story/${id}`, { toast: error.message });
     throw error;

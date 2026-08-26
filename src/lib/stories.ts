@@ -15,7 +15,8 @@ import {
   storyScope,
   type Actor,
 } from "@/lib/scope";
-import { deleteModel } from "@/lib/storage";
+import { copyModel, deleteModel, storageKeyFor } from "@/lib/storage";
+import { extensionOf } from "@/lib/models";
 
 /**
  * Everything that can happen to a ticket, in one place.
@@ -408,11 +409,14 @@ export async function clearFlag(actor: Actor, id: number) {
 /**
  * The person who asked for a print withdraws it.
  *
- * **Only while nobody has acted on it.** `Requested` means it is still sitting
- * in the queue untouched; `Declined` means it is already dead. Past that the
- * printer owner has committed time, filament and bed space, and a ticket
- * vanishing from under them — along with the conversation and the audit
- * trail's subject — is not the requester's call to make. They can ask.
+ * **Only before it reaches the bed.** Allowed while `Requested` (untouched),
+ * `Accepted` (agreed but not started) or `Declined` (already dead) — the
+ * window a requester should be able to change their mind in when a better
+ * model turns up or plans move on, saving filament and time (FRR-101). Once
+ * it is `Printing`, `Delivery` or `Done` the owner has committed the bed and
+ * the material, and a ticket vanishing from under them — along with the
+ * conversation and the audit trail's subject — is no longer the requester's
+ * call to make. They can ask.
  *
  * The stored file goes with it. Leaving 50 MB of geometry in object storage
  * for a request nobody can see any more is a slow leak and, for somebody who
@@ -437,7 +441,11 @@ export async function withdrawStory(actor: Actor, id: number) {
     throw problem(403, "Only the person who asked for it can withdraw it.");
   }
 
-  if (story.status !== "Requested" && story.status !== "Declined") {
+  if (
+    story.status !== "Requested" &&
+    story.status !== "Accepted" &&
+    story.status !== "Declined"
+  ) {
     throw problem(
       409,
       `${storyRef(story.id)} is already ${story.status.toLowerCase()} — ` +
@@ -459,8 +467,13 @@ export async function withdrawStory(actor: Actor, id: number) {
     console.error(`[withdraw] ${ref}: object ${story.storageKey} not removed`, error);
   }
 
-  // Only worth telling the printer owner if it was still waiting on them.
-  if (owner && story.status === "Requested" && owner.id !== actor.id) {
+  // Tell the printer owner when they had it in hand — a request still waiting
+  // on them, or one they had already accepted and were on the hook for.
+  if (
+    owner &&
+    (story.status === "Requested" || story.status === "Accepted") &&
+    owner.id !== actor.id
+  ) {
     await notify({
       recipientId: owner.id,
       text: `${actor.name} withdrew ${ref} — “${story.title}”.`,
@@ -476,6 +489,90 @@ export async function withdrawStory(actor: Actor, id: number) {
 
   refresh(story.id);
   return { id: story.id, ref, title: story.title, wasStatus: story.status };
+}
+
+/**
+ * Print an old request again, without re-uploading it (FRR-102).
+ *
+ * A first print is often a test; when it works, or needs another go, hunting
+ * down the model file to re-upload it is friction the app can remove. This
+ * opens a brand-new `Requested` ticket from any of the requester's own past
+ * tickets — a finished one, a declined one, anything — copying every wish
+ * field across.
+ *
+ * The file is *copied*, not shared: a fresh object under a generated key, so
+ * the new ticket and the old one own independent geometry and withdrawing
+ * either one never disturbs the other's file. Only the person who filed the
+ * original may re-queue it — being able to see a ticket (an admin sees all) is
+ * not being the person whose request it is to repeat.
+ */
+export async function requeueStory(actor: Actor, id: number) {
+  const src = await db.story.findFirst({
+    where: { AND: [{ id }, storyScope(actor)] },
+    select: {
+      id: true, title: true, quantity: true, material: true, colorName: true,
+      colorHex: true, tip: true, note: true, filename: true, fileSize: true,
+      mimeType: true, storageKey: true, dims: true, uploaderId: true,
+    },
+  });
+  if (!src) throw problem(404, "That ticket no longer exists.");
+  if (src.uploaderId !== actor.id) {
+    throw problem(403, "Only the person who asked for it can print it again.");
+  }
+
+  // Copy the object first, so a failure here opens no ticket that points at
+  // geometry which was never written — the same ordering the upload uses.
+  const destKey = storageKeyFor(extensionOf(src.filename));
+  try {
+    await copyModel(src.storageKey, destKey);
+  } catch (error) {
+    console.error(`[requeue] ${storyRef(src.id)}: object copy failed`, error);
+    throw problem(502, "The file could not be copied. Try again in a moment.");
+  }
+
+  const created = await db.story.create({
+    data: {
+      title: src.title,
+      uploaderId: actor.id,
+      status: "Requested",
+      quantity: src.quantity,
+      material: src.material,
+      colorName: src.colorName,
+      colorHex: src.colorHex,
+      tip: src.tip,
+      note: src.note,
+      filename: src.filename,
+      fileSize: src.fileSize,
+      mimeType: src.mimeType,
+      storageKey: destKey,
+      dims: src.dims,
+    },
+    select: { id: true },
+  });
+
+  const owner = await printerOwner();
+  if (owner && owner.id !== actor.id) {
+    await notify({
+      recipientId: owner.id,
+      storyId: created.id,
+      text: `${actor.name} re-queued “${src.title}”.`,
+    });
+  }
+
+  await record({
+    action: "story.requeued",
+    actor,
+    subject: storyRef(created.id),
+    detail: { title: src.title, from: storyRef(src.id) },
+  });
+
+  refresh(created.id);
+  return {
+    id: created.id,
+    ref: storyRef(created.id),
+    title: src.title,
+    fromRef: storyRef(src.id),
+  };
 }
 
 // ---------------------------------------------------------------------------

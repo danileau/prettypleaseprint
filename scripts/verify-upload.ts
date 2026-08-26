@@ -133,6 +133,28 @@ function upload(b: Browser, filename: string, bytes: Uint8Array, fields: Record<
   return b.raw(`${APP}/api/upload`, { method: "POST", body: form });
 }
 
+const rendered = (html: string) => html.replace(/<!--\s*-->/g, "");
+const unescapeHtml = (s: string) =>
+  s.replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+
+/** Replay the server-action form whose markup contains `marker`, JS-off style. */
+async function submitForm(
+  b: Browser, url: string, html: string, marker: string, values: Record<string, string>,
+) {
+  const form = (html.match(/<form\b[\s\S]*?<\/form>/g) ?? []).find((f) => f.includes(marker));
+  if (!form) throw new Error(`no form matching ${JSON.stringify(marker)} on ${url}`);
+  const body = new FormData();
+  for (const tag of form.match(/<input\b[^>]*>/g) ?? []) {
+    if (!tag.includes('type="hidden"')) continue;
+    const n = /name="([^"]*)"/.exec(tag)?.[1];
+    const v = /value="([^"]*)"/.exec(tag)?.[1] ?? "";
+    if (n) body.append(unescapeHtml(n), unescapeHtml(v));
+  }
+  for (const [k, v] of Object.entries(values)) body.set(k, v);
+  return b.raw(url, { method: "POST", body });
+}
+
 async function main() {
   section("setup");
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
@@ -348,6 +370,49 @@ async function main() {
         `status ${anonProfile.status}`);
 
   await db.story.deleteMany({ where: { id: { in: [jonasStory.id, declined.id] } } });
+
+  section("re-queue an old request without re-uploading (FRR-102)");
+
+  // `story` is Ayla's real upload from the top of this run — a genuine object
+  // in the bucket, which is exactly what re-queue has to copy.
+  const beforeKey = (await db.story.findUnique({ where: { id: story!.id } }))!.storageKey;
+  const rqPage = rendered(await (await aylaB.go(`${APP}/story/${story!.id}`)).text());
+  check("the story page offers Print again", rqPage.includes("no re-upload"));
+  const posted = await submitForm(aylaB, `${APP}/story/${story!.id}`, rqPage, "no re-upload", {
+    storyId: String(story!.id), from: `/story/${story!.id}`,
+  });
+  const newId = Number((posted.headers.get("location") ?? "").match(/\/story\/(\d+)/)?.[1]);
+  check("re-queue redirects to a new ticket",
+        Number.isInteger(newId) && newId !== story!.id, posted.headers.get("location") ?? "");
+
+  const copy = await db.story.findUnique({ where: { id: newId } });
+  check("the copy is a fresh Requested ticket, owned by the requester",
+        copy?.status === "Requested" && copy?.uploaderId === ayla.id);
+  check("it carries the same wish and dimensions",
+        copy?.title === story!.title && copy?.material === story!.material &&
+        copy?.colorName === story!.colorName && copy?.dims === story!.dims &&
+        copy?.fileSize === story!.fileSize);
+  check("but a DISTINCT storage key — the two own independent objects",
+        !!copy && copy.storageKey !== beforeKey, `${copy?.storageKey} vs ${beforeKey}`);
+  check("the original ticket is untouched",
+        (await db.story.findUnique({ where: { id: story!.id } }))?.storageKey === beforeKey);
+  check("the owner was notified of the re-queue",
+        (await db.notification.count({ where: { recipientId: admin.id, storyId: newId } })) === 1);
+  check("re-queue was audited",
+        (await db.auditEvent.count({ where: { action: "story.requeued", actorId: ayla.id } })) === 1);
+
+  const objExists = async (key: string) => {
+    try { await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key })); return true; }
+    catch { return false; }
+  };
+  check("the copied object really landed in storage", await objExists(copy!.storageKey));
+  // Withdraw the copy (through the DELETE route it delegates to) and confirm
+  // the original's file survives — proof the copy is genuinely independent.
+  const del = await aylaB.raw(`${APP}/api/stories/${newId}`, { method: "DELETE" });
+  check("the copy can be withdrawn",
+        del.status === 200 && (await db.story.count({ where: { id: newId } })) === 0,
+        `status ${del.status}`);
+  check("and the original's file is still in storage afterwards", await objExists(beforeKey));
 
     section("the audit trail reads correctly");
 
