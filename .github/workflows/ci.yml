@@ -136,6 +136,10 @@ jobs:
       # prints, on its own tables. Drives the real forms exactly as verify:queue.
       - name: Feature requests, filed and triaged
         run: npm run verify:frr
+      # Owner-managed benefits (the tip catalogue): admin CRUD, the upload form
+      # rendering the list + preferences, and server-side tip validation.
+      - name: Benefits, owner-managed
+        run: npm run verify:benefits
       # The second front door onto the same operations. Runs against the built
       # image, which is the only place the production CSP is in force — the
       # console's inline-script nonce and its stylesheet-in-a-file are both

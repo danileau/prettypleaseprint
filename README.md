@@ -47,6 +47,10 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   the two tickets own independent files.
 - **Talk on the ticket** — a conversation thread per request, so "can you do it
   in teal" lives with the model rather than in a chat app.
+- **Owner-managed benefits** — the "what's in it for you" tips are the printer
+  owner's to define at `/admin/benefits`, and the ones they mark *preferred* are
+  starred on the upload form so people know what the owner actually wants. Editing
+  or retiring a benefit never rewrites a past request's tip.
 - **Revoke access when someone leaves** — suspends the account, signs them out
   everywhere and refuses new sign-ins, while keeping their tickets, comments
   and history. Reversible, and audited.

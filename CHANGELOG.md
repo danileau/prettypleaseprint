@@ -7,6 +7,28 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Added
 
+- **The benefits (tip options) are owner-managed.** What used to be a hardcoded
+  list of tips ("A beer", "A coffee", …) is now data the printer owner edits at
+  `/admin/benefits`: add, rename, retire/restore, and mark which they currently
+  **prefer** — the preferred ones are starred on the upload form under a
+  "*Danilo currently prefers: …*" line so people pick what the owner actually
+  wants. `Story.tip` stays a plain string, so editing or retiring a benefit
+  never rewrites a request that already offered it; a retired one is kept rather
+  than deleted. The upload endpoint validates the tip against the current
+  *active* list server-side, so the managed catalogue — not the form — is
+  authoritative. New `Benefit` table, seeded with the previous five tips on
+  first run (idempotently, never clobbering the owner's edits). `verify:benefits`
+  covers it (19 checks); every change is audited (`benefit.created`,
+  `benefit.updated`).
+
+- **A feature request's priority can be changed after it is filed** (FRR-104).
+  Requirements shift, so a request's priority is a knob rather than a
+  one-shot: the requester may re-set the priority of their own request while it
+  is still live (not `Done`/`Declined`), and the printer owner may re-set any,
+  any time, since triaging by priority is their job. The change notifies the
+  other side, is written to the audit trail (`feature.priority_changed`), and
+  is refused for a request that is not yours or is already closed. Priority
+  lives only on feature requests; prints are unaffected.
 - **Print an old request again (FRR-102).** Re-queue any of your past tickets —
   a test print that worked, a declined one you have since fixed — as a fresh
   `Requested` request, without finding and re-uploading the file. The stored

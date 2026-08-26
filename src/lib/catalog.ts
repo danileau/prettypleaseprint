@@ -18,6 +18,11 @@ export const COLORS = [
 ] as const;
 export const DEFAULT_COLOR = COLORS[1]; // Slate
 
+/**
+ * The default tips, seeded into the `Benefit` table on first run. The live
+ * list is owner-managed data (see `src/lib/benefits.ts`); this const is only
+ * the seed default and a fallback, no longer the source of truth.
+ */
 export const TIPS = [
   "A beer",
   "A coffee",
@@ -62,7 +67,11 @@ export const WishSchema = z.object({
   material: z.enum(MATERIALS),
   colorName: z.enum(colorNames),
   quantity: QuantitySchema,
-  tip: z.enum(TIPS),
+  // The tip is no longer a compile-time enum — it is an owner-managed list.
+  // This module is shared with the client bundle and cannot read the database,
+  // so it only checks the shape; the upload route validates the value against
+  // the current *active* benefits (see src/app/api/upload/route.ts).
+  tip: z.string().trim().min(1, "Pick what's in it for them.").max(80, "That tip is oddly long."),
   note: z.string().trim().max(2000, "That note is very long.").optional().default(""),
 });
 

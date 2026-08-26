@@ -7,11 +7,12 @@ import {
   COLORS,
   DEFAULT_COLOR,
   DEFAULT_MATERIAL,
-  DEFAULT_TIP,
   MATERIALS,
   QUANTITY_PRESETS,
-  TIPS,
 } from "@/lib/catalog";
+
+/** One owner-managed tip option, passed from the server (see upload/page.tsx). */
+type Benefit = { label: string; preferred: boolean };
 import { Button, Label, Notice } from "@/components/ui";
 
 const MAX_BYTES = 50 * 1024 * 1024;
@@ -71,7 +72,17 @@ function Segmented<T extends string | number>({
   );
 }
 
-export function UploadForm({ owner }: { owner: string }) {
+export function UploadForm({
+  owner,
+  benefits,
+}: {
+  owner: string;
+  benefits: Benefit[];
+}) {
+  // Default to a preferred benefit if the owner has marked one, else the first
+  // on the list, else empty (the list is seeded, so empty is only a safety net).
+  const preferredLabels = benefits.filter((b) => b.preferred).map((b) => b.label);
+  const defaultTip = preferredLabels[0] ?? benefits[0]?.label ?? "";
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -83,7 +94,7 @@ export function UploadForm({ owner }: { owner: string }) {
   const [material, setMaterial] = useState<string>(DEFAULT_MATERIAL);
   const [quantity, setQuantity] = useState<number>(1);
   const [color, setColor] = useState<string>(DEFAULT_COLOR.name);
-  const [tip, setTip] = useState<string>(DEFAULT_TIP);
+  const [tip, setTip] = useState<string>(defaultTip);
   const [note, setNote] = useState("");
 
   /**
@@ -334,24 +345,34 @@ export function UploadForm({ owner }: { owner: string }) {
         <h2 id="tip-heading" className="m-0 mb-[4px] font-display text-[22px] text-ink">
           And what&rsquo;s in it for {owner}?
         </h2>
-        <p className="m-0 mb-[15px] text-[14.5px] text-ink-2">
+        <p className="m-0 mb-[8px] text-[14.5px] text-ink-2">
           Optional. Nobody is counting. {owner} is counting a little.
         </p>
+        {preferredLabels.length > 0 && (
+          <p className="m-0 mb-[15px] font-mono text-[12px] font-bold uppercase tracking-[0.04em] text-cherry-dk">
+            ★ {owner} currently prefers: {preferredLabels.join(", ")}
+          </p>
+        )}
         <div role="radiogroup" aria-labelledby="tip-heading" className="flex flex-wrap gap-[8.8px]">
-          {TIPS.map((t) => {
-            const active = t === tip;
+          {benefits.map((b) => {
+            const active = b.label === tip;
             return (
               <button
-                key={t}
+                key={b.label}
                 type="button"
                 role="radio"
                 aria-checked={active}
-                onClick={() => setTip(t)}
+                onClick={() => setTip(b.label)}
                 className={`stamp cursor-pointer rounded-chip border-[3px] border-ink px-[18px] py-[9px] text-[14px] font-bold transition-colors ${
                   active ? "bg-cherry-dk text-cream" : "bg-porcelain text-ink hover:bg-sun"
                 }`}
               >
-                {t}
+                {b.preferred && (
+                  <span aria-label="preferred" title="Preferred">
+                    ★{" "}
+                  </span>
+                )}
+                {b.label}
               </button>
             );
           })}
