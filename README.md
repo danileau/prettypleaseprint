@@ -49,6 +49,10 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   slicer specifics that come with some files (layer height, infill, supports,
   temperatures). The printer owner sees them on the ticket, so they do not
   become a back-and-forth, and a re-print keeps them.
+- **Browse your history** — a dedicated `/history` view of the prints that have
+  left the rail (delivered, done, declined), filterable by status, material and
+  when, with **Print again** on every row. It is where you go to re-run an old
+  job.
 - **Talk on the ticket** — a conversation thread per request, so "can you do it
   in teal" lives with the model rather than in a chat app.
 - **Owner-managed benefits** — the "what's in it for you" tips are the printer

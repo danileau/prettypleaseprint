@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireUser, printerName } from "@/lib/authz";
-import { FEATURE_FLOW, featureLabel, featureRef, isFeatureTerminal } from "@/lib/scope";
+import { FEATURE_FLOW, featureLabel, featureRef } from "@/lib/scope";
 import { findFeature, listFeatureComments } from "@/lib/features";
 import { changeFeaturePriority, withdrawFeature } from "@/app/actions/features";
 import { relativeTime, PRIORITY_CHIP, CATEGORY_LABEL, FEATURE_PRIORITIES } from "@/lib/catalog";
@@ -44,11 +44,10 @@ export default async function FeaturePage({
   const canWithdraw =
     feature.requester.id === user.id &&
     (feature.status === "Requested" || feature.status === "Declined");
-  // Reprioritise: the owner any time, the requester on their own while it is
-  // still live. Matches `changeFeaturePriority` in the service.
+  // Reprioritise: the owner on any request, the requester on their own — in
+  // any status, a closed request included. Matches `changeFeaturePriority`.
   const canReprioritise =
-    user.role === "admin" ||
-    (feature.requester.id === user.id && !isFeatureTerminal(feature.status));
+    user.role === "admin" || feature.requester.id === user.id;
 
   return (
     <>

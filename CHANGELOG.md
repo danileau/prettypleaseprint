@@ -14,6 +14,12 @@ Notable changes. Every entry names a released version; deployments pin
   a chat thread, and a re-queue carries them onto the re-print. This is the
   minimal, always-available shape (option A); the mooted gated
   "advanced/professional mode by access rights" is deliberately deferred.
+- **Feature requests are filterable.** A filter bar on the `/frr` board and the
+  `/frr/queue` triage view narrows by priority, status and category. The choices
+  live in the URL and are applied server-side, ANDed onto `featureScope`, so a
+  filter can only ever narrow what a caller may already see — never widen it —
+  and a filtered view is link- and bookmark-able. An unrecognised value degrades
+  to "any" rather than erroring.
 
 - **The benefits (tip options) are owner-managed.** What used to be a hardcoded
   list of tips ("A beer", "A coffee", …) is now data the printer owner edits at
@@ -37,6 +43,13 @@ Notable changes. Every entry names a released version; deployments pin
   other side, is written to the audit trail (`feature.priority_changed`), and
   is refused for a request that is not yours or is already closed. Priority
   lives only on feature requests; prints are unaffected.
+- **A History Prints view (`/history`).** A dedicated home for the prints that
+  have left the active rail — `Delivery`, `Done` and `Declined` — separate from
+  the profile at `/me`. Filter by status, material and how recently it was
+  filed; every row you own carries a **Print again** that re-queues it from the
+  same file (FRR-102). Scoped exactly like the board: a client sees only their
+  own, the owner sees the group. New nav entry for both roles.
+
 - **Print an old request again (FRR-102).** Re-queue any of your past tickets —
   a test print that worked, a declined one you have since fixed — as a fresh
   `Requested` request, without finding and re-uploading the file. The stored
@@ -46,6 +59,12 @@ Notable changes. Every entry names a released version; deployments pin
   `story.requeued`; the owner is notified as for any new request.
 
 ### Changed
+
+- **A feature request's priority is editable in every status.** The requester
+  could only re-rank their own request while it was still live; now a closed
+  one — `Done` or `Declined` — can be re-prioritised too, because hindsight
+  keeps changing after the fact. The owner could always change any. Every
+  change is still audited (`feature.priority_changed`) and tells the other side.
 
 - **Withdraw now reaches Accepted (FRR-101).** A requester could only withdraw
   a `Requested` or `Declined` ticket; the window now also includes `Accepted`,

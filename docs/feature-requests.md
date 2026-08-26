@@ -10,19 +10,23 @@ notifications and audit trail a print goes through. It lives at **`/frr`**.
 
 - **`/frr`** — the rail. Your own requests (the owner sees everyone's), one
   column per stage, with anything closed gathered under *Closed* so you keep
-  your history without a second page.
+  your history without a second page. A **filter bar** narrows by priority,
+  status and category (the choices ride in the URL, applied server-side, so a
+  filter can only ever shrink what you were already allowed to see).
 - **`/frr/new`** — file one: a title, what-and-why, a **priority**
   (low / medium / high) and a **category** (UI / API / bug / other).
 - **`/frr/[id]`** — the request in full: where it sits in the flow, the
-  conversation, a **priority** control (the requester may change it while the
-  request is still live; the owner may change any, any time), and — while
-  nobody has started on it — a **Withdraw** control for the person who filed it.
+  conversation, a **priority** control (the requester may change it in **any**
+  status — a closed request can still be re-ranked; the owner may change any),
+  and — while nobody has started on it — a **Withdraw** control for the person
+  who filed it.
 
 ## For the owner
 
 - **`/frr/queue`** — triage. *Waiting on you* (still `Requested`) comes first,
   ordered high-priority first; everything in flight is a list with one control
-  each. Owner-only — a client gets a 404, exactly like the print queue.
+  each. The same **filter bar** (priority / status / category) narrows the
+  view. Owner-only — a client gets a 404, exactly like the print queue.
 - Move a request one step at a time: **Requested → Accepted → In progress →
   Shipped → Done**, or **Decline** it (terminal, and only from `Requested`).
   Every move notifies the requester and writes an audit row.
