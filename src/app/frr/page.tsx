@@ -2,9 +2,10 @@ import Link from "next/link";
 
 import { requireUser, printerName } from "@/lib/authz";
 import { FEATURE_BOARD, featureLabel } from "@/lib/scope";
-import { listFeatures } from "@/lib/features";
+import { coerceFeatureFilter, hasFeatureFilter, listFeatures } from "@/lib/features";
 import { AppHeader } from "@/components/app-header";
 import { FeatureCard } from "@/components/feature-card";
+import { FeatureFilterBar } from "@/components/feature-filter";
 import { Kicker } from "@/components/ui";
 import { Toast } from "@/components/toast";
 import type { FeatureStatus } from "@prisma/client";
@@ -30,12 +31,15 @@ const RAIL: Record<string, { bar: string; note: string }> = {
 export default async function FeatureBoardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ toast?: string }>;
+  searchParams: Promise<{ toast?: string; priority?: string; status?: string; category?: string }>;
 }) {
-  const [{ toast }, user] = await Promise.all([searchParams, requireUser("/frr")]);
+  const [params, user] = await Promise.all([searchParams, requireUser("/frr")]);
+  const { toast } = params;
   const owner = await printerName();
 
-  const features = await listFeatures(user);
+  const filter = coerceFeatureFilter(params);
+  const features = await listFeatures(user, filter);
+  const filtered = hasFeatureFilter(filter);
   const isAdmin = user.role === "admin";
 
   const closed = features.filter((f) => f.status === "Done" || f.status === "Declined");
@@ -65,12 +69,28 @@ export default async function FeatureBoardPage({
           </Link>
         </div>
 
+        <FeatureFilterBar action="/frr" filter={filter} />
+
         {features.length === 0 ? (
           <div className="rounded-panel border-[3px] border-dashed border-ink-3 bg-cream-2 px-[26.4px] py-[35.2px] text-center">
-            <p className="m-0 font-display text-[19px] text-ink">Nothing here yet</p>
-            <p className="m-0 mt-[6px] text-[15px] text-ink-2">
-              The first idea goes on the board the moment you file it.
-            </p>
+            {filtered ? (
+              <>
+                <p className="m-0 font-display text-[19px] text-ink">Nothing matches those filters</p>
+                <p className="m-0 mt-[6px] text-[15px] text-ink-2">
+                  <Link href="/frr" className="underline underline-offset-2 hover:text-cherry-dk">
+                    Clear the filters
+                  </Link>{" "}
+                  to see everything.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="m-0 font-display text-[19px] text-ink">Nothing here yet</p>
+                <p className="m-0 mt-[6px] text-[15px] text-ink-2">
+                  The first idea goes on the board the moment you file it.
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-[17.6px]">

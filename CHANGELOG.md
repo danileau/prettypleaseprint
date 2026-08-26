@@ -7,6 +7,13 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Added
 
+- **Feature requests are filterable.** A filter bar on the `/frr` board and the
+  `/frr/queue` triage view narrows by priority, status and category. The choices
+  live in the URL and are applied server-side, ANDed onto `featureScope`, so a
+  filter can only ever narrow what a caller may already see — never widen it —
+  and a filtered view is link- and bookmark-able. An unrecognised value degrades
+  to "any" rather than erroring.
+
 - **The benefits (tip options) are owner-managed.** What used to be a hardcoded
   list of tips ("A beer", "A coffee", …) is now data the printer owner edits at
   `/admin/benefits`: add, rename, retire/restore, and mark which they currently
@@ -38,6 +45,12 @@ Notable changes. Every entry names a released version; deployments pin
   `story.requeued`; the owner is notified as for any new request.
 
 ### Changed
+
+- **A feature request's priority is editable in every status.** The requester
+  could only re-rank their own request while it was still live; now a closed
+  one — `Done` or `Declined` — can be re-prioritised too, because hindsight
+  keeps changing after the fact. The owner could always change any. Every
+  change is still audited (`feature.priority_changed`) and tells the other side.
 
 - **Withdraw now reaches Accepted (FRR-101).** A requester could only withdraw
   a `Requested` or `Declined` ticket; the window now also includes `Accepted`,
