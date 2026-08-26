@@ -181,6 +181,32 @@ audit trail gained `feature.*` verbs. Neither change alters how a print behaves.
 `npm run verify:frr` drives the whole track the way `verify:queue` drives the
 print one.
 
+## Later additions, kept thin
+
+Several features that came after are deliberately additions on top of the two
+backlogs rather than new subsystems, each covered by the verify suite for its
+side:
+
+- **Withdraw reaches `Accepted`, and a past print can be re-queued.** The
+  withdraw window widened from `Requested`/`Declined` to include `Accepted`
+  (before the bed is committed). `requeueStory` clones an old ticket into a
+  fresh `Requested` one, copying the file server-side (`copyModel`) to a new
+  object so the two own independent bytes.
+- **`/history`** is a scoped read of the finished prints (`Delivery`/`Done`/
+  `Declined`) through the same `storyScope`, filtered by status/material/date,
+  with the re-queue control on each row. `/board` and `/me` are untouched.
+- **The benefits (tips) are owner-managed data**, not a constant: a `Benefit`
+  table the owner edits at `/admin/benefits`, seeded with the original five.
+  `Story.tip` stays a plain string so a past request survives an edit, and the
+  upload endpoint validates the tip against the current *active* list — the
+  catalogue, not the form, is authoritative.
+- **A feature request's priority is editable in any status, and both `/frr`
+  views filter** by priority/status/category. The filter is ANDed onto
+  `featureScope`, so it can only ever narrow a caller's own set.
+- **An optional free-text print-settings field** rides along on a request and
+  shows on the ticket for the owner. The structured / access-gated "advanced
+  mode" is deferred.
+
 ## What is deliberately not built
 
 - **Email/Slack notification delivery.** `Notification` rows and the `notify()`
@@ -223,6 +249,7 @@ src/app/
   api.ts                 the JSON boundary: 401/403, Origin, wire format
   openapi.ts             the OpenAPI 3.1 document, app half + Better Auth half
   features.ts            every operation on a feature request — the 'frr' track
+  benefits.ts            the owner-managed benefits (tip) catalogue
 src/app/
   board/                 the kanban backlog, scoped per role
   upload/                dropzone, wish form, XHR progress
@@ -233,6 +260,7 @@ src/app/
   api/openapi.json/      the document
   docs/                  the Swagger console (a route, not a page)
   frr/                   the feature-request track: board, new, queue, [id]
+  history/               finished prints, filterable, with re-queue
 scripts/
   deploy-wizard.sh       pick an image, verify it, deploy, auto-rollback
   vendor-swagger.ts      copies Swagger UI into public/docs at build time
@@ -242,8 +270,10 @@ scripts/
   verify-passkey.ts      WebAuthn in a real browser
   verify-api.ts          the JSON API, the document and the console
   verify-frr.ts          the feature-request track, filed and triaged
+  verify-benefits.ts     the owner-managed benefits catalogue
   security-probe.ts      OWASP-mapped security probes
 src/app/admin/
   invites/               the guest list
+  benefits/              the benefits catalogue (admin only)
   audit/                 the audit log, admin only
 ```
