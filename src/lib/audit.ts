@@ -46,6 +46,7 @@ export type AuditAction =
   // feature requests (the 'frr' track)
   | "feature.created"
   | "feature.status_changed"
+  | "feature.priority_changed"
   | "feature.declined"
   | "feature.withdrawn"
   | "feature.comment_added";

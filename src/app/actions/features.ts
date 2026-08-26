@@ -7,6 +7,7 @@ import {
   FeatureProblem,
   addFeatureComment as postComment,
   advanceFeature as advance,
+  changeFeaturePriority as reprioritise,
   createFeature as create,
   declineFeature as decline,
   featureIdOr400,
@@ -89,6 +90,25 @@ export async function withdrawFeature(formData: FormData): Promise<void> {
     back("/frr", { toast: `${done.ref} withdrawn.` });
   } catch (error) {
     if (error instanceof FeatureProblem) back(`/frr/${id}`, { toast: error.message });
+    throw error;
+  }
+}
+
+/**
+ * Change a request's priority. Open to the requester (own, still live) and the
+ * owner; the service decides. Lands back where the form was posted from.
+ */
+export async function changeFeaturePriority(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const from = safeFrom(formData.get("from"), "/frr");
+  const id = featureIdOr400(formData.get("id"));
+  try {
+    const done = await reprioritise(user, id, formData.get("priority") ?? "");
+    back(from, {
+      toast: done.unchanged ? `Already ${done.to} priority.` : `Priority → ${done.to}.`,
+    });
+  } catch (error) {
+    if (error instanceof FeatureProblem) back(from, { error: error.message });
     throw error;
   }
 }

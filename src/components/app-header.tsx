@@ -62,7 +62,13 @@ export async function AppHeader({
   return (
     <header data-authenticated="true" className="sticky top-0 z-40">
       <div className="layers border-b-[3px] border-ink bg-ink">
-        <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-[22px] px-[26.4px] py-[13.2px]">
+        {/* Two tiers on a phone, one row on desktop. The nav takes `order-last
+            w-full` so it drops to its own line below the brand and the account
+            controls on narrow screens; from `lg` it returns inline
+            (`lg:order-none lg:w-auto`) for the original single-row bar. The
+            account cluster is pushed right with `ml-auto` rather than a
+            flex-1 spacer, which was what scattered the wrapped layout. */}
+        <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-x-[16px] gap-y-[11px] px-[16px] py-[11px] sm:px-[26.4px] sm:py-[13.2px] lg:gap-x-[22px]">
           <Link href={user.role === "admin" ? "/queue" : "/board"} aria-label="Pretty Please Print, home">
             {/* On the dark bar the script reads cream, not cherry. */}
             <span className="[&_span]:text-cream">
@@ -70,7 +76,7 @@ export async function AppHeader({
             </span>
           </Link>
 
-          <nav className="flex flex-wrap items-center gap-[6px]">
+          <nav className="order-last flex w-full flex-wrap items-center gap-[6px] lg:order-none lg:w-auto">
             {NAV[user.role].map((item) => {
               const current = item.href === active;
               return (
@@ -78,7 +84,7 @@ export async function AppHeader({
                   key={item.href}
                   href={item.href}
                   aria-current={current ? "page" : undefined}
-                  className={`rounded-chip border-2 px-[15px] py-[7px] font-mono text-[12.5px] font-bold uppercase tracking-[0.08em] transition-colors ${
+                  className={`rounded-chip border-2 px-[13px] py-[8px] font-mono text-[12.5px] font-bold uppercase tracking-[0.08em] transition-colors sm:px-[15px] sm:py-[7px] ${
                     current
                       ? "border-ink bg-sun text-ink"
                       : "border-transparent text-cream hover:border-ink hover:bg-cream-2 hover:text-ink"
@@ -90,20 +96,20 @@ export async function AppHeader({
             })}
           </nav>
 
-          <div className="flex-1" />
-
-          <ActivityMenu
-            items={items}
-            unread={unread}
-            title={user.role === "admin" ? "New from the group" : "Updates on your prints"}
-          />
-          <UserMenu
-            name={user.name}
-            initials={user.initials}
-            email={user.email}
-            role={user.role}
-            passkeyCount={passkeyCount}
-          />
+          <div className="ml-auto flex items-center gap-[8.8px] sm:gap-[13.2px]">
+            <ActivityMenu
+              items={items}
+              unread={unread}
+              title={user.role === "admin" ? "New from the group" : "Updates on your prints"}
+            />
+            <UserMenu
+              name={user.name}
+              initials={user.initials}
+              email={user.email}
+              role={user.role}
+              passkeyCount={passkeyCount}
+            />
+          </div>
         </div>
       </div>
 

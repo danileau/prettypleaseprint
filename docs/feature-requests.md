@@ -14,8 +14,9 @@ notifications and audit trail a print goes through. It lives at **`/frr`**.
 - **`/frr/new`** — file one: a title, what-and-why, a **priority**
   (low / medium / high) and a **category** (UI / API / bug / other).
 - **`/frr/[id]`** — the request in full: where it sits in the flow, the
-  conversation, and — while nobody has started on it — a **Withdraw** control
-  for the person who filed it.
+  conversation, a **priority** control (the requester may change it while the
+  request is still live; the owner may change any, any time), and — while
+  nobody has started on it — a **Withdraw** control for the person who filed it.
 
 ## For the owner
 
