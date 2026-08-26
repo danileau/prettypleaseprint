@@ -37,8 +37,14 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   step at a time, forwards only. Or Declined, with a reason. Marking it **Done**
   takes it off the board while keeping it in *My orders*, so the rail carries
   only what is still moving.
-- **Withdraw your own request** while nobody has acted on it — the ticket, the
-  conversation and the uploaded file go with it.
+- **Withdraw your own request** any time before it reaches the bed — while it
+  is Requested, Accepted or Declined, but not once it is Printing. The ticket,
+  the conversation and the uploaded file go with it. Plans change; unwanted
+  prints waste filament.
+- **Print an old request again** — re-queue any past ticket of yours (a test
+  print that worked, a declined one you have fixed) as a fresh request, without
+  hunting down and re-uploading the file. The model is copied server-side, so
+  the two tickets own independent files.
 - **Talk on the ticket** — a conversation thread per request, so "can you do it
   in teal" lives with the model rather than in a chat app.
 - **Revoke access when someone leaves** — suspends the account, signs them out

@@ -411,6 +411,16 @@ async function main() {
           where: { action: "story.withdrawn", subject: storyRef(regret.id) },
         })) === 1);
 
+  // FRR-101: the DELETE route inherits the wider window — an Accepted ticket
+  // (agreed, not yet on the bed) can now be withdrawn through the API too.
+  const acceptedApi = await makeStory(ayla.id, "Accepted, then gone", "Accepted");
+  const wAcc = await client.json<{ withdrawn?: boolean }>(
+    `${APP}/api/stories/${acceptedApi.id}`, { method: "DELETE" });
+  check("an Accepted ticket can be withdrawn via the API",
+        wAcc.body.withdrawn === true &&
+        (await db.story.count({ where: { id: acceptedApi.id } })) === 0,
+        JSON.stringify(wAcc.body));
+
   const started = await makeStory(ayla.id, "Already printing", "Printing");
   const tooLate = await client.json<{ error?: string }>(
     `${APP}/api/stories/${started.id}`, { method: "DELETE" });

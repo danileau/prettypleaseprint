@@ -3,10 +3,11 @@ import { withdrawStory } from "@/app/actions/stories";
 /**
  * "Actually, never mind."
  *
- * Shown only to the person who asked for the print, and only while nobody has
- * acted on it — `Requested` (still in the queue untouched) or `Declined`
- * (already dead). The server action re-checks both; drawing a button is not
- * authorisation.
+ * Shown only to the person who asked for the print, and only before it reaches
+ * the bed — `Requested` (untouched), `Accepted` (agreed, not started) or
+ * `Declined` (already dead). Once it is Printing the material is committed, so
+ * the control is withdrawn (FRR-101). The server action re-checks; drawing a
+ * button is not authorisation.
  *
  * Behind a disclosure, and it says plainly that the file goes too, because
  * this is the one action in the app that destroys something. Everything else

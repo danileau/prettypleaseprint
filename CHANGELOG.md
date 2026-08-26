@@ -7,14 +7,25 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Added
 
-- **A feature request's priority can be changed after it is filed** (FRR-104).
-  Requirements shift, so a request's priority is a knob rather than a
-  one-shot: the requester may re-set the priority of their own request while it
-  is still live (not `Done`/`Declined`), and the printer owner may re-set any,
-  any time, since triaging by priority is their job. The change notifies the
-  other side, is written to the audit trail (`feature.priority_changed`), and
-  is refused for a request that is not yours or is already closed. Priority
-  lives only on feature requests; prints are unaffected.
+- **Print an old request again (FRR-102).** Re-queue any of your past tickets —
+  a test print that worked, a declined one you have since fixed — as a fresh
+  `Requested` request, without finding and re-uploading the file. The stored
+  model is copied server-side to a new object (`copyModel`), so the new ticket
+  and the original own independent files: withdrawing one never touches the
+  other's. A "Print again" control on the story page; audited as
+  `story.requeued`; the owner is notified as for any new request.
+
+### Changed
+
+- **Withdraw now reaches Accepted (FRR-101).** A requester could only withdraw
+  a `Requested` or `Declined` ticket; the window now also includes `Accepted`,
+  so plans can still change after the owner has said yes but before the print
+  reaches the bed. `Printing`/`Delivery`/`Done` are still refused — the
+  material is committed by then — and the owner is notified when an accepted
+  request is pulled. The `DELETE /api/stories/{id}` route inherits the wider
+  window automatically.
+
+### Added
 
 - **A feature-request track — the 'frr' backlog.** Anyone can file a feature
   request (title, description, priority, category) at `/frr`, and the printer
