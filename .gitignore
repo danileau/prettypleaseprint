@@ -19,3 +19,6 @@ shots/
 # `predev` and `prebuild` run for you). Somebody else's build output — the
 # package manager owns it, not the repository.
 public/docs/
+
+# Agent worktrees and other local Claude state — never committed.
+.claude/
