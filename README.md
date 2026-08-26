@@ -45,6 +45,10 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   print that worked, a declined one you have fixed) as a fresh request, without
   hunting down and re-uploading the file. The model is copied server-side, so
   the two tickets own independent files.
+- **Note print settings** — an optional free-text field on a request for the
+  slicer specifics that come with some files (layer height, infill, supports,
+  temperatures). The printer owner sees them on the ticket, so they do not
+  become a back-and-forth, and a re-print keeps them.
 - **Talk on the ticket** — a conversation thread per request, so "can you do it
   in teal" lives with the model rather than in a chat app.
 - **Owner-managed benefits** — the "what's in it for you" tips are the printer

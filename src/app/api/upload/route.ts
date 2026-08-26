@@ -64,6 +64,7 @@ export async function POST(request: Request) {
     quantity: form.get("quantity"),
     tip: form.get("tip"),
     note: form.get("note") ?? "",
+    printSettings: form.get("printSettings") ?? "",
   });
   if (!wish.success) {
     return bad(400, wish.error.issues[0]?.message ?? "Check the form.");
@@ -125,6 +126,7 @@ export async function POST(request: Request) {
         colorHex: hexForColor(wish.data.colorName),
         tip: wish.data.tip,
         note: wish.data.note,
+        printSettings: wish.data.printSettings,
         filename,
         fileSize: bytes.length,
         mimeType: MIME_FOR[extension] ?? "application/octet-stream",

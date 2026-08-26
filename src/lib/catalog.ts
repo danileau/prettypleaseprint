@@ -73,6 +73,14 @@ export const WishSchema = z.object({
   // the current *active* benefits (see src/app/api/upload/route.ts).
   tip: z.string().trim().min(1, "Pick what's in it for them.").max(80, "That tip is oddly long."),
   note: z.string().trim().max(2000, "That note is very long.").optional().default(""),
+  // Optional free-text print settings (FRR-103 option A). Shown to the owner so
+  // slicer specifics live on the ticket rather than in a chat thread.
+  printSettings: z
+    .string()
+    .trim()
+    .max(2000, "Those print settings are very long.")
+    .optional()
+    .default(""),
 });
 
 export type Wish = z.infer<typeof WishSchema>;

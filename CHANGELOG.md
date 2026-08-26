@@ -7,6 +7,14 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Added
 
+- **Optional print settings on a request (FRR-103).** A free-text field where a
+  requester can note the slicer specifics that come with some files — layer
+  height, infill, supports, temperatures. Stored on the ticket and shown to the
+  printer owner, so those specifics live on the request rather than turning into
+  a chat thread, and a re-queue carries them onto the re-print. This is the
+  minimal, always-available shape (option A); the mooted gated
+  "advanced/professional mode by access rights" is deliberately deferred.
+
 - **The benefits (tip options) are owner-managed.** What used to be a hardcoded
   list of tips ("A beer", "A coffee", …) is now data the printer owner edits at
   `/admin/benefits`: add, rename, retire/restore, and mark which they currently

@@ -96,6 +96,7 @@ export function UploadForm({
   const [color, setColor] = useState<string>(DEFAULT_COLOR.name);
   const [tip, setTip] = useState<string>(defaultTip);
   const [note, setNote] = useState("");
+  const [printSettings, setPrintSettings] = useState("");
 
   /**
    * Client-side checks are for fast feedback only — the server re-runs all of
@@ -141,6 +142,7 @@ export function UploadForm({
     body.set("quantity", String(quantity));
     body.set("tip", tip);
     body.set("note", note);
+    body.set("printSettings", printSettings);
 
     // XHR rather than fetch: it is still the only way to observe upload
     // progress, and a 50 MB model over office wifi needs a real bar.
@@ -392,6 +394,23 @@ export function UploadForm({
           placeholder="No rush — needs to survive a bit of pulling."
           className="w-full resize-y rounded-card border-[3px] border-ink bg-porcelain px-[15px] py-[12px] text-[16px] text-ink placeholder:text-ink-3"
         />
+      </div>
+
+      {/* ---- print settings (optional, FRR-103) ---- */}
+      <div className="mt-[22px]">
+        <Label htmlFor="printSettings">Print settings (optional)</Label>
+        <textarea
+          id="printSettings"
+          rows={3}
+          value={printSettings}
+          onChange={(e) => setPrintSettings(e.target.value)}
+          maxLength={2000}
+          placeholder="Any specific slicer settings: layer height, infill, supports, temps…"
+          className="w-full resize-y rounded-card border-[3px] border-ink bg-porcelain px-[15px] py-[12px] font-mono text-[15px] text-ink placeholder:text-ink-3"
+        />
+        <p className="m-0 mt-[6px] font-mono text-[11px] uppercase tracking-[0.04em] text-ink-3">
+          Comes with some files — saves a round of messages with {owner}.
+        </p>
       </div>
 
       {/* ---- actions ---- */}

@@ -511,7 +511,8 @@ export async function requeueStory(actor: Actor, id: number) {
     where: { AND: [{ id }, storyScope(actor)] },
     select: {
       id: true, title: true, quantity: true, material: true, colorName: true,
-      colorHex: true, tip: true, note: true, filename: true, fileSize: true,
+      colorHex: true, tip: true, note: true, printSettings: true,
+      filename: true, fileSize: true,
       mimeType: true, storageKey: true, dims: true, uploaderId: true,
     },
   });
@@ -541,6 +542,7 @@ export async function requeueStory(actor: Actor, id: number) {
       colorHex: src.colorHex,
       tip: src.tip,
       note: src.note,
+      printSettings: src.printSettings,
       filename: src.filename,
       fileSize: src.fileSize,
       mimeType: src.mimeType,

@@ -274,6 +274,12 @@ model Story {
   tip       String
   note      String   @default("")
 
+  /// Free-text print settings the requester optionally notes (layer height,
+  /// infill, supports, temps…), shown to the owner on the ticket so specifics
+  /// do not become a back-and-forth. FRR-103, option A — a plain string, not a
+  /// structured/gated "advanced mode".
+  printSettings String @default("")
+
   flagged    Boolean @default(false)
   flagReason String?
 

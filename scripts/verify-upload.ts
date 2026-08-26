@@ -130,6 +130,7 @@ function upload(b: Browser, filename: string, bytes: Uint8Array, fields: Record<
   form.set("quantity", fields.quantity ?? "2");
   form.set("tip", fields.tip ?? "A beer");
   form.set("note", fields.note ?? "No rush.");
+  form.set("printSettings", fields.printSettings ?? "");
   return b.raw(`${APP}/api/upload`, { method: "POST", body: form });
 }
 
@@ -413,6 +414,33 @@ async function main() {
         del.status === 200 && (await db.story.count({ where: { id: newId } })) === 0,
         `status ${del.status}`);
   check("and the original's file is still in storage afterwards", await objExists(beforeKey));
+
+  section("print settings ride on the request (FRR-103)");
+
+  const SETTINGS = "0.2mm layers, 25% gyroid infill, supports off, PETG @ 240C";
+  const withPS = await upload(aylaB, "clip-settings.stl", binaryStl(20, 20, 20), {
+    title: "Settings ride-along", printSettings: SETTINGS,
+  });
+  check("an upload carrying print settings succeeds", withPS.status < 300, `status ${withPS.status}`);
+  const psStory = await db.story.findFirst({ where: { title: "Settings ride-along" } });
+  check("the print settings are stored on the ticket", psStory?.printSettings === SETTINGS, psStory?.printSettings);
+
+  const ownerView = await (await rubenB.go(`${APP}/story/${psStory!.id}`)).text();
+  check("the owner sees the print settings on the ticket",
+        ownerView.includes("Print settings") && ownerView.includes("gyroid infill"));
+
+  const rqPage2 = rendered(await (await aylaB.go(`${APP}/story/${psStory!.id}`)).text());
+  const posted2 = await submitForm(aylaB, `${APP}/story/${psStory!.id}`, rqPage2, "no re-upload", {
+    storyId: String(psStory!.id), from: `/story/${psStory!.id}`,
+  });
+  const newId2 = Number((posted2.headers.get("location") ?? "").match(/\/story\/(\d+)/)?.[1]);
+  const copy2 = await db.story.findUnique({ where: { id: newId2 } });
+  check("re-queue carries the print settings onto the copy", copy2?.printSettings === SETTINGS, copy2?.printSettings);
+
+  const noPS = await upload(aylaB, "plain.stl", binaryStl(15, 15, 15), { title: "No settings here" });
+  check("an upload with no print settings still works", noPS.status < 300, `status ${noPS.status}`);
+  const plain = await db.story.findFirst({ where: { title: "No settings here" } });
+  check("and its print settings default to empty", plain?.printSettings === "", JSON.stringify(plain?.printSettings));
 
     section("the audit trail reads correctly");
 
