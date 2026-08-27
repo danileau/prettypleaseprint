@@ -15,6 +15,7 @@ npm run verify:auth       # registration, sign-in, password reset
 npm run verify:upload     # upload → board → story
 npm run verify:queue      # admin queue, status flow, conversation, access
 npm run verify:frr        # the feature-request track: file, triage, the flow
+npm run verify:benefits   # the owner-managed benefits (tip) catalogue
 npm run verify:api        # the JSON API, the OpenAPI document, the console
 npm run verify:passkey    # WebAuthn ceremonies in a real browser
 npm run probe:security    # OWASP-mapped probes
