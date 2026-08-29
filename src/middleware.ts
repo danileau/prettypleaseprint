@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 import { buildCsp, newNonce } from "@/lib/csp";
+import { SESSION_COOKIE_NAMES, SESSION_IDLE_SECONDS } from "@/lib/auth-rules";
 
 /**
  * Two jobs, both cheap enough to run on every request.
@@ -78,12 +79,60 @@ export function middleware(request: NextRequest) {
   const hasCookie = getSessionCookie(request, { cookiePrefix: "ppp" });
 
   if (isApi || isPublic || hasCookie) {
-    return withCsp(NextResponse.next({ request: { headers: requestHeaders } }));
+    const res = withCsp(NextResponse.next({ request: { headers: requestHeaders } }));
+    // Route handlers set their own cookies; a page render cannot. See below.
+    if (!isApi) restampSession(request, res);
+    return res;
   }
 
   const signin = new URL("/signin", request.url);
   signin.searchParams.set("next", pathname + search);
   return withCsp(NextResponse.redirect(signin));
+}
+
+/**
+ * Re-stamp the session cookie's `Max-Age` on a page navigation.
+ *
+ * Better Auth slides a live session two ways at once: it pushes `expiresAt`
+ * out in the database, and it re-sets the cookie with a fresh `Max-Age`. Only
+ * the first of those survives a React Server Component render, because Next
+ * forbids writing a cookie during one. So browsing pages keeps the session row
+ * alive while the browser's copy of the cookie counts down from whenever a
+ * route handler last wrote it.
+ *
+ * At the thirty-day window this app used to run, nobody would ever have hit
+ * that. At twenty minutes it signs people out in the middle of working — row
+ * alive, cookie gone. Measured rather than assumed: `GET /board` sends no
+ * `Set-Cookie` at all, where `GET /api/stories` sends `Max-Age=1200`.
+ *
+ * Re-stamping is safe because the cookie is not the authority. It carries a
+ * token whose validity is the `session` row, and `getSession` refuses an
+ * expired row, so keeping the browser's copy for longer cannot extend a
+ * session by one second. What it buys is the invariant worth having: the
+ * cookie never dies before the row it names, and the two now slide on exactly
+ * the same requests.
+ *
+ * `/api/*` is deliberately excluded. Those responses can and do set the cookie
+ * themselves — and re-stamping there would resurrect the one that
+ * `/api/auth/sign-out` had just deleted.
+ */
+function restampSession(request: NextRequest, response: NextResponse): void {
+  for (const name of SESSION_COOKIE_NAMES) {
+    const cookie = request.cookies.get(name);
+    if (!cookie) continue;
+    response.cookies.set({
+      name,
+      value: cookie.value,
+      maxAge: SESSION_IDLE_SECONDS,
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      // `__Secure-` is a promise to the browser that the cookie only ever
+      // travels over HTTPS, and it refuses the cookie outright without it.
+      secure: name.startsWith("__Secure-"),
+    });
+    return;
+  }
 }
 
 export const config = {

@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
+import { requireFreshAuth } from "@/lib/reauth";
 import { record } from "@/lib/audit";
 import { passwordResetEmail, sendMail } from "@/lib/email";
 import {
@@ -43,6 +44,9 @@ export async function sendInviteAction(
 ): Promise<InviteFormState> {
   // Every action re-checks the role. Rendering the page is not authorisation.
   const admin = await requireAdmin();
+  // An invitation mints a whole new account, which outlives any stolen
+  // session. Prove it is you.
+  await requireFreshAuth("/admin/invites");
 
   const parsed = InviteSchema.safeParse({
     email: formData.get("email"),
@@ -85,6 +89,9 @@ export async function sendInviteAction(
 
 export async function resendInviteAction(formData: FormData): Promise<void> {
   const admin = await requireAdmin();
+  // Re-sending rotates the token, so it hands out a working link exactly the
+  // way the first one did.
+  await requireFreshAuth("/admin/invites");
   const id = String(formData.get("id") ?? "");
   try {
     const { invite } = await resendInvite(id);
@@ -124,6 +131,9 @@ export async function resetPasswordAction(
   formData: FormData,
 ): Promise<InviteFormState> {
   const admin = await requireAdmin();
+  // A reset link is the ability to become somebody else. This is the single
+  // most valuable thing a captured admin session could be pointed at.
+  await requireFreshAuth("/admin/invites");
   const userId = String(formData.get("userId") ?? "");
 
   const target = await db.user.findUnique({
@@ -195,6 +205,9 @@ export async function setMemberAccessAction(
   formData: FormData,
 ): Promise<InviteFormState> {
   const admin = await requireAdmin();
+  // Both directions: revoking locks a colleague out, restoring lets somebody
+  // back in who was deliberately shut out.
+  await requireFreshAuth("/admin/invites");
   const userId = String(formData.get("userId") ?? "");
   const revoke = String(formData.get("revoke") ?? "") === "true";
 

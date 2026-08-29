@@ -16,6 +16,7 @@ import "./_env";
 import { db } from "../src/lib/db";
 import { issuePasswordSetupUrl } from "../src/lib/password-reset";
 import { TEST_PASSWORD, ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
+import { SESSION_IDLE_SECONDS } from "../src/lib/auth-rules";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 const MAILPIT = process.env.MAILPIT_URL ?? "http://localhost:8025";
@@ -90,6 +91,29 @@ class Browser {
     this.store(res);
     return res;
   }
+  /**
+   * Post a server-action form the way a browser with no JavaScript does:
+   * carry every hidden input (Next's action id among them) and override the
+   * visible fields. Mirrors the helper in `verify-auth.ts`.
+   */
+  async submit(url: string, html: string, values: Record<string, string>) {
+    const form = /<form\b[\s\S]*?<\/form>/.exec(html)?.[0] ?? "";
+    const body = new FormData();
+    for (const tag of form.match(/<input\b[^>]*>/g) ?? []) {
+      if (!tag.includes('type="hidden"')) continue;
+      const name = /name="([^"]*)"/.exec(tag)?.[1];
+      const value = /value="([^"]*)"/.exec(tag)?.[1] ?? "";
+      if (name) {
+        body.append(
+          name.replace(/&amp;/g, "&").replace(/&quot;/g, '"'),
+          value.replace(/&amp;/g, "&").replace(/&quot;/g, '"'),
+        );
+      }
+    }
+    for (const [k, v] of Object.entries(values)) body.set(k, v);
+    return this.raw(url, { method: "POST", body });
+  }
+
   async go(url: string, init: RequestInit = {}) {
     let res = await this.raw(url, init);
     for (let i = 0; i < 8; i++) {
@@ -726,6 +750,133 @@ async function main() {
   probe("A07-protorel", "a protocol-relative ?next is not honoured",
         !(protoRel.headers.get("location") ?? "").includes("evil.example"),
         protoRel.headers.get("location") ?? "");
+
+  // ---------------------------------------------------------------------
+  // How long a session is worth something.
+  //
+  // The window used to be thirty days, and thirty days that *renewed* — any
+  // session used inside the window got the whole window back, so a session
+  // nobody revoked never actually expired. On the shared office desktop this
+  // app runs on, a captured cookie was therefore good more or less forever.
+  //
+  // Three probes rather than one, because the property has three moving parts
+  // and each fails differently: the database row is the authority, the cookie
+  // is what a thief actually carries away, and the re-stamp is what keeps the
+  // short window from logging honest people out.
+  // ---------------------------------------------------------------------
+  const fresh = new Browser();
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  const freshIn = await attemptSignIn(fresh, usernameFor(ayla.email), TEST_PASSWORD);
+  const freshCookie =
+    freshIn.headers.getSetCookie().find((c) => c.includes("ppp.session_token=")) ?? "";
+  const freshToken = decodeURIComponent(
+    (fresh.jar.get("ppp.session_token") ?? fresh.jar.get("__Secure-ppp.session_token") ?? ""),
+  ).split(".")[0];
+
+  const freshRow = await db.session.findFirst({
+    where: { token: freshToken },
+    select: { createdAt: true, expiresAt: true },
+  });
+  const windowSeconds = freshRow
+    ? Math.round((freshRow.expiresAt.getTime() - freshRow.createdAt.getTime()) / 1000)
+    : -1;
+  // A minute of slack: the row is written a moment after the clock is read.
+  probe("A07-session-window", "a new session is worth twenty minutes, not a month",
+        Math.abs(windowSeconds - SESSION_IDLE_SECONDS) <= 60,
+        `session row spans ${windowSeconds}s, expected ~${SESSION_IDLE_SECONDS}s — ` +
+        "session.expiresIn has moved, and it is an idle window that renews, " +
+        "so a large value means a captured cookie effectively never expires");
+
+  const maxAge = Number(/max-age=(\d+)/i.exec(freshCookie)?.[1] ?? -1);
+  probe("A07-session-cookie-maxage", "the session cookie expires with the session",
+        Math.abs(maxAge - SESSION_IDLE_SECONDS) <= 60,
+        `Set-Cookie carried Max-Age=${maxAge}, expected ~${SESSION_IDLE_SECONDS} — ` +
+        "a cookie outliving its row is a credential left on disk for no reason");
+
+  /*
+   * The regression guard for the cookie re-stamp in `src/middleware.ts`.
+   *
+   * Better Auth slides a session in two places, and only one of them survives
+   * a React Server Component render: the database row is pushed out, but Next
+   * forbids writing a cookie during a render, so the browser's copy keeps
+   * counting down from whenever a route handler last wrote it. Measured, not
+   * assumed — before the re-stamp, `GET /board` sent no `Set-Cookie` at all
+   * while `GET /api/stories` sent `Max-Age=1200`.
+   *
+   * At thirty days that was invisible. At twenty minutes it signs people out
+   * mid-task with a perfectly live session behind them, which is the kind of
+   * failure people work around by asking for the window to be made long again.
+   */
+  const nav = await fresh.raw(`${APP}/board`);
+  const navMaxAge = Number(
+    /max-age=(\d+)/i.exec(
+      nav.headers.getSetCookie().find((c) => c.includes("ppp.session_token=")) ?? "",
+    )?.[1] ?? -1,
+  );
+  probe("A07-session-slides", "a page render pushes the cookie out too",
+        Math.abs(navMaxAge - SESSION_IDLE_SECONDS) <= 60,
+        `GET /board returned Max-Age=${navMaxAge}, expected ~${SESSION_IDLE_SECONDS} — ` +
+        "restampSession() in src/middleware.ts is not firing, so the cookie " +
+        "will die under an active user while their session row is still alive");
+
+  // ---------------------------------------------------------------------
+  // Re-authentication for the actions that move access around.
+  //
+  // Shortening the session limits how long a captured cookie is worth
+  // something; it does not stop it being worth something right now. The
+  // actions whose effects outlive the session — an invitation mints an
+  // account, a reset link is the ability to become somebody else, revoking
+  // locks a colleague out — ask for the passkey or the password again, which
+  // is the one control on the list a copied cookie cannot satisfy.
+  //
+  // Freshness is the age of the session, so the stale case is exercised by
+  // backdating the row rather than by waiting five minutes.
+  // ---------------------------------------------------------------------
+  const staleAdmin = await signIn(admin);
+  const invitePage = await (await staleAdmin.go(`${APP}/admin/invites`)).text();
+
+  const staleToken = decodeURIComponent(
+    (staleAdmin.jar.get("ppp.session_token") ??
+      staleAdmin.jar.get("__Secure-ppp.session_token") ?? ""),
+  ).split(".")[0];
+  await db.session.updateMany({
+    where: { token: staleToken },
+    data: { createdAt: new Date(Date.now() - 60 * 60 * 1000) },
+  });
+
+  const staleEmail = "reauth-stale@office.example";
+  await db.invite.deleteMany({ where: { email: staleEmail } });
+  const staleTry = await staleAdmin.submit(`${APP}/admin/invites`, invitePage, {
+    email: staleEmail,
+    name: "Stale Session",
+  });
+  const staleLanded = staleTry.headers.get("location") ?? staleTry.url ?? "";
+  const staleMadeAnInvite =
+    (await db.invite.count({ where: { email: staleEmail } })) > 0;
+  probe("A07-reauth-stale", "an old session cannot hand out access",
+        !staleMadeAnInvite,
+        `an invitation for ${staleEmail} was created from a session an hour old — ` +
+        "requireFreshAuth() is not gating sendInviteAction, so a captured " +
+        `cookie can mint accounts (landed at ${staleLanded || "no redirect"})`);
+
+  probe("A07-reauth-redirect", "and is sent to confirm who it is",
+        staleLanded.includes("/reauth"),
+        `expected a redirect to /reauth, got "${staleLanded || "none"}"`);
+
+  // The other half: the gate must not simply break the feature.
+  const freshAdmin = await signIn(admin);
+  const freshPage = await (await freshAdmin.go(`${APP}/admin/invites`)).text();
+  const freshEmail = "reauth-fresh@office.example";
+  await db.invite.deleteMany({ where: { email: freshEmail } });
+  await freshAdmin.submit(`${APP}/admin/invites`, freshPage, {
+    email: freshEmail,
+    name: "Fresh Session",
+  });
+  probe("A07-reauth-fresh", "a sign-in from moments ago still can",
+        (await db.invite.count({ where: { email: freshEmail } })) > 0,
+        "a freshly signed-in admin was refused — the sudo window is too tight " +
+        "to invite anybody, which would make the control unusable");
+  await db.invite.deleteMany({ where: { email: { in: [staleEmail, freshEmail] } } });
 
   // Sign-out must kill the session server-side, not just drop the cookie.
   const leaver = client2;
