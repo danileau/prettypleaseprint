@@ -1,0 +1,32 @@
+-- Retire the sessions that were minted under the old thirty-day window.
+--
+-- WHAT THIS TOUCHES: rows in "session" only, and only those whose window is
+-- longer than the current one allows. No user, story, feature request,
+-- comment, invitation or audit row is affected, and nothing cascades from
+-- here: no foreign key in this database references "session" (the only
+-- relation is user -> sessions, which cascades the other way). The cost to a
+-- person is that they sign in once more; for anyone with a passkey, a touch.
+--
+-- WHY IT IS NEEDED: the session window came down from a renewing thirty days
+-- to twenty idle minutes, and that change cannot reach the sessions that
+-- already exist. Better Auth decides whether to slide a session with
+--
+--     expiresAt - expiresIn + updateAge <= now()
+--
+-- which reads a stored expiresAt as though it had been written under the
+-- *current* expiresIn. Hand it a row minted under the old config and the
+-- arithmetic places the last update far in the future, so the row is never
+-- refreshed and therefore never shortened. Measured rather than assumed: a
+-- session planted with a thirty-day expiry was still thirty days out after
+-- being used against the new build.
+--
+-- Leaving them would mean the people already signed in -- the only people who
+-- have a session worth stealing today -- keep the exact credential this change
+-- exists to shorten.
+--
+-- WHY THE PREDICATE: a session created under the new config expires within
+-- twenty minutes, so anything reaching further out could only have come from
+-- the old one. The minute of slack absorbs clock skew between the migrator and
+-- the database. This also makes the statement safe to re-run: once the new
+-- config is live it matches nothing.
+DELETE FROM "session" WHERE "expiresAt" > now() + interval '21 minutes';

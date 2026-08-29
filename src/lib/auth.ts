@@ -16,6 +16,7 @@ import { record } from "@/lib/audit";
 import {
   PASSWORD_MAX,
   PASSWORD_MIN,
+  SESSION_IDLE_SECONDS,
   USERNAME_MAX,
   USERNAME_MIN,
   USERNAME_PATTERN,
@@ -104,9 +105,59 @@ export const auth = betterAuth({
 
   session: {
     expiresAt: undefined,
-    expiresIn: 60 * 60 * 24 * 30, // 30 days
-    updateAge: 60 * 60 * 24, // slide the window at most once a day
-    freshAge: 60 * 60 * 24, // "recent login" window for sensitive actions
+
+    /**
+     * Twenty minutes of inactivity, not thirty days.
+     *
+     * `expiresIn` is an *idle* window rather than an absolute one: Better Auth
+     * pushes `expiresAt` back out to `now + expiresIn` whenever a session is
+     * used and the last push was more than `updateAge` ago. At the thirty days
+     * this used to be, that meant a session never really expired — anybody who
+     * opened the app monthly renewed it forever, on a cookie written into the
+     * browser profile with `Max-Age=2592000`. "Thirty days" was the number in
+     * the config; "indefinitely" was the behaviour.
+     *
+     * The machine this app runs on is a shared office desktop, so the threat
+     * that matters is somebody sitting down after you — and against a captured
+     * cookie the only thing that helps is how long it stays worth something.
+     * Twenty minutes is that window. It also settles the cookie question by
+     * itself: at `Max-Age=1200` the cookie is no longer something that outlives
+     * the browser or turns up in a profile backup, so there is nothing to gain
+     * from forcing a session cookie via `rememberMe: false` — which would in
+     * fact be worse, because Better Auth reads that as a *fixed* 24-hour
+     * session and skips the sliding refresh entirely.
+     *
+     * Twenty minutes is only humane because passkeys are here: conditional UI
+     * signs a returning holder back in with no click. It does make the passkey
+     * nudge load-bearing rather than decorative — anyone still on a password
+     * types it several times a day, and that pressure is the point.
+     */
+    expiresIn: SESSION_IDLE_SECONDS,
+
+    /**
+     * Slide the window every minute rather than every day.
+     *
+     * `updateAge` is how stale the window may get before a request pushes it
+     * out again, so it has to be far below `expiresIn` or the session expires
+     * under somebody mid-task: at the old one-day setting a twenty-minute
+     * window would be renewed long after it had already lapsed. A minute costs
+     * one indexed UPDATE per active session per minute, and means the clock
+     * only ever runs down when nobody is there.
+     */
+    updateAge: 60,
+
+    /**
+     * Left at a day, and deliberately not doing the job its name suggests.
+     *
+     * `freshAge` gates exactly two Better Auth endpoints — `/unlink-account`
+     * and `/list-sessions` — and this app exposes neither. It is NOT the
+     * re-authentication control for this app's own destructive actions; that
+     * is `requireFreshPasskey` in `src/lib/reauth.ts`, which asks for a passkey
+     * touch rather than trusting the age of a session that may have been
+     * captured. Kept at a day so the two library endpoints stay sane.
+     */
+    freshAge: 60 * 60 * 24,
+
     // Cookie caching is deliberately OFF.
     //
     // It stores a signed snapshot of the session in a second cookie and
@@ -115,6 +166,11 @@ export const auth = betterAuth({
     // cookie stays authenticated until the snapshot expires. On a shared
     // office machine that is precisely the case sign-out exists to cover —
     // and a DAST probe caught it doing exactly that (A07-logout).
+    //
+    // The same reasoning is why the session token stays an opaque row in
+    // `session` rather than a self-describing JWT: a JWT is that snapshot with
+    // a longer fuse, and it would put revocation — sign-out, access revoked, a
+    // password reset — back on a delay measured in minutes.
     //
     // The cost of turning it off is one indexed lookup per request. For a
     // handful of users against Postgres on the same box, that is not a

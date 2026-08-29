@@ -5,6 +5,74 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+### Changed
+
+- **A session is now worth twenty idle minutes, not a renewing month.**
+  `session.expiresIn` was 30 days with `updateAge` at a day — and because
+  `expiresIn` is an *idle* window that Better Auth pushes back out on use, a
+  session touched once a month renewed itself indefinitely. "Thirty days" was
+  the number in the config; *forever* was the behaviour, on a cookie written to
+  the browser profile with `Max-Age=2592000`. On the shared office desktop this
+  app is built for, that is the wrong shape: the threat is somebody sitting
+  down after you, and the only thing that helps against a captured cookie is
+  how long it stays worth something. It is twenty minutes now, sliding every
+  minute so it never expires under somebody mid-task. Bearer tokens inherit it,
+  which closes the "long-lived credential in a shell history" item in the
+  security audit. Deliberately *not* done: a JWT session (it would put
+  revocation back on a delay — the same bug cookie caching was turned off for),
+  moving the token out of a cookie (a cookie is the only credential a browser
+  attaches to a top-level navigation, and this app is server-rendered), and
+  forcing a non-persistent cookie via `rememberMe: false` (Better Auth reads
+  that as a *fixed* 24-hour session with the sliding refresh off — worse than
+  what it buys).
+
+  **Everyone signs in once on upgrade.** The new window cannot reach the
+  sessions that already exist — Better Auth reads a stored `expiresAt` as
+  though it had been written under the current `expiresIn`, so a row minted
+  under the old config looks freshly updated and is never shortened (measured:
+  a planted thirty-day session was still thirty days out after use). A
+  migration retires them. It matches on the window rather than truncating the
+  table, so it touches nothing a session created under the new config owns, and
+  it is a no-op if re-run. No user, story, feature request, comment, invitation
+  or audit row is affected, and nothing cascades: no foreign key in the
+  database references `session`.
+
+### Added
+
+- **Re-authentication before handing out access.** Inviting somebody,
+  re-sending an invitation, minting a password-reset link and revoking or
+  restoring access now require a sign-in from the last five minutes; an older
+  session is sent to a new `/reauth` screen to confirm with a passkey or a
+  password. A shorter session limits how long a captured cookie is useful, but
+  these four actions outlive any session — an invitation mints an account, a
+  reset link is the ability to become somebody else — and asking for the
+  credential again is the one control a copied cookie cannot satisfy.
+  Withdrawing an unaccepted invitation is deliberately not gated, and neither
+  is `/admin/benefits`. `/reauth` offers the password as well as the passkey,
+  because requiring a passkey would leave an admin without one unable to revoke
+  access. Freshness is the age of the session itself: Better Auth has no
+  assert-without-signing-in primitive, so re-authenticating mints a new session
+  and the superseded row is left to expire — which is cheap now that a session
+  is twenty minutes rather than a month. Three probes cover it, and two of them
+  drive the same form submission differing only in session age.
+
+### Fixed
+
+- **The session cookie did not slide on a page render.** Better Auth extends a
+  live session in two places, and only one survives a React Server Component
+  render: the database row is pushed out, but Next forbids writing a cookie
+  during a render, so browsing pages kept the session row alive while the
+  browser's copy of the cookie counted down from whenever a route handler last
+  wrote it. Measured rather than assumed — `GET /board` returned no
+  `Set-Cookie` at all where `GET /api/stories` returned `Max-Age=1200`. At
+  thirty days nobody would have noticed; at twenty minutes it signs an active
+  person out with a perfectly live session behind them. `src/middleware.ts` now
+  re-stamps the cookie on page navigations, and only there — `/api/*` responses
+  set it themselves, and re-stamping there would resurrect the cookie that
+  `/api/auth/sign-out` had just deleted. Three new probes
+  (`A07-session-window`, `A07-session-cookie-maxage`, `A07-session-slides`)
+  hold the window, the cookie and the re-stamp in place; the suite is 97.
+
 ### Added
 
 - **Optional print settings on a request (FRR-103).** A free-text field where a

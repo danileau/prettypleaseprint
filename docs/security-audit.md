@@ -22,7 +22,7 @@ docker run --rm -v "$PWD:/src:ro" semgrep/semgrep semgrep scan \
   --config=p/owasp-top-ten --config=p/security-audit --config=p/nextjs /src/src
 docker run --rm --network host ghcr.io/zaproxy/zaproxy:stable \
   zap-baseline.py -t http://localhost:3000        # DAST
-npm run probe:security                     # DAST, app-specific (91 probes)
+npm run probe:security                     # DAST, app-specific (97 probes)
 ```
 
 ## Result
@@ -34,7 +34,7 @@ npm run probe:security                     # DAST, app-specific (91 probes)
 | Syft + Grype | SBOM, binary contents | **92 (2 crit, 46 high)** | 0 |
 | Semgrep | 153 rules, 37 files | 1 (false positive) | 0 |
 | OWASP ZAP baseline | passive DAST | **1 medium, 3 low** | 0 fail / 63 pass |
-| `probe:security` | 91 app-specific probes | **2 real, 4 artifacts** | 91 pass |
+| `probe:security` | 97 app-specific probes | **2 real, 4 artifacts** | 97 pass |
 | `verify:models` | 29 upload-validator checks | — | 29 pass |
 | `verify:passkey` | WebAuthn in a real browser | *unverified* | 13 pass |
 
@@ -236,6 +236,106 @@ spent when a password is actually set, which is what "single use" is for.
 `verify:auth` asserts both halves: a refused password leaves the link working,
 and a successful one kills it.
 
+### The session window
+
+The window used to be `expiresIn: 30 days` with `updateAge: 1 day`, and the
+second number is what made the first one wrong. `expiresIn` is an **idle**
+window, not an absolute one: Better Auth pushes `expiresAt` back out to
+`now + expiresIn` whenever a session is used and the last push was more than
+`updateAge` ago. So a session used once a month renewed itself forever. Thirty
+days was the number in the config; *indefinitely* was the behaviour, on a
+cookie written into the browser profile with `Max-Age=2592000`.
+
+On the shared office desktop this app is built for, that is the wrong shape:
+the threat is somebody sitting down after you, and against a captured cookie
+the only thing that helps is how long it stays worth something.
+
+It is now **twenty idle minutes**, sliding every minute
+(`SESSION_IDLE_SECONDS` in [`src/lib/auth-rules.ts`](../src/lib/auth-rules.ts)).
+Twenty minutes is only humane because passkeys are here — conditional UI signs
+a returning holder back in with no click — and it does make the passkey nudge
+load-bearing rather than decorative.
+
+Three things were considered and deliberately **not** done:
+
+- **A JWT session.** A JWT is a signed snapshot the server trusts without
+  touching the database, which is exactly finding 1 above with a longer fuse:
+  revocation — sign-out, access revoked, a password reset — would go back to
+  lagging by the token's lifetime. The session token stays an opaque row.
+- **Moving the token out of a cookie.** A cookie is the only credential a
+  browser attaches to a top-level navigation, and this app is server-rendered:
+  `requireUser` and `storyScope` run on the navigation itself. A token in
+  `localStorage` would also trade `HttpOnly` away for nothing.
+- **Forcing a non-persistent cookie** via `rememberMe: false`. At `Max-Age=1200`
+  the cookie no longer outlives the browser in any way that matters, and Better
+  Auth reads that flag as a *fixed* 24-hour session with the sliding refresh
+  switched off — strictly worse than what it would buy.
+
+#### One thing this broke, and how it was caught
+
+Better Auth slides a session in two places at once, and only one of them
+survives a React Server Component render. The database row is pushed out
+normally; the **cookie is not**, because Next forbids writing a cookie during a
+render. Measured rather than reasoned about: before the fix, `GET /board`
+returned no `Set-Cookie` at all where `GET /api/stories` returned
+`Max-Age=1200`.
+
+At thirty days nobody would ever have noticed. At twenty minutes it signs
+people out mid-task with a live session behind them — the kind of failure that
+gets "fixed" by asking for the window to be made long again.
+[`src/middleware.ts`](../src/middleware.ts) now re-stamps the cookie on page
+navigations (and only there — `/api/*` responses set it themselves, and
+re-stamping there would resurrect the cookie `/api/auth/sign-out` had just
+deleted). This is safe because the cookie is not the authority: it carries a
+token whose validity is the `session` row, so keeping the browser's copy longer
+cannot extend a session by a second. The invariant it buys is that the cookie
+never dies before the row it names.
+
+Three probes hold all of this: `A07-session-window` (the row spans twenty
+minutes), `A07-session-cookie-maxage` (the cookie expires with it) and
+`A07-session-slides` (a page render pushes the cookie out too).
+
+#### Re-authentication, for what outlives a session
+
+Shortening the window limits how long a captured cookie is worth something. It
+does not stop it being worth something *now*, and some of what an admin can do
+outlives any session: an invitation mints a whole new account, a reset link is
+the ability to become somebody else, and revoking access locks a colleague out.
+
+Those four actions — `sendInvite`, `resendInvite`, `resetPassword`,
+`setMemberAccess` — now require a sign-in from the last five minutes
+(`FRESH_AUTH_SECONDS`), and send the caller to `/reauth` when it is older. It
+is the one control on the list a copied cookie cannot satisfy: the thief has
+the session, not the passkey and not the password.
+
+`revokeInvite` is deliberately **not** gated — withdrawing an unaccepted invite
+only ever removes reach — and neither is `/admin/benefits`, which decides what
+tips the upload form offers and grants nobody anything.
+
+Two implementation notes, both of which look odd on purpose:
+
+- **Freshness is the age of the session itself**, not a separate marker. Better
+  Auth 1.7.1 has no "prove it is you" primitive: `/passkey/verify-authentication`
+  and `/sign-in/username` both mint a *new* session rather than annotating the
+  one you hold. So re-authenticating means signing in again, and a session
+  created moments ago is the evidence. A normal sign-in is therefore fresh for
+  its first five minutes, which is correct — somebody who just typed their
+  password should not be asked for it twice.
+- **The cost is one superseded session row per re-auth.** That would have been
+  a poor trade when a row lived thirty days; at twenty idle minutes the orphan
+  is gone before anyone would notice, which is what makes this cheaper than
+  hand-rolling WebAuthn verification against the `passkey` table in app code.
+
+`/reauth` offers the passkey *and* the password. Gating on a passkey alone
+would leave an admin who has not enrolled one unable to revoke access — a
+lockout on the most safety-critical control in the app.
+
+Three probes: `A07-reauth-stale` (a session backdated an hour cannot create an
+invitation), `A07-reauth-redirect` (it is sent to `/reauth` instead) and
+`A07-reauth-fresh` (a sign-in from moments ago still can). The first and third
+drive the *same* form submission and differ only in the age of the session, so
+the pair fails if the gate stops discriminating in either direction.
+
 ### Residual risk accepted
 
 - **A trusted-proxy misconfiguration is silent.** `TRUST_PROXY_HEADERS` now
@@ -256,8 +356,12 @@ and a successful one kills it.
   availability-for-integrity trade at this size; a cached local corpus would be
   the answer if it ever bit.
 - **No second factor.** A password plus an optional passkey is the whole set.
-  TOTP would be the next thing to add if this were ever exposed beyond an
-  office, and Better Auth's `twoFactor` plugin is the path.
+  Re-authentication on the access-moving actions (above) covers the case a
+  second factor would matter most for here — a captured session being used to
+  hand out access — but it is a sudo gate, not a second factor: it asks for the
+  same credential again rather than a different kind. TOTP would be the next
+  thing to add if this were ever exposed beyond an office, and Better Auth's
+  `twoFactor` plugin is the path.
 - **No password-change screen for a signed-in user.** Today changing a password
   means asking the admin for a reset link. That is a gap in convenience rather
   than in security, and `/api/auth/change-password` is already served by the
@@ -349,13 +453,15 @@ README now says.
   is allowed — that is `curl`, not a browser being driven by somebody else's
   page. A bearer token cannot be attached cross-origin at all, because the app
   serves no CORS headers and the preflight fails.
-- **A bearer token is a long-lived credential in a shell history.** It lasts
-  as long as the session (30 days), carries the full authority of the account,
-  and — unlike the cookie — is neither `HttpOnly` nor `SameSite`-protected. It
-  is revocable by signing out, by an admin revoking access and by a password
-  reset, which is what makes it acceptable at this size; there is no scoped or
-  read-only variant, and adding one would mean a credential store this app
-  does not otherwise need. [`docs/api.md`](api.md) says to sign in fresh for a
-  script rather than reusing the browser's token.
+- **A bearer token is a credential in a shell history.** It carries the full
+  authority of the account and — unlike the cookie — is neither `HttpOnly` nor
+  `SameSite`-protected. It is revocable by signing out, by an admin revoking
+  access and by a password reset, and since the session window came down to
+  twenty idle minutes it also simply stops working shortly after the job that
+  used it finishes. There is still no scoped or read-only variant, and adding
+  one would mean a credential store this app does not otherwise need.
+  [`docs/api.md`](api.md) says to sign in fresh for a script rather than
+  reusing the browser's token — which is now the only thing that works for
+  anything long-running.
 - **No second factor, and no self-service password change.** Both are in
   [Residual risk accepted](#residual-risk-accepted) above with the reasoning.

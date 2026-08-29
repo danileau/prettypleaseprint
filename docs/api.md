@@ -41,7 +41,9 @@ before you paste one into a script:
   admin revoking access, and so does a password reset.
 - It carries exactly the authority of the account it came from — no more, and
   no less. There is no scope, no read-only variant and no long-lived key.
-- It lasts as long as a session does: 30 days.
+- It lasts as long as a session does: **twenty minutes of inactivity**. A
+  script that runs longer than that between calls has to sign in again — which
+  is the intended answer for anything unattended.
 - Unlike the cookie it is not `HttpOnly` and not `SameSite`-protected. It lands
   in shell history, in CI logs and in `ps` output. For anything that runs
   unattended, sign in fresh rather than reusing the token from the browser you

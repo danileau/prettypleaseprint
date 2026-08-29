@@ -223,12 +223,53 @@ early instead of flashing a shell. It is deliberately not the boundary: a
 forged cookie gets past it and no further. The real checks run in every page
 and every server action.
 
+### Confirming it is still you
+
+Four things an admin can do outlive any session: inviting somebody (a whole new
+account), re-sending an invitation (a fresh working link), minting a
+password-reset link (the ability to become that person) and revoking or
+restoring access. All four ask for the passkey or the password again if the
+current sign-in is more than five minutes old, and send you to `/reauth` if it
+is.
+
+This is the sudo gate, and it exists because shortening the session window does
+not help against a cookie captured *now*. It is the one control a thief holding
+a copied cookie cannot satisfy.
+
+Withdrawing an unaccepted invitation is not gated — it only ever removes reach
+— and nor is `/admin/benefits`, which grants nobody anything.
+
+`/reauth` offers both the passkey and the password on purpose. Every account
+has a password by construction and only some have a passkey, so requiring a
+passkey would leave an admin without one unable to revoke access.
+
+One thing worth knowing, because it explains a spare row in `session`: Better
+Auth has no way to assert an identity without creating a session, so
+re-authenticating signs you in again and the gate reads the age of the session
+that comes back. The session it replaces is left to expire, which at twenty
+minutes is not long.
+
 ### Other decisions worth knowing
 
 - **Cookies** are `HttpOnly`, `SameSite=Lax`, `__Secure-` prefixed, and keyed
   on the *URL scheme* rather than `NODE_ENV` — a production boot over plain
   HTTP throws unless it is loopback, and an HTTPS deployment always gets the
   flag regardless of how the env is set.
+- **A session is worth twenty idle minutes**, sliding every minute
+  (`SESSION_IDLE_SECONDS`). It used to be thirty days with a daily slide, which
+  in practice meant *forever*: `expiresIn` is an idle window that renews, so a
+  session used once a month never expired at all. Twenty minutes is only
+  humane because passkeys are here — which does make the passkey nudge
+  load-bearing rather than decorative. The full reasoning, including why not a
+  JWT and why the token stays in a cookie, is in
+  [the security audit](security-audit.md#the-session-window).
+- **Middleware re-stamps the session cookie on page navigations.** Better Auth
+  slides the database row and the cookie together, but Next forbids writing a
+  cookie during a React Server Component render, so browsing pages would keep
+  the row alive while the browser's copy quietly expired. Harmless at thirty
+  days; at twenty minutes it signs people out mid-task. The cookie is never the
+  authority — the row is — so extending the browser's copy cannot extend a
+  session, it only stops the cookie dying first.
 - **Session cookie caching is off.** It would trust a signed snapshot without
   a database lookup, which makes sign-out lag by the cache lifetime. A DAST
   probe caught exactly that; see [the security audit](security-audit.md).
