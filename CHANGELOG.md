@@ -5,6 +5,16 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+### Changed
+
+- **"Feature requests" in the nav, and it goes to the board.** The owner's nav
+  item was labelled *Requests* and pointed at `/frr/queue`, the triage view —
+  so the owner's way in was the work list while everyone else's was the board.
+  It now reads **Feature requests** for both roles and points at `/frr`, which
+  is the print track's shape (the board is the shared view; triage is a step
+  off it). Triage did not become unreachable: `/frr` grows a **Triage** button
+  for the owner, since nothing else in the app linked to it, and the nav item
+  stays lit while you are there.
 ### Fixed
 
 - **"Open in PrusaSlicer" no longer depends on which branch is checked out.**

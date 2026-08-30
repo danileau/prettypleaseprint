@@ -48,7 +48,7 @@ export default async function FeatureQueuePage({
 
   return (
     <>
-      <AppHeader user={admin} active="/frr/queue" />
+      <AppHeader user={admin} active="/frr" />
 
       <main className="mx-auto w-full max-w-[1180px] px-[26.4px] pb-[80px] pt-[35.2px]">
         <Kicker>Feature requests</Kicker>
