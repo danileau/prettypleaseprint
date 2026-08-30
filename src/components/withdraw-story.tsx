@@ -13,6 +13,20 @@ import { withdrawStory } from "@/app/actions/stories";
  * this is the one action in the app that destroys something. Everything else
  * moves a ticket along or marks it; this removes it, the conversation with it,
  * and the uploaded geometry from storage.
+ *
+ * The trigger is a *button*, in the same enamel shape as Decline and Flag in
+ * `admin-actions.tsx`. It used to be drawn with a transparent border and muted
+ * text, growing an outline only on hover — which meant it read as a caption
+ * rather than a control, and read as one directly above "Print again", which
+ * is a full button. People could not find it. A destructive action being the
+ * quietest thing on the page is the wrong way round: hard to *fire* by
+ * accident is the goal, not hard to *locate*.
+ *
+ * So it carries colour as well as shape — cherry-wash with cherry-dark text
+ * (5.1:1), going solid on hover. That keeps the two steps legible as an
+ * escalation: an outlined red button opens the drawer, a filled red one
+ * commits. Tone is carried by the fill *and* by the word, never by colour
+ * alone, which is the rule the notices follow.
  */
 export function WithdrawStory({
   storyId,
@@ -27,7 +41,7 @@ export function WithdrawStory({
 }) {
   return (
     <details className="mt-[17.6px]">
-      <summary className="inline-block cursor-pointer list-none rounded-chip border-[3px] border-transparent px-[13.2px] py-[6px] font-mono text-[11.5px] font-bold uppercase text-ink-2 hover:border-ink hover:bg-cream-2">
+      <summary className="stamp inline-block cursor-pointer list-none rounded-chip border-[3px] border-ink bg-cherry-wash px-[15px] py-[8px] text-[14px] font-bold text-cherry-dk hover:bg-cherry-dk hover:text-cream">
         Withdraw this request
       </summary>
       <form action={withdrawStory} className="mt-[8px]">
