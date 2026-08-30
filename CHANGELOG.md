@@ -5,6 +5,31 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+### Fixed
+
+- **Four `verify:frr` checks passed without exercising the rule they named.**
+  They posted a bare `FormData` at a page URL carrying nothing but an id. A
+  server action needs an action id in the body, so Next never routed those
+  requests — it logged *"Failed to find Server Action"* and nothing ran, which
+  meant the row survived whether or not the service guarded anything. "The
+  owner cannot withdraw somebody's request", "a started request cannot be
+  withdrawn", "an accepted request cannot be declined" and "another client
+  cannot comment on a request they cannot see" would all have passed against a
+  service with no ownership check, no status check and no scope check at all.
+  They asserted the framework, not the app — and `docs/feature-requests.md` and
+  the security audit's A01 verdict both cite them as evidence.
+
+  The rules themselves are all present and correct; this was a hole in the
+  evidence, not in the app. Each check now replays the **real** form — scraped
+  from a page where it is rendered, then re-posted with a different id or a
+  different account — so it reaches the service and asserts the refusal it
+  gets back. Confirmed discriminating by removing the ownership guard and
+  watching the check fail. The 'frr' track was the exposed one because it has
+  no JSON API; the print track's equivalent rule is covered by `verify:api`
+  asserting a 403, through the same shared service. The two remaining bare-POST
+  checks are renamed to say what they actually demonstrate — that a stray POST
+  at a page URL is inert. `verify:frr` is 74.
+
 ### Changed
 
 - **"Feature requests" in the nav, and it goes to the board.** The owner's nav

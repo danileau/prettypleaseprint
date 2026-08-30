@@ -223,13 +223,24 @@ async function main() {
   check("declining is audited",
         (await db.auditEvent.count({ where: { action: "story.declined" } })) === 1);
 
+  /*
+   * A bare POST carries no action id, so Next never routes it and nothing runs.
+   * That makes this a check that a stray POST at the page URL is inert — NOT a
+   * check that the transition rule holds, which it would pass even if
+   * `assertTransition` were deleted.
+   *
+   * The rule itself is covered, and properly: `verify:api` asserts a 403 for
+   * declining an Accepted ticket, and both front doors call the same
+   * `src/lib/stories.ts`, so the service is exercised either way. Named for
+   * what it does rather than what it looks like it does.
+   */
   const late = await makeStory(ayla.id, "Too late to decline", "Printing");
   const lateRes = await ruben.raw(`${APP}/story/${late.id}`, {
     method: "POST",
     body: (() => { const f = new FormData(); f.set("id", String(late.id)); f.set("from", `/story/${late.id}`); return f; })(),
   });
   row = await db.story.findUnique({ where: { id: late.id } });
-  check("a Printing ticket cannot be declined", row?.status === "Printing",
+  check("a stray POST at a ticket URL is inert", row?.status === "Printing",
         `status ${row?.status}, response ${lateRes.status}`);
 
   // ------------------------------------------------------------------
