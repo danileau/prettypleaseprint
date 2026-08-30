@@ -7,6 +7,16 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Fixed
 
+- **"Open in PrusaSlicer" no longer depends on which branch is checked out.**
+  The `.desktop` entry named `scripts/prusa-open.sh` where it sits in the git
+  working tree, so the button quietly broke whenever that path stopped
+  resolving to the current handler — check out anything cut before the handler
+  landed and the file is gone, the click does nothing, and nothing says why.
+  It bit twice. The installer now copies the helper to `~/.local/bin/ppp-open`
+  and points the entry at that, which severs the dependency for one `cp`. The
+  trade is that the copy does not update itself: re-run the installer after a
+  `git pull`, which is safe at any time and leaves an existing config alone.
+  Existing setups are fixed by re-running it.
 - **The last three controls that looked like text.** After the withdraw button
   on a ticket was made visible, three siblings were left drawn the old way —
   a transparent border and muted grey, or a plain underline — so they read as
