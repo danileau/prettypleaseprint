@@ -79,7 +79,13 @@ that: there is no multi-tenancy, no billing, and no queue theory.
 - **Open a model straight in PrusaSlicer** — one click on a ticket hands the
   model to a slicer running on your own machine. A small helper the printer
   owner installs once does the fetch, because PrusaSlicer's own deep link
-  refuses any host but Printables. See **[Open in PrusaSlicer](docs/prusaslicer.md)**.
+  refuses any host but Printables. The link carries its own short-lived
+  credential, so nothing secret sits in the helper's config.
+  See **[Open in PrusaSlicer](docs/prusaslicer.md)**.
+- **Or just take the file** — a plain download on every ticket, for a machine
+  without the helper, a phone, or a slicer that is not PrusaSlicer. Same
+  permissions as the ticket, and recorded when the bytes go to somebody other
+  than the person who uploaded them.
 
 ## Requirements
 
@@ -377,10 +383,22 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 Invite-only enforced in one hook across every authentication method. Passwords
 are ≥10 characters and refused if they appear in a known breach corpus.
 Authorisation answers **404, not 403**, for a resource you may not see — a 403
-confirms it exists. Session cookies are `HttpOnly`, `SameSite=Lax` and
-`__Secure-` prefixed, with cookie caching deliberately off so sign-out is
-immediate. CSP carries a per-request nonce. Every access and content change is
-audited.
+confirms it exists. CSP carries a per-request nonce. Every access and content
+change is audited.
+
+Session cookies are `HttpOnly`, `SameSite=Lax` and `__Secure-` prefixed, with
+cookie caching deliberately off so sign-out is immediate. A session is worth
+**twenty idle minutes**, not a month: the window used to renew itself on every
+visit, which meant a captured cookie on a shared desk was good more or less
+indefinitely. Twenty minutes is only humane because passkeys are here, and
+signing back in is a touch.
+
+Shortening it limits how long a stolen cookie is useful but not whether it is
+useful *now*, so the four actions that outlive a session — inviting somebody,
+re-sending an invitation, minting a password-reset link, revoking or restoring
+access — ask for the passkey or the password again if the current sign-in is
+more than five minutes old. That is the one control on the list a copied cookie
+cannot satisfy.
 
 The full assessment, including what was found and fixed and what is knowingly
 accepted, is in [docs/security-audit.md](docs/security-audit.md). To report
