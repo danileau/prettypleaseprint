@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { currentUser, notify, printerOwner, storyRef } from "@/lib/authz";
+import type { Actor } from "@/lib/scope";
 import { record } from "@/lib/audit";
 import { WishSchema, hexForColor } from "@/lib/catalog";
 import { activeBenefitLabels } from "@/lib/benefits";
@@ -12,13 +13,18 @@ import {
   inspectModel,
   safeFilename,
 } from "@/lib/models";
+import {
+  MAX_CONCURRENT_UPLOADS,
+  MAX_QUEUED_UPLOADS,
+  MAX_REQUEST_BYTES,
+} from "@/lib/upload-limits";
 import { MIME_FOR, ensureBucket, putModel, storageKeyFor } from "@/lib/storage";
 
 /**
  * Model upload.
  *
  * A route handler rather than a server action, for one reason: the browser
- * can watch a real XHR upload progress bar against this, and a 50 MB file
+ * can watch a real XHR upload progress bar against this, and a large model
  * over office wifi is long enough that a spinner is not good enough.
  *
  * Order matters here. Nothing is written to storage until the bytes have
@@ -28,7 +34,8 @@ import { MIME_FOR, ensureBucket, putModel, storageKeyFor } from "@/lib/storage";
  */
 
 export const runtime = "nodejs";
-/** The whole file is buffered to measure its bounding box; do not cache. */
+/** The whole file is buffered to measure its bounding box; do not cache. See
+ *  the slot gate below for what keeps that buffering bounded. */
 export const dynamic = "force-dynamic";
 
 let bucketReady: Promise<void> | null = null;
@@ -36,16 +43,75 @@ let bucketReady: Promise<void> | null = null;
 const bad = (status: number, error: string) =>
   NextResponse.json({ error }, { status });
 
+/**
+ * Only so many uploads are handled at once.
+ *
+ * This is what makes a 250 MB cap safe rather than hopeful. `request.formData()`
+ * buffers the whole body before a line of this handler runs, so peak memory is
+ * decided by how many large uploads overlap — nothing the validator does can
+ * change that. Bounding the overlap bounds the memory, which is the "size-based
+ * queue" the security audit named as one of the two answers. (The other,
+ * a streaming parse, needs the file to stop arriving as multipart at all; see
+ * docs/architecture.md.)
+ *
+ * A late arrival waits rather than being refused: somebody who has just spent a
+ * minute pushing 200 MB up office wifi should not be told to start again. Only
+ * once the queue itself is long does the app say no, because at that point the
+ * honest answer is that it is busy.
+ *
+ * Per process. A second app instance has its own gate, which is the right
+ * shape anyway — the memory it is protecting is also per process.
+ */
+let active = 0;
+const waiting: Array<() => void> = [];
+
+function acquireSlot(): Promise<boolean> {
+  if (active < MAX_CONCURRENT_UPLOADS) {
+    active++;
+    return Promise.resolve(true);
+  }
+  if (waiting.length >= MAX_QUEUED_UPLOADS) return Promise.resolve(false);
+  return new Promise<boolean>((resolve) => {
+    waiting.push(() => {
+      active++;
+      resolve(true);
+    });
+  });
+}
+
+function releaseSlot(): void {
+  active--;
+  waiting.shift()?.();
+}
+
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user) return bad(401, "Sign in first.");
 
-  // Cheap rejection before reading a single byte of the body.
+  // Cheap rejection before reading a single byte of the body. The allowance
+  // over the file cap is multipart's own overhead, and it matches the
+  // transport limit in next.config.ts so that a file just over the cap is
+  // answered "too large" rather than truncated into a parse failure.
   const declared = Number(request.headers.get("content-length") ?? 0);
-  if (declared > MAX_BYTES * 1.1) {
+  if (declared > MAX_REQUEST_BYTES) {
     return bad(413, REJECTION_COPY.too_large);
   }
 
+  // Taken *before* the body is read, because reading it is the expensive part.
+  if (!(await acquireSlot())) {
+    return bad(
+      503,
+      "Too many uploads at once — give it a moment and send it again.",
+    );
+  }
+  try {
+    return await handleUpload(request, user);
+  } finally {
+    releaseSlot();
+  }
+}
+
+async function handleUpload(request: Request, user: Actor) {
   let form: FormData;
   try {
     form = await request.formData();

@@ -104,7 +104,7 @@ browser being driven by somebody else's page. A request with the wrong one is
 `403`.
 
 **5. Uploads are multipart, and the bytes decide.** `.stl` and `.3mf` only, at
-most 50 MB, validated against the file's actual content rather than its name —
+most 250 MB, validated against the file's actual content rather than its name —
 an STL renamed `.3mf` is refused. Nothing reaches storage until the file has
 been inspected and no ticket exists until the object is in place, so a rejected
 upload leaves nothing behind. The uploader comes from the session: an

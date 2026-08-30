@@ -195,6 +195,28 @@ Rollback is the same menu: pick the older tag.
 The app publishes no host port, so `ppp-app:3000` over the shared network is
 the only way in. Nothing on the LAN can reach it in cleartext and bypass TLS.
 
+### Your proxy has to allow the upload size too
+
+The app accepts models up to **250 MB**, and a reverse proxy in front of it has
+its own opinion about request bodies. Nginx Proxy Manager's default
+`client_max_body_size` is small, and when it bites, the upload fails at the
+proxy — so the app logs nothing at all and the browser shows a generic error.
+
+In NPM: the proxy host → *Advanced* → add
+
+```nginx
+client_max_body_size 300m;
+```
+
+300, not 250: a multipart body is the file plus its boundaries and the form
+fields, so a maximum-sized model arrives as a slightly larger request. The app
+uses the same allowance internally (`MAX_REQUEST_BYTES`).
+
+Worth knowing that this was never exercised before: the framework itself capped
+bodies at 10 MB until that was raised, so no upload large enough to reach the
+proxy's limit had ever been sent. If uploads used to work and large ones now
+fail with nothing in the app log, this is the first place to look.
+
 ### Why `TRUST_PROXY_HEADERS` is a separate switch
 
 The audit trail records the client address, and that address comes from

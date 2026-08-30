@@ -121,6 +121,33 @@ function binaryStl(x: number, y: number, z: number): Uint8Array {
   return buf;
 }
 
+/**
+ * A valid binary STL of roughly `mb` megabytes.
+ *
+ * Exists for exactly one check: that an upload larger than Next's default
+ * 10 MB body ceiling survives the trip. Every other fixture here is a few
+ * hundred bytes, which is why nothing noticed that ceiling for the whole life
+ * of the app while the UI advertised 50 MB.
+ */
+function stlOfSize(mb: number): Uint8Array {
+  const triangles = Math.floor((mb * 1024 * 1024 - 84) / 50);
+  const buf = new Uint8Array(84 + triangles * 50);
+  const view = new DataView(buf.buffer);
+  view.setUint32(80, triangles, true);
+  let off = 84;
+  for (let i = 0; i < triangles; i++) {
+    // Spread the vertices so the mesh has a real bounding box to measure.
+    for (let v = 0; v < 3; v++) {
+      const b = off + 12 + v * 12;
+      view.setFloat32(b, i % 97, true);
+      view.setFloat32(b + 4, (i * 7) % 97, true);
+      view.setFloat32(b + 8, (i * 13) % 97, true);
+    }
+    off += 50;
+  }
+  return buf;
+}
+
 function upload(b: Browser, filename: string, bytes: Uint8Array, fields: Record<string, string> = {}) {
   const form = new FormData();
   form.set("file", new File([bytes as BlobPart], filename));
@@ -224,6 +251,30 @@ async function main() {
   check("an audit event was written",
         (await db.auditEvent.count({ where: { action: "story.created", actorId: ayla.id } })) === 1);
 
+  // ------------------------------------------------------------------
+  section("a model larger than the framework's default body limit");
+  /*
+   * Next truncates a request body at 10 MB whenever middleware is in play, and
+   * this app runs middleware on every route to mint the CSP nonce. So anything
+   * past 10 MB arrived short, `request.formData()` threw on it, and the
+   * uploader was told the upload "did not arrive intact" — which reads like a
+   * network fault. The limit is raised in next.config.ts, kept in step with
+   * MAX_UPLOAD_BYTES.
+   *
+   * Twelve megabytes: comfortably past the old ceiling, cheap enough to run
+   * every time. Without this the ceiling can come back silently, exactly as it
+   * arrived.
+   */
+  const chunky = stlOfSize(12);
+  const bigRes = await upload(aylaB, "twelve-megabytes.stl", chunky);
+  check("a 12 MB model is accepted", bigRes.status === 200,
+        `status ${bigRes.status} ${(await bigRes.clone().text()).slice(0, 120)}`);
+  const bigStory = await db.story.findFirst({ where: { filename: "twelve-megabytes.stl" } });
+  check("and it is stored at its full size",
+        bigStory?.fileSize === chunky.length,
+        `stored ${bigStory?.fileSize} of ${chunky.length} bytes`);
+
+  // ------------------------------------------------------------------
   section("bad files are refused, and leave nothing behind");
 
   const before = await db.story.count();

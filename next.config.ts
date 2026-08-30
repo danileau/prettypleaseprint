@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+import { MAX_REQUEST_BYTES } from "./src/lib/upload-limits";
+
 const isProd = process.env.NODE_ENV === "production";
 
 // The CSP is per-request (it carries a nonce) and therefore lives in
@@ -41,6 +43,24 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   serverExternalPackages: ["@prisma/client", "nodemailer"],
+  experimental: {
+    /**
+     * Let an upload actually be as large as the app says it is.
+     *
+     * Next caps a request body at 10 MB whenever middleware is in play, and
+     * this app runs middleware on everything (it mints the CSP nonce). So the
+     * advertised 50 MB limit was never real: anything past 10 MB was truncated
+     * before the route handler saw it, `request.formData()` threw on the short
+     * body, and the uploader was told "That upload did not arrive intact" —
+     * which reads like a network problem and sent people looking in the wrong
+     * place. Found by uploading a 20 MB file, which no suite had ever done.
+     *
+     * Kept in step with the validator's own cap rather than written out
+     * separately, because two numbers that must agree and live apart do not
+     * stay agreeing.
+     */
+    middlewareClientMaxBodySize: MAX_REQUEST_BYTES,
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
