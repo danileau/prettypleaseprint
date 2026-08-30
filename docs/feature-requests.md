@@ -23,10 +23,15 @@ notifications and audit trail a print goes through. It lives at **`/frr`**.
 
 ## For the owner
 
-- **`/frr/queue`** — triage. *Waiting on you* (still `Requested`) comes first,
-  ordered high-priority first; everything in flight is a list with one control
-  each. The same **filter bar** (priority / status / category) narrows the
-  view. Owner-only — a client gets a 404, exactly like the print queue.
+- **`/frr/queue`** — triage, reached by the **Triage** button on `/frr`.
+  *Waiting on you* (still `Requested`) comes first, ordered high-priority
+  first; everything in flight is a list with one control each. The same
+  **filter bar** (priority / status / category) narrows the view. Owner-only —
+  a client gets a 404, exactly like the print queue.
+
+  The nav points at the board rather than here, for both roles: the board is
+  the shared view of everything asked for, and triage is a step off it. That
+  mirrors the print track, where *The rail* and *The pass* sit side by side.
 - Move a request one step at a time: **Requested → Accepted → In progress →
   Shipped → Done**, or **Decline** it (terminal, and only from `Requested`).
   Every move notifies the requester and writes an audit row.

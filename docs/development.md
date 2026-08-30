@@ -40,7 +40,7 @@ npm run verify:frr            # the feature-request track (file, triage, the flo
 npm run verify:benefits       # the owner-managed benefits (tip) catalogue
 npm run verify:api            # the JSON API, the OpenAPI document and the console
 npm run verify:passkey        # WebAuthn ceremonies in a real browser
-npm run probe:security        # 91 OWASP-mapped security probes
+npm run probe:security        # 103 OWASP-mapped security probes
 ```
 
 ## Verifying it
