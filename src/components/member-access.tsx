@@ -47,7 +47,19 @@ export function MemberAccess({
 
   return (
     <details>
-      <summary className="inline-block cursor-pointer list-none rounded-chip border-[3px] border-transparent px-[13.2px] py-[6px] font-mono text-[11.5px] font-bold uppercase text-ink-2 hover:border-ink hover:bg-cream-2">
+      {/* Two states, and they want opposite colours. "Revoke access?" locks a
+          colleague out, so it carries the same cherry as the other destructive
+          controls. "Suspended" is doing double duty — it reports a state and it
+          is the way back — and red would read as a threat rather than a flag,
+          so it takes the amber the tokens reserve for warnings. Both are
+          buttons either way; neither used to look like one. */}
+      <summary
+        className={
+          suspended
+            ? "stamp inline-block cursor-pointer list-none rounded-chip border-[3px] border-ink bg-sun-wash px-[15px] py-[8px] text-[14px] font-bold text-sun-dk hover:bg-sun hover:text-ink"
+            : "stamp inline-block cursor-pointer list-none rounded-chip border-[3px] border-ink bg-cherry-wash px-[15px] py-[8px] text-[14px] font-bold text-cherry-dk hover:bg-cherry-dk hover:text-cream"
+        }
+      >
         {suspended ? "Suspended" : "Revoke access?"}
       </summary>
       <form action={formAction} className="mt-[8px] max-w-[560px]">
