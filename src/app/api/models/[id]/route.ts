@@ -3,8 +3,9 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 
 import { db } from "@/lib/db";
 import { currentUser, storyRef } from "@/lib/authz";
-import { storyScope } from "@/lib/scope";
+import { storyScope, type Actor } from "@/lib/scope";
 import { record } from "@/lib/audit";
+import { readSlicerToken } from "@/lib/slicer-token";
 import { s3, bucket } from "@/lib/storage";
 
 /**
@@ -25,20 +26,59 @@ import { s3, bucket } from "@/lib/storage";
  * Scoped with `storyScope`, the same fragment the story page composes, so a
  * client asking for someone else's model gets 404 — not 403, which would
  * confirm it exists.
+ *
+ * Two ways to be somebody here. The ordinary one is a session, cookie or
+ * bearer. The other is `?t=`, the link credential minted into an
+ * "Open in PrusaSlicer" link — see `src/lib/slicer-token.ts` for why a desktop
+ * helper needs one and why it is not simply a long-lived token in a file.
+ *
+ * The token only ever answers *who*. Everything that decides *whether* runs
+ * afterwards and identically for both doors: the account is loaded and refused
+ * if suspended, and `storyScope` is re-applied against the database. A link
+ * therefore cannot reach a model its holder has lost access to, and cannot
+ * reach a different model than the one it names.
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const user = await currentUser();
-  if (!user) return new NextResponse(null, { status: 401 });
-
   const { id } = await params;
   const storyId = Number(id);
   if (!Number.isInteger(storyId)) return new NextResponse(null, { status: 404 });
+
+  // A session first — a browser opening the viewer is the common case and
+  // costs nothing extra. The link credential is only consulted when there is
+  // no session to prefer, which is exactly the helper's situation.
+  let user = await currentUser();
+  let viaLink = false;
+
+  if (!user) {
+    const token = new URL(request.url).searchParams.get("t");
+    const subject = token ? readSlicerToken(token, storyId) : null;
+    if (subject) {
+      const row = await db.user.findUnique({
+        where: { id: subject },
+        select: { id: true, name: true, email: true, initials: true, role: true, banned: true },
+      });
+      // Suspension is checked here for the same reason `currentUser()` checks
+      // it: a credential minted before access was revoked must not outlive it.
+      if (row && !row.banned) {
+        user = {
+          id: row.id,
+          name: row.name,
+          email: row.email,
+          initials: row.initials ?? "??",
+          role: row.role === "admin" ? "admin" : "client",
+        } satisfies Actor;
+        viaLink = true;
+      }
+    }
+  }
+
+  if (!user) return new NextResponse(null, { status: 401 });
 
   const story = await db.story.findFirst({
     where: { AND: [{ id: storyId }, storyScope(user)] },
@@ -78,7 +118,7 @@ export async function GET(
       action: "file.downloaded",
       actor: user,
       subject: storyRef(story.id),
-      detail: { filename: story.filename },
+      detail: { filename: story.filename, ...(viaLink ? { via: "slicer-link" } : {}) },
     });
   }
 

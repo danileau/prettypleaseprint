@@ -71,8 +71,8 @@ fi
 command -v update-desktop-database >/dev/null 2>&1 &&
   update-desktop-database "$apps_dir" 2>/dev/null || true
 
-# Config skeleton — never overwrite an existing one, and lock it down, because
-# it is about to hold a bearer token.
+# Config skeleton — never overwrite an existing one. Still created 600: it holds
+# no credential any more, but an existing file might, and tightening is free.
 conf_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ppp"
 conf="$conf_dir/slicer.conf"
 mkdir -p "$conf_dir"
@@ -82,17 +82,14 @@ else
   umask 077
   cat >"$conf" <<'CONF'
 # Pretty Please Print → PrusaSlicer bridge config. Read by prusa-open.sh.
-# This file holds a credential: keep it mode 600 (this file was created so).
+#
+# There is nothing secret in here. The clicked link carries its own credential
+# — minted by the app for whoever was looking at that ticket, good for half an
+# hour and for that one model — so the only thing this file has to say is which
+# instance to talk to.
 
-# The instance, no trailing slash.
+# The instance, no trailing slash. This is the only required setting.
 PPP_BASE="https://print.example"
-
-# A bearer token. It is your session token, so signing out of the app revokes
-# it. Mint one — and keep it out of your shell history:
-#   curl -si "$PPP_BASE/api/auth/sign-in/username" \
-#     -H 'content-type: application/json' \
-#     -d '{"username":"you","password":"..."}' | grep -i '^set-auth-token:'
-PPP_TOKEN="paste-the-set-auth-token-value-here"
 
 # Optional. Left unset, the helper finds PrusaSlicer on its own — a binary on
 # PATH (prusa-slicer / prusaslicer / PrusaSlicer), a Flatpak install, or an
@@ -108,9 +105,16 @@ PPP_TOKEN="paste-the-set-auth-token-value-here"
 # PPP_DOWNLOAD_DIR="$HOME/.cache/ppp/models"
 CONF
   chmod 600 "$conf"
-  echo "created $conf (mode 600) — edit PPP_BASE and PPP_TOKEN"
+  echo "created $conf — set PPP_BASE to your instance"
 fi
 
 echo
-echo "Done. Set PPP_BASE and PPP_TOKEN in $conf, then click 'Open in PrusaSlicer'"
-echo "on any ticket. Trouble? tail -f \"\${XDG_STATE_HOME:-\$HOME/.local/state}/ppp/slicer.log\""
+echo "Done. Set PPP_BASE in $conf, then click 'Open in PrusaSlicer' on any"
+echo "ticket. No token to paste — the link carries its own."
+if [ -f "$conf" ] && grep -q '^[[:space:]]*PPP_TOKEN=' "$conf" 2>/dev/null; then
+  echo
+  echo "NOTE: $conf still sets PPP_TOKEN. That was the old way in and it is a"
+  echo "      long-lived credential on disk; links carry their own now. You can"
+  echo "      delete the line."
+fi
+echo "Trouble? tail -f \"\${XDG_STATE_HOME:-\$HOME/.local/state}/ppp/slicer.log\""

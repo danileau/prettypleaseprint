@@ -34,8 +34,8 @@ only new moving part, and it talks to nothing but this app's own API.
 ```
  Browser                 Helper on your machine            This app
  ───────                 ──────────────────────            ────────
- click  ──ppp://slice/104──▶ prusa-open.sh
-                            GET /api/models/104  ───────────▶  (bearer token)
+ click ─ppp://slice/104?t=…─▶ prusa-open.sh
+                            GET /api/models/104?t=…  ───────▶  (link credential)
                             ◀───────────────────── the .stl bytes
                             writes /tmp/…/PPP-104-clip.stl
                             prusa-slicer --single-instance <that file>
@@ -56,10 +56,12 @@ That registers `ppp://` links to open with
 
 ```sh
 PPP_BASE="https://print.example"      # your instance, no trailing slash
-PPP_TOKEN="…"                          # a bearer token — see below
 # PPP_SLICER=…                         # only if auto-detect misses — see below
 # PPP_DOWNLOAD_DIR="$HOME/.cache/ppp/models"
 ```
+
+That is the whole config: **there is no token to paste.** The clicked link
+carries its own credential.
 
 ### Finding the slicer
 
@@ -87,21 +89,47 @@ default `PPP_DOWNLOAD_DIR` is under `~/.cache`, which a Flatpak with home access
 can see; if yours is sandboxed tighter, grant it with
 `flatpak override --user --filesystem=xdg-cache/ppp com.prusa3d.PrusaSlicer`.
 
-Get a token by signing in — and keep it out of your shell history:
+### The credential is in the link
+
+Click **Open in PrusaSlicer** on any ticket and it works. The link is
+`ppp://slice/<id>?t=<token>`, and that token is minted by the app when the
+ticket is rendered — for **you**, for **that model**, for **half an hour**.
+
+It is deliberately not much of a secret, because it cannot do much: it names
+who you are, and the server decides the rest. Your account is loaded and
+refused if it has been suspended, and the same `storyScope` rule the pages use
+is re-applied — so a link cannot reach a model you have lost access to, and
+cannot be edited to fetch a different one. If it expires, open the ticket again
+and click; there is nothing to rotate.
+
+Two consequences worth stating plainly:
+
+- **Nothing secret is on your disk.** `slicer.conf` holds an address. It is
+  still created `600`, but there is nothing in it to steal.
+- **Signing out does not kill an outstanding link.** Nothing is stored, so
+  there is nothing to revoke — the half hour has to elapse. Suspending the
+  account *does* stop it. For read access to one model you could already open,
+  that is the right side of the trade.
+
+#### If you set this up before
+
+Earlier versions put a `PPP_TOKEN` in that file — a bearer token, which is the
+session token. When sessions came down from thirty days to twenty idle minutes
+it stopped working, and every click began answering `HTTP 401`. That is the bug
+this replaced.
+
+The helper still honours `PPP_TOKEN` when a link carries no `t`, so an old
+bookmark keeps working, but there is no reason to keep one:
 
 ```bash
-curl -si https://print.example/api/auth/sign-in/username \
-  -H 'content-type: application/json' \
-  -d '{"username":"you","password":"…"}' | grep -i '^set-auth-token:'
+sed -i '/^PPP_TOKEN=/d' ~/.config/ppp/slicer.conf
 ```
 
-The token **is** your session token: it carries your account's access and no
-more, and signing out of the app revokes it. That is also why the config file
-is `600` — it holds a credential. See [the API](api.md#authentication) for the
-full picture on bearer tokens.
+### Just want the file?
 
-Now click **Open in PrusaSlicer** on any ticket. Nothing to paste — the link
-carries only the ticket number; the address and the token live in the config.
+Every ticket also has a plain **Download** button next to this one. Same bytes,
+same permissions, no helper and no setup — for a machine without PrusaSlicer,
+or a slicer that is not PrusaSlicer.
 
 ## When it does not work
 
@@ -120,12 +148,15 @@ indistinguishable from one that was never wired up. Common lines:
 | It says | Means |
 | --- | --- |
 | `no config at …` | The installer has not run, or `$PPP_SLICER_CONF` points elsewhere. |
-| `not authorised (HTTP 401)` | The token is wrong, expired, or was revoked by signing out. Mint a new one. |
+| `that link has expired (HTTP 401)` | Links last half an hour. Open the ticket again and click the button. |
+| `the PPP_TOKEN in … is expired` | You are on the old config-token path. Delete the line and click the button in the app — see *If you set this up before*. |
+| `that link carries no credential and … sets no PPP_TOKEN` | An old bookmark, on a config with no token. Open the ticket in the app and click there. |
+| `the credential in that link is malformed` | The URL was edited or truncated in transit. Re-click from the ticket. |
 | `story N … not one this account may see (HTTP 404)` | That ticket is not yours, or does not exist. |
 | `could not find PrusaSlicer` | Auto-detect missed it. Set `PPP_SLICER` — see *Finding the slicer* above. |
 | `slicer '…' is not runnable` | `PPP_SLICER` points at something that is not a command or an executable file. |
 | loads then says *empty file* / *loading failed* | The bytes did arrive; the slicer could not read them (a truncated or non-model file). Check the ticket's file. |
-| `WARNING: … is group/world-readable` | `chmod 600 ~/.config/ppp/slicer.conf`. |
+| `WARNING: … is group/world-readable` | Only raised while the file still holds a `PPP_TOKEN`. Delete the line, or `chmod 600 ~/.config/ppp/slicer.conf`. |
 
 ## macOS and Windows
 

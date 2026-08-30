@@ -365,6 +365,60 @@ async function main() {
           r.status === 404, `expected 404, got ${r.status}`);
   }
 
+  // ---------------------------------------------------------------------
+  // The "Open in PrusaSlicer" link credential.
+  //
+  // A second way to be somebody at /api/models/[id], for a desktop helper that
+  // holds no cookie. It replaced a bearer token pasted into a file on the
+  // owner's machine — which was the session token, so it was a thirty-day,
+  // full-authority secret at rest, and it broke outright when sessions came
+  // down to twenty minutes.
+  //
+  // The token answers *who* and nothing else, so what matters is that it is
+  // unforgeable and that it cannot be pointed somewhere it was not minted for.
+  // ---------------------------------------------------------------------
+  // Minted off a story with real bytes behind it. `mallorysStory` is a bare row
+  // with an invented storage key, so a fetch of it 502s at the object store
+  // long after the credential has done its job — which would test nothing.
+  const realStory = spoofed!;
+  const ticket = await (await apiAdmin.raw(APP + `/story/${realStory.id}`)).text();
+  const minted = /ppp:\/\/slice\/\d+\?t=([A-Za-z0-9._-]+)/.exec(ticket)?.[1] ?? "";
+  probe("A05-slicer-minted", "a ticket carries a slicer link with its own credential",
+        minted.length > 0,
+        "no ppp:// link with a ?t= credential on the rendered ticket — the " +
+        "helper would fall back to a long-lived token on disk");
+
+  // Anonymous: no cookie, no bearer, exactly the helper's position.
+  const bare = (url: string) => fetch(url, { redirect: "manual" });
+
+  probe("A01-slicer-anon", "the model route still refuses a caller with nothing",
+        (await bare(APP + `/api/models/${realStory.id}`)).status === 401,
+        "an unauthenticated fetch of model bytes was not 401");
+
+  if (minted) {
+    probe("A01-slicer-ok", "a minted link fetches the model it names",
+          (await bare(APP + `/api/models/${realStory.id}?t=${minted}`)).status === 200,
+          "the credential the app just minted did not work — the button is broken");
+
+    // The binding that matters: one link, one model. Without it, a link to your
+    // own ticket would be a key to every ticket its holder can see — and the
+    // holder here is the printer owner, who can see all of them. Mallory's is
+    // the right target precisely because the admin *may* read it by session.
+    const crossed = await bare(APP + `/api/models/${mallorysStory.id}?t=${minted}`);
+    probe("A01-slicer-bound", "and cannot be pointed at a different model",
+          crossed.status !== 200,
+          `a token minted for ${realStory.id} fetched ${mallorysStory.id} (status ${crossed.status})`);
+
+    const tampered = minted.slice(0, -4) + "AAAA";
+    probe("A02-slicer-signature", "a tampered link credential is refused",
+          (await bare(APP + `/api/models/${realStory.id}?t=${tampered}`)).status !== 200,
+          "the HMAC over the claim is not being checked — anyone could mint one");
+
+    probe("A02-slicer-garbage", "and so is something that is not a token at all",
+          (await bare(APP + `/api/models/${realStory.id}?t=not-a-token`)).status !== 200,
+          "a malformed credential was accepted");
+  }
+
   const said = await client.raw(APP + `/api/stories/${mallorysStory.id}/comments`, {
     method: "POST",
     headers: { "content-type": "application/json" },

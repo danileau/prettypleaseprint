@@ -5,6 +5,36 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+### Added
+
+- **Download the model.** Every ticket now has a plain **Download** button
+  beside *Open in PrusaSlicer* — the same bytes with no helper and no setup,
+  for the printer owner who is not sitting at the machine with the slicer on
+  it, or who uses a different slicer. There is no new server surface behind it:
+  `/api/models/[id]` already streamed the file with
+  `Content-Disposition: attachment`, already scoped it with `storyScope`, and
+  already recorded `file.downloaded` whenever bytes go to somebody other than
+  the uploader. Shown to anyone who can see the ticket, and kept *above* the
+  slicer disclosure so the simple answer is the visible one.
+
+### Fixed
+
+- **"Open in PrusaSlicer" stopped working, and the fix removes a credential
+  from disk.** The helper authenticated with `PPP_TOKEN` — a bearer token
+  pasted once into `~/.config/ppp/slicer.conf`. A bearer token *is* the session
+  token, so shortening sessions to twenty idle minutes killed it and every
+  click began answering `HTTP 401`. That file had been holding a thirty-day,
+  full-authority credential at rest; the feature was depending on the weakness
+  the session change removed. The link now carries its own credential instead —
+  `ppp://slice/<id>?t=…`, minted when the ticket renders, for that person and
+  that model, expiring in half an hour — and `slicer.conf` holds nothing but
+  the address of the instance. The token asserts an identity and a subject and
+  never an authorisation: the route still loads the account, refuses a
+  suspended one, and re-applies `storyScope`, so a link cannot reach a model
+  its holder has lost access to or be edited to fetch a different one. Old
+  installs keep working (`PPP_TOKEN` is still honoured when a link carries no
+  `t`) but the line can now be deleted. Six new probes; the suite is 103.
+
 ### Changed
 
 - **A session is now worth twenty idle minutes, not a renewing month.**

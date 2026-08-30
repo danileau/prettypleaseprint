@@ -1,4 +1,5 @@
 import { storyRef } from "@/lib/scope";
+import { mintSlicerToken } from "@/lib/slicer-token";
 
 /**
  * "Open in PrusaSlicer" — a link to the `ppp://` scheme a helper on the
@@ -22,10 +23,33 @@ import { storyRef } from "@/lib/scope";
  * helper installed the click simply does nothing — the copy says as much, and
  * links to the one-time setup.
  *
- * The link carries only the numeric id. The base URL and the credential live
- * in the helper's own config on the owner's machine, never in the page.
+ * The link carries the ticket id **and a short-lived credential minted for the
+ * person reading this page**. It used to carry only the id, with a bearer token
+ * pasted once into the helper's config — but that token was the session token,
+ * so shortening sessions to twenty idle minutes stopped it working and the
+ * helper started answering `HTTP 401`. Putting the credential in the link
+ * rather than on disk fixes that and retires a thirty-day, full-authority
+ * secret in a file at the same time. See `src/lib/slicer-token.ts`.
+ *
+ * Minted per render, so it is as fresh as the page. It is good for half an
+ * hour, for this model only, and it authorises nothing on its own — the route
+ * re-checks the account and re-applies `storyScope`.
+ *
+ * `DownloadModel` sits beside this rather than inside it: the same bytes with
+ * no helper at all, for the printer owner who is not at the machine with the
+ * slicer on it. Putting it behind this disclosure would have hidden the plain
+ * answer behind the clever one.
  */
-export function OpenInSlicer({ storyId }: { storyId: number }) {
+export function OpenInSlicer({
+  storyId,
+  userId,
+}: {
+  storyId: number;
+  /** Who the link credential is minted for. */
+  userId: string;
+}) {
+  const token = mintSlicerToken(userId, storyId);
+
   return (
     <details className="group mt-[13.2px]">
       <summary className="stamp inline-flex cursor-pointer list-none items-center gap-[8px] rounded-chip border-[3px] border-ink bg-porcelain px-[15px] py-[8px] text-[14px] font-bold text-ink hover:bg-sun">
@@ -36,7 +60,7 @@ export function OpenInSlicer({ storyId }: { storyId: number }) {
 
       <div className="mt-[8.8px] rounded-card border-[3px] border-ink bg-cream-2 p-[13.2px]">
         <a
-          href={`ppp://slice/${storyId}`}
+          href={`ppp://slice/${storyId}?t=${token}`}
           className="stamp inline-block cursor-pointer rounded-chip border-[3px] border-ink bg-cherry-dk px-[18px] py-[8px] text-[14px] font-bold text-cream hover:bg-cherry"
         >
           Send {storyRef(storyId)} to the slicer
@@ -52,7 +76,8 @@ export function OpenInSlicer({ storyId }: { storyId: number }) {
           >
             the setup
           </a>
-          . Nothing happens if it is not installed.
+          . Nothing happens if it is not installed — the download beside this
+          works anywhere.
         </p>
       </div>
     </details>
