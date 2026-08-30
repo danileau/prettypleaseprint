@@ -30,30 +30,6 @@ Notable changes. Every entry names a released version; deployments pin
   Pure aggregation: no new column, nothing recorded for it, and no charting
   library — a CDN would be refused by `script-src 'self'` and it is four bars.
 
-### Fixed
-
-- **`file.refused` was not counted as a refusal.** The audit page tinted and
-  counted `invite.rejected` and `upload.rejected` but not the verb that fires
-  when an account asks for a model it may not see — which is the refusal most
-  worth noticing and the one least likely to be spotted by eye. The list now
-  lives in one place, so the count at the top, the tint in the table and the
-  new panel cannot drift apart.
-### Fixed
-
-- **Uploads over 10 MB never worked, whatever the app said.** Next truncates a
-  request body at 10 MB whenever middleware is in play, and this app runs
-  middleware on every route to mint the CSP nonce. So anything past 10 MB
-  arrived short, `request.formData()` threw on the truncated body, and the
-  person uploading was told *"That upload did not arrive intact"* — which reads
-  like a network fault, while the form and the API documentation both promised
-  50 MB. It survived the whole life of the app because every fixture in every
-  suite is a few hundred bytes, so nothing had ever sent a large file.
-  `middlewareClientMaxBodySize` is now kept in step with the app's own cap, and
-  `verify:upload` sends a 12 MB model on every run so the ceiling cannot come
-  back quietly.
-
-### Added
-
 - **Models up to 250 MB, from 50 MB.** Real work went past the old cap —
   multi-object plates and scanned meshes — and the app's answer was "decimate
   the mesh", which is asking somebody to damage their model to fit an arbitrary
@@ -88,46 +64,6 @@ Notable changes. Every entry names a released version; deployments pin
   PrusaSlicer are both better suited to a mesh this size than a browser was
   ever going to be.
 
-### Changed
-
-- **"Feature requests" in the nav, and it goes to the board.** The owner's nav
-  item was labelled *Requests* and pointed at `/frr/queue`, the triage view —
-  so the owner's way in was the work list while everyone else's was the board.
-  It now reads **Feature requests** for both roles and points at `/frr`, which
-  is the print track's shape (the board is the shared view; triage is a step
-  off it). Triage did not become unreachable: `/frr` grows a **Triage** button
-  for the owner, since nothing else in the app linked to it, and the nav item
-  stays lit while you are there.
-### Fixed
-
-- **"Open in PrusaSlicer" no longer depends on which branch is checked out.**
-  The `.desktop` entry named `scripts/prusa-open.sh` where it sits in the git
-  working tree, so the button quietly broke whenever that path stopped
-  resolving to the current handler — check out anything cut before the handler
-  landed and the file is gone, the click does nothing, and nothing says why.
-  It bit twice. The installer now copies the helper to `~/.local/bin/ppp-open`
-  and points the entry at that, which severs the dependency for one `cp`. The
-  trade is that the copy does not update itself: re-run the installer after a
-  `git pull`, which is safe at any time and leaves an existing config alone.
-  Existing setups are fixed by re-running it.
-- **The last three controls that looked like text.** After the withdraw button
-  on a ticket was made visible, three siblings were left drawn the old way —
-  a transparent border and muted grey, or a plain underline — so they read as
-  captions rather than controls. All three are now buttons in the shapes the
-  app already uses, and each carries the weight of what it does: the
-  feature-request **Withdraw** is now identical to the print one it shares a
-  label with (an underlined link before, which made the two backlogs look
-  different for no reason); **Forgotten password?** on the guest list is
-  neutral, because it mints a recovery link and takes nothing away, and the
-  list draws one per member; **Revoke access?** carries the same cherry as the
-  other destructive controls, while its **Suspended** state takes the amber the
-  tokens reserve for warnings — it reports a state *and* is the way back, and
-  red would read as a threat rather than a flag. Confirmation steps and wording
-  are unchanged throughout: these actions should be hard to fire by accident,
-  not hard to find.
-
-### Added
-
 - **Download the model.** Every ticket now has a plain **Download** button
   beside *Open in PrusaSlicer* — the same bytes with no helper and no setup,
   for the printer owner who is not sitting at the machine with the slicer on
@@ -137,70 +73,6 @@ Notable changes. Every entry names a released version; deployments pin
   already recorded `file.downloaded` whenever bytes go to somebody other than
   the uploader. Shown to anyone who can see the ticket, and kept *above* the
   slicer disclosure so the simple answer is the visible one.
-
-### Fixed
-
-- **"Open in PrusaSlicer" stopped working, and the fix removes a credential
-  from disk.** The helper authenticated with `PPP_TOKEN` — a bearer token
-  pasted once into `~/.config/ppp/slicer.conf`. A bearer token *is* the session
-  token, so shortening sessions to twenty idle minutes killed it and every
-  click began answering `HTTP 401`. That file had been holding a thirty-day,
-  full-authority credential at rest; the feature was depending on the weakness
-  the session change removed. The link now carries its own credential instead —
-  `ppp://slice/<id>?t=…`, minted when the ticket renders, for that person and
-  that model, expiring in half an hour — and `slicer.conf` holds nothing but
-  the address of the instance. The token asserts an identity and a subject and
-  never an authorisation: the route still loads the account, refuses a
-  suspended one, and re-applies `storyScope`, so a link cannot reach a model
-  its holder has lost access to or be edited to fetch a different one. Old
-  installs keep working (`PPP_TOKEN` is still honoured when a link carries no
-  `t`) but the line can now be deleted. Six new probes; the suite is 103.
-### Fixed
-
-- **Nobody could find how to withdraw a request.** The control on a ticket was
-  drawn with a transparent border and muted grey text, growing an outline only
-  on hover — so at rest it read as a caption rather than a button, and it sat
-  directly above *Print again*, which is a full enamel button. Next to its own
-  neighbour it looked like that button's label. It is now a button in the same
-  shape as *Decline* and *Flag*, tinted cherry-wash with cherry-dark text and
-  going solid red on hover, which keeps the two steps legible as an escalation:
-  an outlined red button opens the drawer, a filled red one commits. The
-  confirmation step and its wording are unchanged — a destructive action should
-  be hard to fire by accident, not hard to locate.
-
-### Changed
-
-- **A session is now worth twenty idle minutes, not a renewing month.**
-  `session.expiresIn` was 30 days with `updateAge` at a day — and because
-  `expiresIn` is an *idle* window that Better Auth pushes back out on use, a
-  session touched once a month renewed itself indefinitely. "Thirty days" was
-  the number in the config; *forever* was the behaviour, on a cookie written to
-  the browser profile with `Max-Age=2592000`. On the shared office desktop this
-  app is built for, that is the wrong shape: the threat is somebody sitting
-  down after you, and the only thing that helps against a captured cookie is
-  how long it stays worth something. It is twenty minutes now, sliding every
-  minute so it never expires under somebody mid-task. Bearer tokens inherit it,
-  which closes the "long-lived credential in a shell history" item in the
-  security audit. Deliberately *not* done: a JWT session (it would put
-  revocation back on a delay — the same bug cookie caching was turned off for),
-  moving the token out of a cookie (a cookie is the only credential a browser
-  attaches to a top-level navigation, and this app is server-rendered), and
-  forcing a non-persistent cookie via `rememberMe: false` (Better Auth reads
-  that as a *fixed* 24-hour session with the sliding refresh off — worse than
-  what it buys).
-
-  **Everyone signs in once on upgrade.** The new window cannot reach the
-  sessions that already exist — Better Auth reads a stored `expiresAt` as
-  though it had been written under the current `expiresIn`, so a row minted
-  under the old config looks freshly updated and is never shortened (measured:
-  a planted thirty-day session was still thirty days out after use). A
-  migration retires them. It matches on the window rather than truncating the
-  table, so it touches nothing a session created under the new config owns, and
-  it is a no-op if re-run. No user, story, feature request, comment, invitation
-  or audit row is affected, and nothing cascades: no foreign key in the
-  database references `session`.
-
-### Added
 
 - **Re-authentication before handing out access.** Inviting somebody,
   re-sending an invitation, minting a password-reset link and revoking or
@@ -218,25 +90,6 @@ Notable changes. Every entry names a released version; deployments pin
   and the superseded row is left to expire — which is cheap now that a session
   is twenty minutes rather than a month. Three probes cover it, and two of them
   drive the same form submission differing only in session age.
-
-### Fixed
-
-- **The session cookie did not slide on a page render.** Better Auth extends a
-  live session in two places, and only one survives a React Server Component
-  render: the database row is pushed out, but Next forbids writing a cookie
-  during a render, so browsing pages kept the session row alive while the
-  browser's copy of the cookie counted down from whenever a route handler last
-  wrote it. Measured rather than assumed — `GET /board` returned no
-  `Set-Cookie` at all where `GET /api/stories` returned `Max-Age=1200`. At
-  thirty days nobody would have noticed; at twenty minutes it signs an active
-  person out with a perfectly live session behind them. `src/middleware.ts` now
-  re-stamps the cookie on page navigations, and only there — `/api/*` responses
-  set it themselves, and re-stamping there would resurrect the cookie that
-  `/api/auth/sign-out` had just deleted. Three new probes
-  (`A07-session-window`, `A07-session-cookie-maxage`, `A07-session-slides`)
-  hold the window, the cookie and the re-stamp in place; the suite is 97.
-
-### Added
 
 - **Optional print settings on a request (FRR-103).** A free-text field where a
   requester can note the slicer specifics that come with some files — layer
@@ -289,24 +142,6 @@ Notable changes. Every entry names a released version; deployments pin
   other's. A "Print again" control on the story page; audited as
   `story.requeued`; the owner is notified as for any new request.
 
-### Changed
-
-- **A feature request's priority is editable in every status.** The requester
-  could only re-rank their own request while it was still live; now a closed
-  one — `Done` or `Declined` — can be re-prioritised too, because hindsight
-  keeps changing after the fact. The owner could always change any. Every
-  change is still audited (`feature.priority_changed`) and tells the other side.
-
-- **Withdraw now reaches Accepted (FRR-101).** A requester could only withdraw
-  a `Requested` or `Declined` ticket; the window now also includes `Accepted`,
-  so plans can still change after the owner has said yes but before the print
-  reaches the bed. `Printing`/`Delivery`/`Done` are still refused — the
-  material is committed by then — and the owner is notified when an accepted
-  request is pulled. The `DELETE /api/stories/{id}` route inherits the wider
-  window automatically.
-
-### Added
-
 - **A feature-request track — the 'frr' backlog.** Anyone can file a feature
   request (title, description, priority, category) at `/frr`, and the printer
   owner triages it exactly as they triage a print: the same board, an
@@ -327,34 +162,6 @@ Notable changes. Every entry names a released version; deployments pin
   verbs. `npm run verify:frr` (51 checks) drives the real forms end to end and
   runs in CI. There is no JSON API for it yet — see
   [`docs/feature-requests.md`](docs/feature-requests.md).
-
-
-### Fixed
-
-- **3MF files with geometry in a separate part were refused.** The validator
-  read only the archive's root `3D/3dmodel.model` and counted vertices there,
-  so a 3MF written in the *production extension* shape — each object's mesh in
-  its own `3D/Objects/*.model`, the root merely referencing them — looked empty
-  and was rejected as "not a model". That shape is what Bambu Studio, OrcaSlicer
-  multi-object plates and several CAD exporters emit, so a lot of perfectly
-  printable files bounced. It now reads every `*.model` part in the archive
-  (which also covers exporters that name the root part something other than
-  `3dmodel.model`), with the zip-bomb guard still applied to the total.
-
-- **3MF dimensions were wrong when the size lived in a transform** — a Cura
-  export measured `0 × 0 × 0 mm`. A 3MF places geometry through the transform
-  matrices on the `<build>` `<item>` and on each `<component>`, and Cura in
-  particular stores the mesh in a scaled-down space with the true size in that
-  matrix; the validator read the raw vertices and so reported a box a thousandth
-  of the real thing. It now walks the build → component tree, composes the
-  transforms and measures the geometry in its placed position — so a single
-  model reads its true size, and a multi-object plate reads the footprint of the
-  whole arrangement (the number that says whether it fits the bed). Both this
-  and the production-extension case above were reproduced against a shelf of
-  real Bambu, OrcaSlicer and Cura files; regression tests cover a
-  production-extension 3MF and a scaled build-item 3MF.
-
-### Added
 
 - **Open a model straight in PrusaSlicer**, from a control on every ticket. A
   click hands the model to a slicer running on the person's own machine.
@@ -428,7 +235,78 @@ Notable changes. Every entry names a released version; deployments pin
     like a design bug. Its stylesheet is a file now, and `verify:api` fails if
     an inline block comes back.
 
+- **`Done` is now the end of the flow**, and a ticket marked Done leaves the
+  board. The order was Requested → Accepted → Printing → Done → Delivery, where
+  `Done` meant "off the plate" and `Delivery` was terminal — which left nowhere
+  to put finished work, so delivered tickets stayed on the rail forever and the
+  rail stopped meaning "what is still moving". It is now Requested → Accepted →
+  Printing → Delivery → Done. Finished work remains in *My orders*.
+
+  Existing rows swap, because their meaning is preserved by swapping and not by
+  leaving them alone: old `Done` ("printed, not yet with you") becomes
+  `Delivery`, old `Delivery` ("with you, finished") becomes `Done`. One
+  migration, one statement.
+
+- **The person who asked for a print can withdraw it**, while it is still
+  `Requested` or has been `Declined` — nobody has committed time to it at that
+  point. The ticket, its conversation and the uploaded file all go. Past
+  `Requested` it is the printer owner's record too, and no longer the
+  requester's call to make.
+
 ### Changed
+
+- **"Feature requests" in the nav, and it goes to the board.** The owner's nav
+  item was labelled *Requests* and pointed at `/frr/queue`, the triage view —
+  so the owner's way in was the work list while everyone else's was the board.
+  It now reads **Feature requests** for both roles and points at `/frr`, which
+  is the print track's shape (the board is the shared view; triage is a step
+  off it). Triage did not become unreachable: `/frr` grows a **Triage** button
+  for the owner, since nothing else in the app linked to it, and the nav item
+  stays lit while you are there.
+
+- **A session is now worth twenty idle minutes, not a renewing month.**
+  `session.expiresIn` was 30 days with `updateAge` at a day — and because
+  `expiresIn` is an *idle* window that Better Auth pushes back out on use, a
+  session touched once a month renewed itself indefinitely. "Thirty days" was
+  the number in the config; *forever* was the behaviour, on a cookie written to
+  the browser profile with `Max-Age=2592000`. On the shared office desktop this
+  app is built for, that is the wrong shape: the threat is somebody sitting
+  down after you, and the only thing that helps against a captured cookie is
+  how long it stays worth something. It is twenty minutes now, sliding every
+  minute so it never expires under somebody mid-task. Bearer tokens inherit it,
+  which closes the "long-lived credential in a shell history" item in the
+  security audit. Deliberately *not* done: a JWT session (it would put
+  revocation back on a delay — the same bug cookie caching was turned off for),
+  moving the token out of a cookie (a cookie is the only credential a browser
+  attaches to a top-level navigation, and this app is server-rendered), and
+  forcing a non-persistent cookie via `rememberMe: false` (Better Auth reads
+  that as a *fixed* 24-hour session with the sliding refresh off — worse than
+  what it buys).
+
+  **Everyone signs in once on upgrade.** The new window cannot reach the
+  sessions that already exist — Better Auth reads a stored `expiresAt` as
+  though it had been written under the current `expiresIn`, so a row minted
+  under the old config looks freshly updated and is never shortened (measured:
+  a planted thirty-day session was still thirty days out after use). A
+  migration retires them. It matches on the window rather than truncating the
+  table, so it touches nothing a session created under the new config owns, and
+  it is a no-op if re-run. No user, story, feature request, comment, invitation
+  or audit row is affected, and nothing cascades: no foreign key in the
+  database references `session`.
+
+- **A feature request's priority is editable in every status.** The requester
+  could only re-rank their own request while it was still live; now a closed
+  one — `Done` or `Declined` — can be re-prioritised too, because hindsight
+  keeps changing after the fact. The owner could always change any. Every
+  change is still audited (`feature.priority_changed`) and tells the other side.
+
+- **Withdraw now reaches Accepted (FRR-101).** A requester could only withdraw
+  a `Requested` or `Declined` ticket; the window now also includes `Accepted`,
+  so plans can still change after the owner has said yes but before the print
+  reaches the bed. `Printing`/`Delivery`/`Done` are still refused — the
+  material is committed by then — and the owner is notified when an accepted
+  request is pulled. The `DELETE /api/stories/{id}` route inherits the wider
+  window automatically.
 
 - **The repository is now `danileau/prettypleaseprint`.** GitHub redirects the
   old path — web, git remotes and the API — so clones and links keep working.
@@ -451,25 +329,140 @@ Notable changes. Every entry names a released version; deployments pin
   deployed has to change. Renaming them would break every pinned `PPP_TAG`
   and orphan `v0.1.0` in exchange for tidiness.
 
-### Added
+### Fixed
 
-- **`Done` is now the end of the flow**, and a ticket marked Done leaves the
-  board. The order was Requested → Accepted → Printing → Done → Delivery, where
-  `Done` meant "off the plate" and `Delivery` was terminal — which left nowhere
-  to put finished work, so delivered tickets stayed on the rail forever and the
-  rail stopped meaning "what is still moving". It is now Requested → Accepted →
-  Printing → Delivery → Done. Finished work remains in *My orders*.
+- **Four `verify:frr` checks passed without exercising the rule they named.**
+  They posted a bare `FormData` at a page URL carrying nothing but an id. A
+  server action needs an action id in the body, so Next never routed those
+  requests — it logged *"Failed to find Server Action"* and nothing ran, which
+  meant the row survived whether or not the service guarded anything. "The
+  owner cannot withdraw somebody's request", "a started request cannot be
+  withdrawn", "an accepted request cannot be declined" and "another client
+  cannot comment on a request they cannot see" would all have passed against a
+  service with no ownership check, no status check and no scope check at all.
+  They asserted the framework, not the app — and `docs/feature-requests.md` and
+  the security audit's A01 verdict both cite them as evidence.
 
-  Existing rows swap, because their meaning is preserved by swapping and not by
-  leaving them alone: old `Done` ("printed, not yet with you") becomes
-  `Delivery`, old `Delivery` ("with you, finished") becomes `Done`. One
-  migration, one statement.
+  The rules themselves are all present and correct; this was a hole in the
+  evidence, not in the app. Each check now replays the **real** form — scraped
+  from a page where it is rendered, then re-posted with a different id or a
+  different account — so it reaches the service and asserts the refusal it
+  gets back. Confirmed discriminating by removing the ownership guard and
+  watching the check fail. The 'frr' track was the exposed one because it has
+  no JSON API; the print track's equivalent rule is covered by `verify:api`
+  asserting a 403, through the same shared service. The two remaining bare-POST
+  checks are renamed to say what they actually demonstrate — that a stray POST
+  at a page URL is inert. `verify:frr` is 74.
 
-- **The person who asked for a print can withdraw it**, while it is still
-  `Requested` or has been `Declined` — nobody has committed time to it at that
-  point. The ticket, its conversation and the uploaded file all go. Past
-  `Requested` it is the printer owner's record too, and no longer the
-  requester's call to make.
+- **`file.refused` was not counted as a refusal.** The audit page tinted and
+  counted `invite.rejected` and `upload.rejected` but not the verb that fires
+  when an account asks for a model it may not see — which is the refusal most
+  worth noticing and the one least likely to be spotted by eye. The list now
+  lives in one place, so the count at the top, the tint in the table and the
+  new panel cannot drift apart.
+
+- **Uploads over 10 MB never worked, whatever the app said.** Next truncates a
+  request body at 10 MB whenever middleware is in play, and this app runs
+  middleware on every route to mint the CSP nonce. So anything past 10 MB
+  arrived short, `request.formData()` threw on the truncated body, and the
+  person uploading was told *"That upload did not arrive intact"* — which reads
+  like a network fault, while the form and the API documentation both promised
+  50 MB. It survived the whole life of the app because every fixture in every
+  suite is a few hundred bytes, so nothing had ever sent a large file.
+  `middlewareClientMaxBodySize` is now kept in step with the app's own cap, and
+  `verify:upload` sends a 12 MB model on every run so the ceiling cannot come
+  back quietly.
+
+- **"Open in PrusaSlicer" no longer depends on which branch is checked out.**
+  The `.desktop` entry named `scripts/prusa-open.sh` where it sits in the git
+  working tree, so the button quietly broke whenever that path stopped
+  resolving to the current handler — check out anything cut before the handler
+  landed and the file is gone, the click does nothing, and nothing says why.
+  It bit twice. The installer now copies the helper to `~/.local/bin/ppp-open`
+  and points the entry at that, which severs the dependency for one `cp`. The
+  trade is that the copy does not update itself: re-run the installer after a
+  `git pull`, which is safe at any time and leaves an existing config alone.
+  Existing setups are fixed by re-running it.
+- **The last three controls that looked like text.** After the withdraw button
+  on a ticket was made visible, three siblings were left drawn the old way —
+  a transparent border and muted grey, or a plain underline — so they read as
+  captions rather than controls. All three are now buttons in the shapes the
+  app already uses, and each carries the weight of what it does: the
+  feature-request **Withdraw** is now identical to the print one it shares a
+  label with (an underlined link before, which made the two backlogs look
+  different for no reason); **Forgotten password?** on the guest list is
+  neutral, because it mints a recovery link and takes nothing away, and the
+  list draws one per member; **Revoke access?** carries the same cherry as the
+  other destructive controls, while its **Suspended** state takes the amber the
+  tokens reserve for warnings — it reports a state *and* is the way back, and
+  red would read as a threat rather than a flag. Confirmation steps and wording
+  are unchanged throughout: these actions should be hard to fire by accident,
+  not hard to find.
+
+- **"Open in PrusaSlicer" stopped working, and the fix removes a credential
+  from disk.** The helper authenticated with `PPP_TOKEN` — a bearer token
+  pasted once into `~/.config/ppp/slicer.conf`. A bearer token *is* the session
+  token, so shortening sessions to twenty idle minutes killed it and every
+  click began answering `HTTP 401`. That file had been holding a thirty-day,
+  full-authority credential at rest; the feature was depending on the weakness
+  the session change removed. The link now carries its own credential instead —
+  `ppp://slice/<id>?t=…`, minted when the ticket renders, for that person and
+  that model, expiring in half an hour — and `slicer.conf` holds nothing but
+  the address of the instance. The token asserts an identity and a subject and
+  never an authorisation: the route still loads the account, refuses a
+  suspended one, and re-applies `storyScope`, so a link cannot reach a model
+  its holder has lost access to or be edited to fetch a different one. Old
+  installs keep working (`PPP_TOKEN` is still honoured when a link carries no
+  `t`) but the line can now be deleted. Six new probes; the suite is 103.
+
+- **Nobody could find how to withdraw a request.** The control on a ticket was
+  drawn with a transparent border and muted grey text, growing an outline only
+  on hover — so at rest it read as a caption rather than a button, and it sat
+  directly above *Print again*, which is a full enamel button. Next to its own
+  neighbour it looked like that button's label. It is now a button in the same
+  shape as *Decline* and *Flag*, tinted cherry-wash with cherry-dark text and
+  going solid red on hover, which keeps the two steps legible as an escalation:
+  an outlined red button opens the drawer, a filled red one commits. The
+  confirmation step and its wording are unchanged — a destructive action should
+  be hard to fire by accident, not hard to locate.
+
+- **The session cookie did not slide on a page render.** Better Auth extends a
+  live session in two places, and only one survives a React Server Component
+  render: the database row is pushed out, but Next forbids writing a cookie
+  during a render, so browsing pages kept the session row alive while the
+  browser's copy of the cookie counted down from whenever a route handler last
+  wrote it. Measured rather than assumed — `GET /board` returned no
+  `Set-Cookie` at all where `GET /api/stories` returned `Max-Age=1200`. At
+  thirty days nobody would have noticed; at twenty minutes it signs an active
+  person out with a perfectly live session behind them. `src/middleware.ts` now
+  re-stamps the cookie on page navigations, and only there — `/api/*` responses
+  set it themselves, and re-stamping there would resurrect the cookie that
+  `/api/auth/sign-out` had just deleted. Three new probes
+  (`A07-session-window`, `A07-session-cookie-maxage`, `A07-session-slides`)
+  hold the window, the cookie and the re-stamp in place; the suite is 97.
+
+- **3MF files with geometry in a separate part were refused.** The validator
+  read only the archive's root `3D/3dmodel.model` and counted vertices there,
+  so a 3MF written in the *production extension* shape — each object's mesh in
+  its own `3D/Objects/*.model`, the root merely referencing them — looked empty
+  and was rejected as "not a model". That shape is what Bambu Studio, OrcaSlicer
+  multi-object plates and several CAD exporters emit, so a lot of perfectly
+  printable files bounced. It now reads every `*.model` part in the archive
+  (which also covers exporters that name the root part something other than
+  `3dmodel.model`), with the zip-bomb guard still applied to the total.
+
+- **3MF dimensions were wrong when the size lived in a transform** — a Cura
+  export measured `0 × 0 × 0 mm`. A 3MF places geometry through the transform
+  matrices on the `<build>` `<item>` and on each `<component>`, and Cura in
+  particular stores the mesh in a scaled-down space with the true size in that
+  matrix; the validator read the raw vertices and so reported a box a thousandth
+  of the real thing. It now walks the build → component tree, composes the
+  transforms and measures the geometry in its placed position — so a single
+  model reads its true size, and a multi-object plate reads the footprint of the
+  whole arrangement (the number that says whether it fits the bed). Both this
+  and the production-extension case above were reproduced against a shelf of
+  real Bambu, OrcaSlicer and Cura files; regression tests cover a
+  production-extension 3MF and a scaled build-item 3MF.
 
 ## v0.1.0
 
