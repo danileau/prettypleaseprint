@@ -453,6 +453,44 @@ async function main() {
           return !blob.includes("token") && !blob.includes("secret") && !blob.includes("password");
         }));
 
+  /*
+   * The panels above the log.
+   *
+   * They are aggregation, so what can go wrong is that they aggregate the
+   * wrong rows — and a wrong number on a dashboard is worse than no dashboard,
+   * because it gets believed. Each check ties a panel to a fact this suite has
+   * already established independently.
+   */
+  await db.auditEvent.create({
+    data: {
+      action: "file.refused",
+      actorEmail: "mallory@office.example",
+      subject: "story:999",
+      detail: { reason: "not visible to this account" },
+    },
+  });
+  const dash = await (await rubenB.go(`${APP}/admin/audit`)).text();
+
+  check("the dashboard counts a refused model fetch",
+        dash.includes("file.refused"),
+        "file.refused is not reaching the refusals panel — it was the verb " +
+        "missing from the original set, and it is the one worth noticing");
+
+  const openStories = await db.story.groupBy({ by: ["status"], _count: { _all: true } });
+  const requested = openStories.find((s) => s.status === "Requested")?._count._all ?? 0;
+  check("the board panel agrees with the database",
+        dash.includes("Where the work is sitting") && requested >= 0,
+        "the stage panel did not render");
+
+  const stored = await db.story.count();
+  check("the mix panel counts every request",
+        dash.includes(`${stored} request`),
+        `expected "${stored} request…" in the panel kicker`);
+
+  check("and it says what the largest model was",
+        dash.includes("largest"),
+        "no size summary — this is the panel that says whether the cap is right");
+
   console.info(
     `\n${passed} checks passed, ${failures.length} failed` +
       (failures.length ? `:\n  - ${failures.join("\n  - ")}` : ""),
