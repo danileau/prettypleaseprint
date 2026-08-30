@@ -16,15 +16,20 @@
 #
 # Config lives at $PPP_SLICER_CONF (default ~/.config/ppp/slicer.conf) and sets:
 #   PPP_BASE          the instance, e.g. https://print.example         (required)
-#   PPP_TOKEN         a bearer token from a sign-in response            (required)
 #   PPP_SLICER        the slicer binary            (default: prusa-slicer)
 #   PPP_DOWNLOAD_DIR  where fetched models land    (default: ~/.cache/ppp/models)
+#   PPP_TOKEN         DEPRECATED — see below                          (optional)
 #
-# The token IS the session token — signing out of the app revokes it. Get one
-# with, and keep it out of your shell history:
-#   curl -si $PPP_BASE/api/auth/sign-in/username \
-#     -H 'content-type: application/json' \
-#     -d '{"username":"you","password":"..."}' | grep -i '^set-auth-token:'
+# THE CONFIG NO LONGER HOLDS A CREDENTIAL. The clicked link carries its own:
+# `ppp://slice/<id>?t=<token>`, minted by the app for the person who was looking
+# at that ticket, good for half an hour and for that one model. Nothing secret
+# is written to disk, so there is nothing here to leak or to rotate.
+#
+# It used to be PPP_TOKEN, a bearer token pasted in once — which was the session
+# token, so when sessions came down from thirty days to twenty idle minutes it
+# stopped working and every click answered HTTP 401. PPP_TOKEN is still honoured
+# when a link carries no `t` (an old bookmark, say), but it is on the way out:
+# delete it from the config and click the button again.
 #
 # Failures are made loud rather than swallowed: a protocol handler has no
 # terminal, so every error goes to a log AND a desktop notification (when
@@ -56,10 +61,11 @@ fail() {
 # --- config -----------------------------------------------------------------
 [ -f "$CONF" ] || fail "no config at $CONF — run install-slicer-handler.sh first"
 
-# A token in a world-readable file is a credential anyone on the box can read.
-# Warn rather than refuse: on a single-user workstation it is a papercut, not a
+# Only worth saying when the file still holds the deprecated credential — with
+# `t` in the link there is nothing in here anybody could misuse. Warn rather
+# than refuse either way: on a single-user workstation it is a papercut, not a
 # breach, and refusing outright would strand somebody mid-print.
-if command -v stat >/dev/null 2>&1; then
+if grep -q '^[[:space:]]*PPP_TOKEN=' "$CONF" 2>/dev/null && command -v stat >/dev/null 2>&1; then
   # GNU stat, then BSD/macOS stat. The last two octal digits are the group and
   # other bits; any non-zero there means someone besides the owner can read it.
   perms="$(stat -c '%a' "$CONF" 2>/dev/null || stat -f '%Lp' "$CONF" 2>/dev/null || echo '')"
@@ -72,7 +78,6 @@ fi
 . "$CONF"
 
 : "${PPP_BASE:?PPP_BASE is not set in $CONF}"
-: "${PPP_TOKEN:?PPP_TOKEN is not set in $CONF}"
 DOWNLOAD_DIR="${PPP_DOWNLOAD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/ppp/models}"
 
 # --- locate the slicer ------------------------------------------------------
@@ -122,10 +127,30 @@ fi
 url="${1:-}"
 [ -n "$url" ] || fail "no URL given — this is invoked by clicking a ppp:// link"
 
-id="${url#ppp://slice/}"
+# Split `<id>` from an optional `?t=<token>`. The id is still validated to
+# digits before it goes anywhere near a request path, and the token to the
+# base64url alphabet plus the dot that separates its two halves — so neither
+# can smuggle anything into the fetch below.
+rest="${url#ppp://slice/}"
+id="${rest%%\?*}"
 id="${id%/}"
 case "$id" in
   "" | *[!0-9]*) fail "not a model link: $url (expected ppp://slice/<number>)" ;;
+esac
+
+link_token=""
+if [ "$rest" != "${rest#*\?}" ]; then
+  query="${rest#*\?}"
+  case "$query" in
+    *t=*)
+      link_token="${query##*t=}"
+      link_token="${link_token%%&*}"
+      ;;
+  esac
+fi
+case "$link_token" in
+  "") : ;;
+  *[!A-Za-z0-9._-]*) fail "the credential in that link is malformed — open the ticket again and re-click" ;;
 esac
 
 command -v curl >/dev/null 2>&1 || fail "curl is not installed"
@@ -141,21 +166,38 @@ trap 'rm -rf "$tmp"' EXIT
 hdr="$tmp/headers"
 body="$tmp/body"
 
+# Prefer the link's own credential; fall back to the deprecated config token so
+# an old bookmark still works. One or the other has to be present.
+fetch_args=(-sS -o "$body" -D "$hdr" -w '%{http_code}')
+if [ -n "$link_token" ]; then
+  # --get --data-urlencode rather than pasting into the URL: curl does the
+  # escaping, so the shell never has to be trusted with it.
+  fetch_args+=(--get --data-urlencode "t=$link_token")
+elif [ -n "${PPP_TOKEN:-}" ]; then
+  note "no credential in the link — falling back to the deprecated PPP_TOKEN"
+  fetch_args+=(-H "Authorization: Bearer $PPP_TOKEN")
+else
+  fail "that link carries no credential and $CONF sets no PPP_TOKEN — open the ticket in the app and click the button there"
+fi
+
 note "fetching story $id from $PPP_BASE"
 # No --fail: let curl succeed on any HTTP status and read the code from -w, so
 # the `case` below can answer 401 and 404 in words rather than "curl (22)". A
 # non-zero exit here is a real transport failure — DNS, connection refused —
 # and that is what the `|| fail` catches.
 code="$(
-  curl -sS \
-    -o "$body" -D "$hdr" -w '%{http_code}' \
-    -H "Authorization: Bearer $PPP_TOKEN" \
-    "$PPP_BASE/api/models/$id" 2>"$tmp/err"
+  curl "${fetch_args[@]}" "$PPP_BASE/api/models/$id" 2>"$tmp/err"
 )" || fail "could not reach $PPP_BASE: $(tr -d '\r' <"$tmp/err" | tail -n1)"
 
 case "$code" in
   200) : ;;
-  401) fail "not authorised (HTTP 401) — the token in $CONF is missing, expired, or was revoked by signing out" ;;
+  401)
+    if [ -n "$link_token" ]; then
+      fail "that link has expired (HTTP 401). They last half an hour — open the ticket again and click the button."
+    else
+      fail "not authorised (HTTP 401) — the PPP_TOKEN in $CONF is expired or was revoked. Delete it and click the button in the app instead; links now carry their own credential."
+    fi
+    ;;
   404) fail "story $id is not there, or not one this account may see (HTTP 404)" ;;
   *)   fail "server returned HTTP $code for story $id" ;;
 esac

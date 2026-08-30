@@ -22,7 +22,7 @@ docker run --rm -v "$PWD:/src:ro" semgrep/semgrep semgrep scan \
   --config=p/owasp-top-ten --config=p/security-audit --config=p/nextjs /src/src
 docker run --rm --network host ghcr.io/zaproxy/zaproxy:stable \
   zap-baseline.py -t http://localhost:3000        # DAST
-npm run probe:security                     # DAST, app-specific (97 probes)
+npm run probe:security                     # DAST, app-specific (103 probes)
 ```
 
 ## Result
@@ -34,7 +34,7 @@ npm run probe:security                     # DAST, app-specific (97 probes)
 | Syft + Grype | SBOM, binary contents | **92 (2 crit, 46 high)** | 0 |
 | Semgrep | 153 rules, 37 files | 1 (false positive) | 0 |
 | OWASP ZAP baseline | passive DAST | **1 medium, 3 low** | 0 fail / 63 pass |
-| `probe:security` | 97 app-specific probes | **2 real, 4 artifacts** | 97 pass |
+| `probe:security` | 103 app-specific probes | **2 real, 4 artifacts** | 103 pass |
 | `verify:models` | 29 upload-validator checks | — | 29 pass |
 | `verify:passkey` | WebAuthn in a real browser | *unverified* | 13 pass |
 
@@ -335,6 +335,47 @@ invitation), `A07-reauth-redirect` (it is sent to `/reauth` instead) and
 `A07-reauth-fresh` (a sign-in from moments ago still can). The first and third
 drive the *same* form submission and differ only in the age of the session, so
 the pair fails if the gate stops discriminating in either direction.
+
+#### The slicer link credential, and the token it replaced
+
+Shortening the session broke "Open in PrusaSlicer", and the way it broke is
+worth recording because the feature had been quietly depending on the weakness.
+
+The helper runs on somebody's own machine and holds no cookie, so it
+authenticated with `PPP_TOKEN` — a bearer token pasted once into
+`~/.config/ppp/slicer.conf`. A bearer token is the session token, so that file
+held a **thirty-day, full-authority credential at rest**, revocable only by
+signing out. At twenty idle minutes it simply stopped working: every click
+answered `HTTP 401`.
+
+The fix is not a longer-lived credential in the same place. The link carries
+its own instead — `ppp://slice/<id>?t=…`, minted when the ticket renders, for
+that person and that model, expiring in half an hour
+(`src/lib/slicer-token.ts`). `PPP_TOKEN` is gone from the installer's template
+and the config now holds nothing but an address.
+
+What the token is, precisely: an HMAC over `version.storyId.userId.expiry`,
+keyed on `BETTER_AUTH_SECRET`. It asserts an **identity and a subject, never an
+authorisation** — the route loads the account, refuses a suspended one, and
+re-applies `storyScope` against the database exactly as it does for a session.
+So a link cannot outlive the access it was minted under, and cannot be edited
+to fetch a different model.
+
+Stateless on purpose, and the cost is stated rather than hidden: an outstanding
+link is **not** revoked by signing out, because nothing is stored to revoke. It
+is revoked by suspending the account, by the scope check, and by half an hour
+passing. The alternative writes a `verification` row on every render of every
+ticket to be read at most once. For read access to one model the holder could
+already open, this is the right side of the trade — it would not be for
+anything that writes.
+
+Net against what it replaced: a thirty-day credential for the whole account, in
+a file, became a thirty-minute credential for one model, in a URL. Six probes
+hold it — that a ticket carries one at all, that an anonymous fetch is still
+401, that a minted one works, that it cannot be pointed at another model, and
+that a tampered or malformed one is refused. The binding probe aims the token at
+a story the printer owner *can* read by session, so it fails if the binding ever
+stops being enforced independently of scope.
 
 ### Residual risk accepted
 

@@ -10,6 +10,7 @@ import { AdminActions } from "@/components/admin-actions";
 import { Conversation } from "@/components/conversation";
 import { ModelViewer } from "@/components/model-viewer";
 import { OpenInSlicer } from "@/components/open-in-slicer";
+import { DownloadModel } from "@/components/download-model";
 import { Toast } from "@/components/toast";
 import { WithdrawStory } from "@/components/withdraw-story";
 import { RequeueStory } from "@/components/requeue-story";
@@ -79,7 +80,12 @@ export default async function StoryPage({
             {/* Send the model to a PrusaSlicer on the viewer's own machine.
                 The bytes are fetched by a local helper, not by the slicer —
                 see the component and docs/prusaslicer.md for why. */}
-            <OpenInSlicer storyId={story.id} />
+            {/* The plain way to get the bytes — no helper, any machine. Kept
+                above the slicer control so the simple answer is the visible
+                one. */}
+            <DownloadModel storyId={story.id} filename={story.filename} />
+
+            <OpenInSlicer storyId={story.id} userId={user.id} />
 
             <Conversation
               storyId={story.id}
