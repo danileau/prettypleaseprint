@@ -479,10 +479,22 @@ README now says.
   gates it, but the download route lands with the 3D viewer. When it does,
   `connect-src` has to widen to the storage origin — it is `'self'` today,
   which will block the fetch.
-- **The upload buffers the whole file in memory** to measure its bounding
-  box. That is inherent to computing the box, and fine at 50 MB for five
-  people, but it is a denial-of-service lever if this ever faces a wider
-  audience. A streaming parse, or a size-based queue, is the answer then.
+- **The upload buffers the whole file in memory**, and now at a 250 MB cap
+  rather than 50 MB. The buffering is not the validator's doing —
+  `request.formData()` has already read the whole body before the route handler
+  runs — so peak memory is set by how many large uploads overlap. Of the two
+  answers named here originally, the **size-based queue** is now in place: at
+  most two uploads are handled at once, a third waits, and only a long queue is
+  refused. That bounds the exposure at roughly two concurrent uploads' worth
+  rather than however many arrive together. The streaming parse remains
+  unbuilt, and cannot be built without changing how the file arrives — see
+  [architecture](architecture.md#why-the-memory-is-bounded-by-a-queue-rather-than-a-stream).
+
+  Raising the cap also uncovered that the old one was never enforced as
+  advertised: Next truncates a request body at 10 MB when middleware is
+  present, so uploads between 10 and 50 MB had been failing with a parse error
+  dressed as a network fault. `verify:upload` now sends a 12 MB model on every
+  run.
 - ~~Print-time estimates~~ — removed rather than kept. The app now shows only
   what it measured. See the README for the reasoning and the path to a real
   slicer-derived figure.

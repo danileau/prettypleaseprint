@@ -63,6 +63,7 @@ export default async function StoryPage({
               filename={story.filename}
               colorHex={story.colorHex}
               dims={story.dims}
+              fileSize={story.fileSize}
             />
 
             {/* Both measured from the file itself. Nothing inferred. */}

@@ -1,20 +1,28 @@
 /**
  * Validation and measurement of uploaded model files.
  *
- * The handoff asks for extension and magic-byte validation, a 50 MB cap, and
- * a parse pass that fills in the displayed meta. Everything here runs on the
+ * The handoff asks for extension and magic-byte validation, a size cap, and a
+ * parse pass that fills in the displayed meta. Everything here runs on the
  * server against the bytes that actually arrived — a filename is a claim, not
  * evidence.
+ *
+ * The numbers themselves live in `upload-limits.ts`, because the upload form
+ * needs the same ones and cannot import this module without dragging `fflate`
+ * into the browser bundle.
  */
 import { unzipSync } from "fflate";
 
-export const MAX_BYTES = 50 * 1024 * 1024; // 50 MB, per the handoff
-export const ACCEPTED_EXTENSIONS = [".stl", ".3mf"] as const;
+import {
+  ACCEPTED_EXTENSIONS,
+  MAX_INFLATED_BYTES,
+  MAX_TRIANGLES,
+  MAX_UPLOAD_BYTES,
+  formatBytes,
+} from "@/lib/upload-limits";
 
-/** Refuse absurd meshes before allocating for them. */
-const MAX_TRIANGLES = 8_000_000;
-/** A 3MF is a zip; cap what we are willing to inflate (zip-bomb guard). */
-const MAX_INFLATED_BYTES = 300 * 1024 * 1024;
+/** Re-exported so existing callers keep one import to reach for. */
+export { ACCEPTED_EXTENSIONS, formatBytes };
+export const MAX_BYTES = MAX_UPLOAD_BYTES;
 
 export type ModelFormat = "stl" | "3mf";
 
@@ -28,7 +36,7 @@ export type Rejection =
 
 export const REJECTION_COPY: Record<Rejection, string> = {
   empty: "That file is empty.",
-  too_large: "That file is over 50 MB. Decimate the mesh and try again.",
+  too_large: `That file is over ${formatBytes(MAX_UPLOAD_BYTES)}.`,
   bad_extension: "Only .stl and .3mf files can be printed here.",
   not_a_model:
     "That does not look like an STL or 3MF inside, whatever it is named.",
@@ -369,12 +377,6 @@ function measure3mf(bytes: Uint8Array): { box: Box; triangles: number } | null {
 // ---------------------------------------------------------------------------
 // Presentation
 // ---------------------------------------------------------------------------
-
-export function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 /*
  * There is deliberately no print-time estimate here.

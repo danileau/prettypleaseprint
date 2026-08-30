@@ -221,13 +221,15 @@ async function main() {
   }
   check("Done is the end of the flow", nextFeatureStatus("Done") === null);
 
-  // A bare POST cannot drive it past Done.
+  // A bare POST carries no action id, so Next never routes it — this shows a
+  // stray POST at the page URL is inert, not that the flow rule holds. The
+  // rule itself is the pure-function check above.
   const past = await ruben.raw(`${APP}/frr/${flowFR.id}`, {
     method: "POST",
     body: (() => { const f = new FormData(); f.set("id", String(flowFR.id)); return f; })(),
   });
   void past;
-  check("nothing moves past Done",
+  check("a stray POST at the page URL is inert",
         (await db.featureRequest.findUnique({ where: { id: flowFR.id } }))?.status === "Done");
 
   // ------------------------------------------------------------------
@@ -242,14 +244,29 @@ async function main() {
   check("declining is audited",
         (await db.auditEvent.count({ where: { action: "feature.declined", subject: refOf(fresh.id) } })) === 1);
 
+  /*
+   * Decline is reachable only from Requested, and the owner's page hides the
+   * control for anything further along — so the only way to reach the rule in
+   * `assertFeatureTransition` is to replay a real decline form against a
+   * request it was not rendered for. A bare POST cannot: with no action id
+   * Next never routes it, so the status would stay Accepted whether or not the
+   * transition were guarded at all.
+   */
   const accForDecline = await makeFeature(ayla.id, "Already accepted", "Accepted");
-  const declineLate = await ruben.raw(`${APP}/frr/${accForDecline.id}`, {
-    method: "POST",
-    body: (() => { const f = new FormData(); f.set("id", String(accForDecline.id)); return f; })(),
-  });
-  void declineLate;
-  check("an accepted request stays accepted (no bare-POST decline)",
-        (await db.featureRequest.findUnique({ where: { id: accForDecline.id } }))?.status === "Accepted");
+  const stillNew = await makeFeature(ayla.id, "Still new");
+  const declinePage = await (await ruben.go(`${APP}/frr/${stillNew.id}`)).text();
+  const dForm = formIndexContaining(declinePage, "Yes, decline it");
+  check("the owner's decline form is there to replay", dForm >= 0);
+
+  const declineLate = await ruben.submit(`${APP}/frr/${stillNew.id}`, declinePage, dForm,
+                                         { id: String(accForDecline.id) });
+  const declineErr = paramOf(declineLate.headers.get("location"), "error");
+  check("an accepted request cannot be declined, and says why",
+        (await db.featureRequest.findUnique({ where: { id: accForDecline.id } }))?.status === "Accepted" &&
+        declineErr.length > 0,
+        `error was "${declineErr}" — empty means the action never ran`);
+  check("and the request it was scraped from is untouched",
+        (await db.featureRequest.findUnique({ where: { id: stillNew.id } }))?.status === "Requested");
 
   // ------------------------------------------------------------------
   section("the conversation");
@@ -267,14 +284,27 @@ async function main() {
   check("the client is not told about their own comment",
         (await db.notification.count({ where: { recipientId: ayla.id, featureId: talk.id } })) === 0);
 
-  // Another client cannot comment on a request they cannot see.
-  const intruder = await other.raw(`${APP}/frr/${talk.id}`, {
-    method: "POST",
-    body: (() => { const f = new FormData(); f.set("featureId", String(talk.id)); f.set("body", "hi"); return f; })(),
-  });
-  void intruder;
+  /*
+   * Another client cannot comment on a request they cannot see — replayed
+   * through the real form, for the same reason as above. A bare POST left the
+   * comment count at zero whether or not `postComment` applied `featureScope`,
+   * so the check could not have failed.
+   *
+   * Out of scope, `postComment` raises a 404 and the action redirects to /frr
+   * rather than back to a request the caller may not know exists. That landing
+   * is the evidence the guard ran.
+   */
+  const talkPage = await (await client.go(`${APP}/frr/${talk.id}`)).text();
+  const cForm = formIndexContaining(talkPage, 'name="body"');
+  check("the requester's own comment form is there to replay", cForm >= 0);
+
+  const intruder = await other.submit(`${APP}/frr/${talk.id}`, talkPage, cForm,
+                                      { featureId: String(talk.id), body: "hi" });
+  const intruderLanding = intruder.headers.get("location") ?? "";
   check("another client cannot comment on a request they cannot see",
-        (await db.featureComment.count({ where: { authorId: mallory.id } })) === 0);
+        (await db.featureComment.count({ where: { authorId: mallory.id } })) === 0 &&
+        !intruderLanding.includes(`/frr/${talk.id}`),
+        `landed at "${intruderLanding}" — a page-level landing means it never ran`);
 
   // Hostile body is escaped, not rendered.
   page = await (await client.go(`${APP}/frr/${talk.id}`)).text();
@@ -297,21 +327,45 @@ async function main() {
   const started = await makeFeature(ayla.id, "Too late", "InProgress");
   const sp = await (await client.go(`${APP}/frr/${started.id}`)).text();
   check("a started request offers no withdrawal", !sp.includes("Yes, withdraw it"));
-  const forceWithdraw = await client.raw(`${APP}/frr/${started.id}`, {
-    method: "POST",
-    body: (() => { const f = new FormData(); f.set("id", String(started.id)); return f; })(),
-  });
-  void forceWithdraw;
-  check("and a bare POST cannot force it",
-        (await db.featureRequest.count({ where: { id: started.id } })) === 1);
 
-  const adminForce = await ruben.raw(`${APP}/frr/${mine.id}`, {
-    method: "POST",
-    body: (() => { const f = new FormData(); f.set("id", String(mine.id)); return f; })(),
-  });
-  void adminForce;
+  /*
+   * Both refusals below replay the REAL withdraw form against a request it was
+   * not rendered for, because that is the only way to reach the rule.
+   *
+   * They used to post a bare FormData carrying nothing but an id. Next never
+   * routes such a request — there is no action id in it, so it logs "Failed to
+   * find Server Action" and nothing runs — which means the row survived whether
+   * or not `withdrawFeature` guarded anything at all. Both checks would have
+   * passed against a service with no ownership test and no status test. They
+   * were asserting the framework, not the app, while their names claimed
+   * otherwise, and `docs/feature-requests.md` and the security audit's A01
+   * verdict both cite them as evidence.
+   *
+   * Ayla's own `mine` is still Requested, so her page carries a real withdraw
+   * form. Scraping it yields a valid action id to replay with a different `id`,
+   * and with somebody else's cookies.
+   */
+  const withdrawable = await (await client.go(`${APP}/frr/${mine.id}`)).text();
+  const wForm = formIndexContaining(withdrawable, "Yes, withdraw it");
+  check("the requester's own withdraw form is there to replay", wForm >= 0);
+
+  const tooLate = await client.submit(`${APP}/frr/${mine.id}`, withdrawable, wForm,
+                                      { id: String(started.id) });
+  const tooLateToast = paramOf(tooLate.headers.get("location"), "toast");
+  check("a request already in progress is refused, and says so",
+        (await db.featureRequest.count({ where: { id: started.id } })) === 1 &&
+        /already/i.test(tooLateToast),
+        `toast was "${tooLateToast}" — empty means the action never ran`);
+
+  // Seeing every request is the widest scope in the app, and it still does not
+  // include withdrawing somebody else's.
+  const ownerTry = await ruben.submit(`${APP}/frr/${mine.id}`, withdrawable, wForm,
+                                      { id: String(mine.id) });
+  const ownerToast = paramOf(ownerTry.headers.get("location"), "toast");
   check("the owner cannot withdraw somebody's request",
-        (await db.featureRequest.count({ where: { id: mine.id } })) === 1);
+        (await db.featureRequest.count({ where: { id: mine.id } })) === 1 &&
+        /only the person who asked/i.test(ownerToast),
+        `toast was "${ownerToast}" — empty means the action never ran`);
 
   // ------------------------------------------------------------------
   section("priority is editable after filing");

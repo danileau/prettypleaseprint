@@ -87,7 +87,7 @@ that: there is no multi-tenancy, no billing, and no queue theory.
 | --- | --- |
 | Host | anything that runs Docker Compose — a NAS, a Pi 5, a VPS, a spare laptop |
 | Memory | ~1 GB for the whole stack (app, Postgres, MinIO) |
-| Disk | small — the database is megabytes; uploads are capped at 50 MB each |
+| Disk | small — the database is megabytes; uploads are capped at 250 MB each |
 | TLS | **required.** The app refuses to start on plain `http://` in production, and passkeys need a secure context |
 | Mail | **optional.** Nothing needs it — see [Mail is optional](docs/authentication.md#mail-is-optional--genuinely) |
 

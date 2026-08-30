@@ -10,19 +10,18 @@ import {
   MATERIALS,
   QUANTITY_PRESETS,
 } from "@/lib/catalog";
+// The same numbers the server enforces. `models.ts` cannot be imported here —
+// it would pull `fflate` and the mesh parser into the browser bundle — which
+// is why these three used to be copied into this file by hand.
+import {
+  ACCEPTED_EXTENSIONS,
+  MAX_UPLOAD_BYTES,
+  formatBytes,
+} from "@/lib/upload-limits";
 
 /** One owner-managed tip option, passed from the server (see upload/page.tsx). */
 type Benefit = { label: string; preferred: boolean };
 import { Button, Label, Notice } from "@/components/ui";
-
-const MAX_BYTES = 50 * 1024 * 1024;
-const ACCEPTED = [".stl", ".3mf"];
-
-function formatBytes(n: number) {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 type Phase =
   | { kind: "idle" }
@@ -107,18 +106,18 @@ export function UploadForm({
     if (!picked) return setFile(null);
 
     const ext = picked.name.slice(picked.name.lastIndexOf(".")).toLowerCase();
-    if (!ACCEPTED.includes(ext)) {
+    if (!(ACCEPTED_EXTENSIONS as readonly string[]).includes(ext)) {
       setFile(null);
       return setPhase({
         kind: "error",
         message: "Only .stl and .3mf files can be printed here.",
       });
     }
-    if (picked.size > MAX_BYTES) {
+    if (picked.size > MAX_UPLOAD_BYTES) {
       setFile(null);
       return setPhase({
         kind: "error",
-        message: `That file is ${formatBytes(picked.size)} — the limit is 50 MB.`,
+        message: `That file is ${formatBytes(picked.size)} — the limit is ${formatBytes(MAX_UPLOAD_BYTES)}.`,
       });
     }
     setFile(picked);
@@ -145,7 +144,7 @@ export function UploadForm({
     body.set("printSettings", printSettings);
 
     // XHR rather than fetch: it is still the only way to observe upload
-    // progress, and a 50 MB model over office wifi needs a real bar.
+    // progress, and a large model over office wifi needs a real bar.
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/upload");
     xhr.upload.addEventListener("progress", (event) => {
@@ -223,7 +222,7 @@ export function UploadForm({
             ? `Uploading… ${phase.percent}%`
             : file
               ? `${formatBytes(file.size)} · checked on the server when you send it`
-              : "or click to choose a file · 50 MB max"}
+              : `or click to choose a file · ${formatBytes(MAX_UPLOAD_BYTES)} max`}
         </span>
 
         {busy && (
