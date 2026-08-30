@@ -176,7 +176,11 @@ export default async function FeaturePage({
           <form action={withdrawFeature} className="mt-[13.2px]">
             <input type="hidden" name="id" value={feature.id} />
             <details className="group">
-              <summary className="inline-block cursor-pointer list-none font-mono text-[12px] font-bold uppercase tracking-[0.06em] text-ink-3 underline underline-offset-4 hover:text-cherry-dk">
+              {/* The same button as the print track's withdraw, deliberately:
+                  identical label, identical shape. The 'frr' backlog mirrors
+                  the print one, and a control that reads as a link on one and
+                  a button on the other would be the seam showing. */}
+              <summary className="stamp inline-block cursor-pointer list-none rounded-chip border-[3px] border-ink bg-cherry-wash px-[15px] py-[8px] text-[14px] font-bold text-cherry-dk hover:bg-cherry-dk hover:text-cream">
                 Withdraw this request
               </summary>
               <div className="mt-[8.8px] rounded-card border-[3px] border-ink bg-cream-2 p-[13.2px]">
@@ -185,7 +189,7 @@ export default async function FeaturePage({
                 </p>
                 <button
                   type="submit"
-                  className="stamp cursor-pointer rounded-chip border-[3px] border-ink bg-porcelain px-[15px] py-[8px] text-[14px] font-bold text-ink hover:bg-cherry-wash"
+                  className="stamp cursor-pointer rounded-chip border-[3px] border-ink bg-cherry-dk px-[15px] py-[8px] text-[14px] font-bold text-cream hover:bg-cherry"
                 >
                   Yes, withdraw it
                 </button>

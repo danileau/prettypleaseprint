@@ -46,7 +46,11 @@ export function ResetPassword({
 
   return (
     <details>
-      <summary className="inline-block cursor-pointer list-none rounded-chip border-[3px] border-transparent px-[13.2px] py-[6px] font-mono text-[11.5px] font-bold uppercase text-ink-2 hover:border-ink hover:bg-cream-2">
+      {/* Neutral rather than red. This mints a recovery link — it takes
+          nothing away — and the guest list draws one of these per member, so a
+          row of red buttons would shout about the wrong thing. The weight sits
+          on the confirm inside, where it belongs. */}
+      <summary className="stamp inline-block cursor-pointer list-none rounded-chip border-[3px] border-ink bg-porcelain px-[15px] py-[8px] text-[14px] font-bold text-ink hover:bg-sun">
         Forgotten password?
       </summary>
       <form action={formAction} className="mt-[8px] max-w-[560px]">

@@ -17,6 +17,21 @@ Notable changes. Every entry names a released version; deployments pin
   trade is that the copy does not update itself: re-run the installer after a
   `git pull`, which is safe at any time and leaves an existing config alone.
   Existing setups are fixed by re-running it.
+- **The last three controls that looked like text.** After the withdraw button
+  on a ticket was made visible, three siblings were left drawn the old way —
+  a transparent border and muted grey, or a plain underline — so they read as
+  captions rather than controls. All three are now buttons in the shapes the
+  app already uses, and each carries the weight of what it does: the
+  feature-request **Withdraw** is now identical to the print one it shares a
+  label with (an underlined link before, which made the two backlogs look
+  different for no reason); **Forgotten password?** on the guest list is
+  neutral, because it mints a recovery link and takes nothing away, and the
+  list draws one per member; **Revoke access?** carries the same cherry as the
+  other destructive controls, while its **Suspended** state takes the amber the
+  tokens reserve for warnings — it reports a state *and* is the way back, and
+  red would read as a threat rather than a flag. Confirmation steps and wording
+  are unchanged throughout: these actions should be hard to fire by accident,
+  not hard to find.
 
 ### Added
 
