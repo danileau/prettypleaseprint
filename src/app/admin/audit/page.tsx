@@ -5,18 +5,27 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
 import { relativeTime } from "@/lib/catalog";
 import { AppHeader } from "@/components/app-header";
+import { AuditDashboard } from "@/components/audit-dashboard";
+import { REFUSAL_ACTIONS, mix, refusals, stages } from "@/lib/dashboard";
 import { Kicker } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
 /**
- * The audit log. Admin only.
+ * The audit log, and the three panels above it. Admin only.
  *
  * Deliberately a page a human reads rather than an alerting pipeline: for one
  * printer and a handful of colleagues, a screen the owner can glance at beats
  * thresholds nobody tunes and alerts everyone learns to ignore. The rows are
  * already there if that changes — recording is the part that cannot be
  * backfilled.
+ *
+ * That argument only holds if somebody actually looks, and a wall of rows is
+ * not something anybody opens twice. The panels are the answer: refusals,
+ * where work is sitting, and what gets asked for — the three questions a person
+ * arrives with, none of which a log can answer by being scrolled. They are pure
+ * aggregation over rows that already existed (`src/lib/dashboard.ts`); nothing
+ * new is recorded for them.
  */
 
 type Lens = "all" | "access" | "uploads";
@@ -44,8 +53,13 @@ const LENSES: Array<{ key: Lens; label: string; actions?: string[] }> = [
 /**
  * Refusals are the rows worth noticing — a run of them from one place is the
  * shape of somebody trying things. Everything else is normal traffic.
+ *
+ * The list lives in `dashboard.ts` so the count at the top, the tint in the
+ * table and the panel cannot disagree. It gained `file.refused`, which had been
+ * missing here: that verb fires when an account asks for a model it may not
+ * see, which is the refusal most worth noticing and was the one not counted.
  */
-const REFUSALS = new Set(["invite.rejected", "upload.rejected"]);
+const REFUSALS = new Set<string>(REFUSAL_ACTIONS);
 
 function tone(action: string): string {
   if (REFUSALS.has(action)) return "bg-cherry text-ink";
@@ -66,7 +80,7 @@ export default async function AuditPage({
 
   const where: Prisma.AuditEventWhereInput = actions ? { action: { in: actions } } : {};
 
-  const [events, refusalsToday] = await Promise.all([
+  const [events, refusalsToday, refusalPanel, stagePanel, mixPanel] = await Promise.all([
     db.auditEvent.findMany({ where, orderBy: { at: "desc" }, take: 200 }),
     db.auditEvent.count({
       where: {
@@ -74,6 +88,9 @@ export default async function AuditPage({
         at: { gt: new Date(Date.now() - 86_400_000) },
       },
     }),
+    refusals(),
+    stages(),
+    mix(),
   ]);
 
   return (
@@ -99,6 +116,8 @@ export default async function AuditPage({
             </>
           )}
         </p>
+
+        <AuditDashboard refusals={refusalPanel} stages={stagePanel} mix={mixPanel} />
 
         <nav className="mb-[17.6px] flex flex-wrap gap-[4.4px]">
           {LENSES.map((l) => (

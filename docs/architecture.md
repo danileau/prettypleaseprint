@@ -212,6 +212,35 @@ Swagger UI itself is copied out of `node_modules` at build time by
 would be unreachable on a NAS with no outbound internet, and would put a third
 party in the request path of an otherwise entirely first-party tool.
 
+## The audit page, and why it grew panels
+
+`/admin/audit` was always defended with the same argument: for one printer and
+five colleagues, a screen the owner glances at beats threshold alerts nobody
+tunes and everybody learns to ignore. That argument has a hole in it — it only
+works if somebody looks, and a reverse-chronological wall of rows is not
+something anyone opens twice.
+
+So three panels sit above the log, in `src/lib/dashboard.ts`. They answer the
+questions a person arrives with, none of which a log answers by being scrolled:
+**is anything being refused**, **where is work piling up**, and **what should I
+buy**.
+
+Two rules held while building them, and they are the interesting part:
+
+- **Aggregation only.** No column exists because of this page, and nothing is
+  recorded for it. Everything is derived from rows that were already there — the
+  stage medians, for instance, are reconstructed from the `from` field every
+  `story.status_changed` was already carrying. A dashboard that needs its own
+  schema has stopped being a view and started being a feature.
+- **Events from the trail, work from the tables.** The refusals panel reads
+  `AuditEvent`; the material, colour and size panel reads `Story`. The audit
+  trail is a log, not a warehouse, and querying it for things the domain tables
+  already know is how a log slowly turns into a schema nobody meant to design.
+
+No charting library. A CDN would be refused by `script-src 'self'`, would be
+unreachable on a NAS with no outbound internet, and it is four bars — the same
+reasoning that vendored Swagger UI rather than linking it.
+
 ## The feature-request track ('frr')
 
 A second backlog lives at `/frr`: anyone files a feature request, and the owner

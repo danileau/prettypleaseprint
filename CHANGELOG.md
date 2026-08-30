@@ -5,6 +5,39 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+### Added
+
+- **`/admin/audit` is a dashboard now, not just a log.** The page was built on
+  the argument that a screen somebody glances at beats alerts nobody tunes —
+  which only holds if somebody actually looks, and a wall of rows is not
+  something anyone opens twice. Three panels sit above the log, answering the
+  questions a person arrives with rather than the one a log answers:
+
+  - **Anything being refused** — a fortnight of `upload.rejected`,
+    `invite.rejected` and `file.refused`, by day and by verb, with the most
+    recent few and why. A run of `file.refused` from one account walking
+    consecutive story ids is the shape of somebody looking around, and it is
+    now the first thing on the page.
+  - **Where the work is sitting** — queue depth per stage, the longest wait in
+    each, and the median that stage has *historically* taken. Depth alone
+    cannot say whether three in *Requested* means slow triage or a busy
+    morning; a median beside it can. Reconstructed from the trail, which was
+    already recording the stage each move came `from`.
+  - **What gets asked for** — material and colour, which turn into a shopping
+    list, and file size in buckets, which is the panel that says whether the
+    250 MB cap and the 50 MB viewer threshold were set at the right numbers.
+
+  Pure aggregation: no new column, nothing recorded for it, and no charting
+  library — a CDN would be refused by `script-src 'self'` and it is four bars.
+
+### Fixed
+
+- **`file.refused` was not counted as a refusal.** The audit page tinted and
+  counted `invite.rejected` and `upload.rejected` but not the verb that fires
+  when an account asks for a model it may not see — which is the refusal most
+  worth noticing and the one least likely to be spotted by eye. The list now
+  lives in one place, so the count at the top, the tint in the table and the
+  new panel cannot drift apart.
 ### Fixed
 
 - **Uploads over 10 MB never worked, whatever the app said.** Next truncates a
