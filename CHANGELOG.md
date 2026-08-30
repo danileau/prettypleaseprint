@@ -7,28 +7,53 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Fixed
 
-- **Four `verify:frr` checks passed without exercising the rule they named.**
-  They posted a bare `FormData` at a page URL carrying nothing but an id. A
-  server action needs an action id in the body, so Next never routed those
-  requests — it logged *"Failed to find Server Action"* and nothing ran, which
-  meant the row survived whether or not the service guarded anything. "The
-  owner cannot withdraw somebody's request", "a started request cannot be
-  withdrawn", "an accepted request cannot be declined" and "another client
-  cannot comment on a request they cannot see" would all have passed against a
-  service with no ownership check, no status check and no scope check at all.
-  They asserted the framework, not the app — and `docs/feature-requests.md` and
-  the security audit's A01 verdict both cite them as evidence.
+- **Uploads over 10 MB never worked, whatever the app said.** Next truncates a
+  request body at 10 MB whenever middleware is in play, and this app runs
+  middleware on every route to mint the CSP nonce. So anything past 10 MB
+  arrived short, `request.formData()` threw on the truncated body, and the
+  person uploading was told *"That upload did not arrive intact"* — which reads
+  like a network fault, while the form and the API documentation both promised
+  50 MB. It survived the whole life of the app because every fixture in every
+  suite is a few hundred bytes, so nothing had ever sent a large file.
+  `middlewareClientMaxBodySize` is now kept in step with the app's own cap, and
+  `verify:upload` sends a 12 MB model on every run so the ceiling cannot come
+  back quietly.
 
-  The rules themselves are all present and correct; this was a hole in the
-  evidence, not in the app. Each check now replays the **real** form — scraped
-  from a page where it is rendered, then re-posted with a different id or a
-  different account — so it reaches the service and asserts the refusal it
-  gets back. Confirmed discriminating by removing the ownership guard and
-  watching the check fail. The 'frr' track was the exposed one because it has
-  no JSON API; the print track's equivalent rule is covered by `verify:api`
-  asserting a 403, through the same shared service. The two remaining bare-POST
-  checks are renamed to say what they actually demonstrate — that a stray POST
-  at a page URL is inert. `verify:frr` is 74.
+### Added
+
+- **Models up to 250 MB, from 50 MB.** Real work went past the old cap —
+  multi-object plates and scanned meshes — and the app's answer was "decimate
+  the mesh", which is asking somebody to damage their model to fit an arbitrary
+  number. The size, the multipart allowance, the zip-inflation guard and the
+  triangle ceiling now live together in `src/lib/upload-limits.ts`, because the
+  form, the validator, the OpenAPI document and the framework config all have
+  to agree — the upload form had grown its own copy of the limit, the extension
+  list *and* `formatBytes`, so raising the cap used to mean finding five places.
+
+  The cap is made safe by a **queue rather than a stream**: at most two uploads
+  are handled at once, a third waits rather than being refused, and only a long
+  queue gets a 503. `request.formData()` buffers the whole body before this
+  app's code runs, so overlap is what sets peak memory and bounding the overlap
+  is what bounds it. That is one of the two answers the security audit named;
+  the other, a streaming parse, needs the file to stop arriving as multipart
+  and is written up in `docs/architecture.md`.
+
+  Deployments behind a reverse proxy need `client_max_body_size` raised to
+  match — see `docs/deployment.md`. That had never bitten before, because
+  nothing large enough had ever reached the proxy.
+
+- **The viewer declines models it cannot rebuild, and explains itself.** A
+  250 MB cap makes it possible to store a model five times larger than a
+  browser can handle, and the viewer's first act is to download the whole
+  thing — so opening such a ticket would have pulled a quarter of a gigabyte
+  across the office and then frozen the tab. Past 50 MB (`VIEWER_MAX_BYTES`)
+  it now shows why instead: what the viewer downloads and rebuilds, why that
+  does not finish at this size, and the model drawn to scale against the limit
+  with the multiple spelled out, so the number means something. Decided from
+  the stored size **before any fetch is made**. Amber rather than red, because
+  nothing has failed — the file is whole, it prints, and Download and Open in
+  PrusaSlicer are both better suited to a mesh this size than a browser was
+  ever going to be.
 
 ### Changed
 

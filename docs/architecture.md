@@ -17,6 +17,20 @@ cool rim behind. It reads well on filament colours from near-black to bone
 white, which is the whole job. The ground and grid moved to this palette,
 because the print bed should look like the app it sits in.
 
+It declines anything over **50 MB** (`VIEWER_MAX_BYTES`) and says so, with the
+model's size drawn against that limit so "180 MB" means something. That is not
+a limit on what may be uploaded — the cap is 250 MB — it is a limit on what a
+laptop can be asked to rebuild: the viewer downloads the whole file and expands
+every triangle into typed arrays, and past that size the tab stops answering
+for long enough that people assume the app has broken.
+
+The decision is made from the stored `fileSize`, **before anything is fetched**.
+That ordering is the point: a check after the download would still have pulled
+a quarter of a gigabyte across the office and only then given up. The refusal
+is amber rather than red because nothing has failed — the file is whole, it
+prints, and Download and Open in PrusaSlicer are both built for meshes this
+size where a browser is not.
+
 Three details worth knowing:
 
 - **The bytes are proxied, not signed.** `/api/models/[id]` streams from
@@ -30,7 +44,7 @@ Three details worth knowing:
 - **three.js is imported dynamically**, inside the effect. It is fetched when
   someone opens a ticket and never on the board or the queue.
 
-The trade: every viewer load moves the whole file through Next. At 50 MB and a
+The trade: every viewer load moves the whole file through Next. At 250 MB and a
 handful of people that is fine. If this ever faces a wider audience, put
 storage behind the same reverse proxy, hand out a signed URL, and widen
 `connect-src` to that origin.
@@ -38,7 +52,7 @@ storage behind the same reverse proxy, hand out a signed URL, and widen
 ## Uploads
 
 `POST /api/upload` is a route handler rather than a server action, so the
-browser can watch a real XHR progress bar — a 50 MB model over office wifi is
+browser can watch a real XHR progress bar — a large model over office wifi is
 too long for a spinner.
 
 Nothing is written to storage until the bytes have been inspected, and no
@@ -67,6 +81,49 @@ attribute. Nothing is inferred beyond that — see the estimate decision above.
 `npm run verify:models` covers all of this with 29 checks, including a PDF and
 an ELF binary renamed `.stl`, an STL that lies about its triangle count, a
 traversal path inside a 3MF, and a zip bomb.
+
+### How big a model may be, and the limit that was not real
+
+The cap is **250 MB**, raised from the handoff's 50 MB because real work went
+past it — multi-object plates and scanned meshes — and the app's answer was
+"decimate the mesh", which is asking somebody to damage their model to fit an
+arbitrary number.
+
+Raising it turned up something worse: **the 50 MB was never real either.** Next
+truncates a request body at 10 MB whenever middleware is in play, and this app
+runs middleware on every route to mint the CSP nonce. Anything past 10 MB
+arrived short, `request.formData()` threw on the truncated body, and the
+uploader was told *"That upload did not arrive intact"* — which reads like a
+network fault and sends people to look in the wrong place. It survived the
+whole life of the app because every fixture in every suite is a few hundred
+bytes; nothing had ever uploaded a big file. `verify:upload` now sends a 12 MB
+model on every run, which is the cheapest thing that would have caught it.
+
+Three numbers, in `src/lib/upload-limits.ts`, deliberately in one place because
+the form, the validator, the OpenAPI document and the framework config all need
+to agree:
+
+| | |
+| --- | --- |
+| `MAX_UPLOAD_BYTES` | 250 MB — the file itself |
+| `MAX_REQUEST_BYTES` | `× 1.2` — the whole multipart body, and the transport ceiling. It has to be the more generous of the two, or a file just over the cap gets truncated into a parse error instead of an honest "too large" |
+| `MAX_INFLATED_BYTES` | `× 3` — what a 3MF may inflate to, scaled off the cap so raising one cannot leave the other behind |
+
+### Why the memory is bounded by a queue rather than a stream
+
+`request.formData()` buffers the entire body before a line of this app's code
+runs, so peak memory is decided by how many large uploads overlap — not by
+anything the validator does. The security audit named the two answers: a
+streaming parse, or a size-based queue. This is the queue: at most two uploads
+are handled at once (`MAX_CONCURRENT_UPLOADS`), a third waits rather than being
+refused, and only a long queue gets a `503`.
+
+The streaming parse is the better answer and it is not reachable from here. It
+needs the file to stop arriving as multipart at all — a raw body with the wish
+in a header, or a two-phase upload — because by the time a route handler can
+see the request, the framework has already buffered it. That is a protocol
+change touching the form, the API, the OpenAPI document and two suites, and it
+is worth doing the day the queue is the thing that hurts.
 
 ## Decisions taken against the handoff
 
