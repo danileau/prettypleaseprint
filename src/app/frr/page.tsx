@@ -61,12 +61,25 @@ export default async function FeatureBoardPage({
               stages a print goes through. {owner} sees each one and moves it along.
             </p>
           </div>
-          <Link
-            href="/frr/new"
-            className="stamp cursor-pointer rounded-chip border-[3px] border-ink bg-cherry-dk px-[22px] py-[11px] text-[15px] font-bold text-cream hover:bg-cherry"
-          >
-            + New request
-          </Link>
+          <div className="flex flex-wrap items-center gap-[8.8px]">
+            {/* The owner's triage view. The nav points at this board rather
+                than at the queue, so without this the queue would be reachable
+                only by typing the URL. */}
+            {isAdmin && (
+              <Link
+                href="/frr/queue"
+                className="stamp cursor-pointer rounded-chip border-[3px] border-ink bg-porcelain px-[18px] py-[11px] text-[15px] font-bold text-ink hover:bg-sun"
+              >
+                Triage
+              </Link>
+            )}
+            <Link
+              href="/frr/new"
+              className="stamp cursor-pointer rounded-chip border-[3px] border-ink bg-cherry-dk px-[22px] py-[11px] text-[15px] font-bold text-cream hover:bg-cherry"
+            >
+              + New request
+            </Link>
+          </div>
         </div>
 
         <FeatureFilterBar action="/frr" filter={filter} />
