@@ -77,6 +77,22 @@ export const MAX_QUEUED_UPLOADS = 6;
  */
 export const MAX_REQUEST_BYTES = Math.ceil(MAX_UPLOAD_BYTES * 1.2);
 
+/**
+ * The largest model the in-browser viewer will attempt.
+ *
+ * Not a limit on what may be uploaded — it is a limit on what a laptop can be
+ * asked to rebuild. The viewer downloads the whole file and hands it to a
+ * loader that expands it into typed arrays: a binary STL is about a million
+ * triangles at this size, and roughly 36 bytes of buffer per triangle once
+ * parsed. Past here the tab stops responding for long enough that people
+ * assume the app is broken, which is a worse outcome than not previewing.
+ *
+ * It is the old upload cap, which is a coincidence worth naming: 50 MB was
+ * always about what a browser could cope with, even when it was written down
+ * as what the server would accept.
+ */
+export const VIEWER_MAX_BYTES = 50 * 1024 * 1024;
+
 export const ACCEPTED_EXTENSIONS = [".stl", ".3mf"] as const;
 
 /** Bytes as a person would say them. Shared so the form and the API agree. */

@@ -274,6 +274,42 @@ async function main() {
         bigStory?.fileSize === chunky.length,
         `stored ${bigStory?.fileSize} of ${chunky.length} bytes`);
 
+  /*
+   * The viewer declines anything past what a browser can rebuild, and says so.
+   *
+   * Raising the upload cap to 250 MB made it possible to store a model five
+   * times larger than the viewer can cope with, and the viewer's first act is
+   * to download the whole thing — so without this guard, opening a big ticket
+   * pulled a quarter of a gigabyte across the office and then froze the tab.
+   *
+   * `fileSize` is nudged past the threshold rather than a 60 MB file being
+   * uploaded for real: the guard reads the recorded size and nothing else, and
+   * a suite that spent a minute generating geometry to prove it would not be
+   * run. Asserted against the served HTML, because the decision is made during
+   * render and a hydrated DOM read can false-negative.
+   */
+  const viewerStory = await db.story.findFirst({ where: { filename: "twelve-megabytes.stl" } });
+  await db.story.update({
+    where: { id: viewerStory!.id },
+    data: { fileSize: 180 * 1024 * 1024 },
+  });
+  const guarded = await (await aylaB.go(`${APP}/story/${viewerStory!.id}`)).text();
+  check("an oversized model is not offered to the viewer",
+        guarded.includes("too big to spin in a browser"),
+        "the viewer would have tried to download and rebuild it");
+  check("and the page says how far past the line it is",
+        guarded.includes("180.0 MB") && guarded.includes("3.6"),
+        "no comparison against what a browser handles");
+  // Put the real size back, and the same ticket previews again — so the check
+  // above is about the threshold and not about that particular story.
+  await db.story.update({
+    where: { id: viewerStory!.id },
+    data: { fileSize: chunky.length },
+  });
+  const unguarded = await (await aylaB.go(`${APP}/story/${viewerStory!.id}`)).text();
+  check("while the same model under the threshold still previews",
+        !unguarded.includes("too big to spin in a browser"));
+
   // ------------------------------------------------------------------
   section("bad files are refused, and leave nothing behind");
 

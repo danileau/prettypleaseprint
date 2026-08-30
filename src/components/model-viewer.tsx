@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type * as THREE from "three";
 
+import { VIEWER_MAX_BYTES, formatBytes } from "@/lib/upload-limits";
+
 /**
  * The real geometry, rotatable. Handoff §4.
  *
@@ -30,17 +32,32 @@ export function ModelViewer({
   filename,
   colorHex,
   dims,
+  fileSize,
 }: {
   storyId: number;
   filename: string;
   colorHex: string;
   /** Used for the text alternative, so the canvas is not a dead end. */
   dims: string | null;
+  /** Measured on upload. Decides whether the preview is attempted at all. */
+  fileSize: number;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
 
+  /*
+   * Decided from the stored size, before anything is fetched.
+   *
+   * The order matters: the viewer's first act is to download the entire model
+   * through the app, so a check that ran after the fetch would still have
+   * pulled a quarter of a gigabyte across the office and only then given up.
+   * Uploads may now be five times what a browser can rebuild, so this is the
+   * guard on a hole the raised cap opened.
+   */
+  const tooLarge = fileSize > VIEWER_MAX_BYTES;
+
   useEffect(() => {
+    if (tooLarge) return;
     const el = host.current;
     if (!el) return;
 
@@ -264,7 +281,11 @@ export function ModelViewer({
       cleanupInput?.();
       renderer?.dispose?.();
     };
-  }, [storyId, filename, colorHex]);
+  }, [storyId, filename, colorHex, tooLarge]);
+
+  if (tooLarge) {
+    return <TooLargeToPreview fileSize={fileSize} />;
+  }
 
   return (
     <div className="relative overflow-hidden rounded-panel border-[3px] border-ink bg-cream-2 shadow-stamp-lg">
@@ -302,6 +323,79 @@ export function ModelViewer({
           drag to rotate · {filename}
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * What the viewer says instead of hanging.
+ *
+ * Two jobs, and the second is the one usually skipped. It has to say *why*
+ * nothing is loading — otherwise a blank panel on a perfectly good file reads
+ * as a broken app — and it has to give the size some meaning. "180 MB" is a
+ * number; "three and a half times what a browser can rotate" is an answer, and
+ * the bars make that true at a glance rather than on arithmetic.
+ *
+ * Amber rather than red: nothing has failed. The file is intact, it is stored,
+ * it will print. Only the preview is declined, and the two things that actually
+ * get the model onto a plate are both still there.
+ */
+function TooLargeToPreview({ fileSize }: { fileSize: number }) {
+  // The larger bar is the full width; the limit is drawn to scale against it.
+  const limitWidth = Math.max(4, (VIEWER_MAX_BYTES / fileSize) * 100);
+  const times = fileSize / VIEWER_MAX_BYTES;
+
+  return (
+    <div className="rounded-panel border-[3px] border-ink bg-sun-wash p-[22px] shadow-stamp-lg">
+      <p className="m-0 font-mono text-[11.5px] font-bold uppercase tracking-[0.12em] text-sun-dk">
+        Preview skipped
+      </p>
+      <h3 className="m-0 mt-[6px] font-display text-[21px] leading-[1.15] text-ink">
+        This one is too big to spin in a browser
+      </h3>
+      <p className="m-0 mt-[8px] max-w-[46ch] text-[14.5px] leading-[1.5] text-ink-2">
+        The viewer downloads the whole model and rebuilds every triangle of it
+        on this machine. At {formatBytes(fileSize)} that is a long download and
+        a tab that stops answering, so it is not started.
+      </p>
+
+      {/* The comparison. Drawn to scale, because the point is the gap. */}
+      <div className="mt-[17.6px] flex flex-col gap-[8px]">
+        <div>
+          <div className="mb-[3px] flex items-baseline justify-between gap-[8px]">
+            <span className="font-mono text-[11px] font-bold uppercase tracking-[0.08em] text-ink-2">
+              A browser handles
+            </span>
+            <span className="font-mono text-[11.5px] font-bold text-ink">
+              {formatBytes(VIEWER_MAX_BYTES)}
+            </span>
+          </div>
+          <div aria-hidden className="h-[16px] overflow-hidden rounded-chip border-2 border-ink bg-cream">
+            <div className="h-full bg-aqua" style={{ width: `${limitWidth}%` }} />
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-[3px] flex items-baseline justify-between gap-[8px]">
+            <span className="font-mono text-[11px] font-bold uppercase tracking-[0.08em] text-ink-2">
+              This model
+            </span>
+            <span className="font-mono text-[11.5px] font-bold text-cherry-dk">
+              {formatBytes(fileSize)} · {times.toFixed(1)}&times;
+            </span>
+          </div>
+          <div aria-hidden className="h-[16px] overflow-hidden rounded-chip border-2 border-ink bg-cream">
+            <div className="h-full w-full bg-cherry" />
+          </div>
+        </div>
+      </div>
+
+      <p className="m-0 mt-[17.6px] border-t-2 border-dashed border-ink-3 pt-[11px] text-[13.5px] leading-[1.5] text-ink-2">
+        Nothing is wrong with the file. It is stored whole and it prints exactly
+        as it would have. <strong>Download</strong> and{" "}
+        <strong>Open in PrusaSlicer</strong> both work on it — a slicer is built
+        for meshes this size and a browser is not.
+      </p>
     </div>
   );
 }

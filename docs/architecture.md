@@ -17,6 +17,20 @@ cool rim behind. It reads well on filament colours from near-black to bone
 white, which is the whole job. The ground and grid moved to this palette,
 because the print bed should look like the app it sits in.
 
+It declines anything over **50 MB** (`VIEWER_MAX_BYTES`) and says so, with the
+model's size drawn against that limit so "180 MB" means something. That is not
+a limit on what may be uploaded — the cap is 250 MB — it is a limit on what a
+laptop can be asked to rebuild: the viewer downloads the whole file and expands
+every triangle into typed arrays, and past that size the tab stops answering
+for long enough that people assume the app has broken.
+
+The decision is made from the stored `fileSize`, **before anything is fetched**.
+That ordering is the point: a check after the download would still have pulled
+a quarter of a gigabyte across the office and only then given up. The refusal
+is amber rather than red because nothing has failed — the file is whole, it
+prints, and Download and Open in PrusaSlicer are both built for meshes this
+size where a browser is not.
+
 Three details worth knowing:
 
 - **The bytes are proxied, not signed.** `/api/models/[id]` streams from

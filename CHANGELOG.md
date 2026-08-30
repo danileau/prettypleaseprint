@@ -42,6 +42,19 @@ Notable changes. Every entry names a released version; deployments pin
   match — see `docs/deployment.md`. That had never bitten before, because
   nothing large enough had ever reached the proxy.
 
+- **The viewer declines models it cannot rebuild, and explains itself.** A
+  250 MB cap makes it possible to store a model five times larger than a
+  browser can handle, and the viewer's first act is to download the whole
+  thing — so opening such a ticket would have pulled a quarter of a gigabyte
+  across the office and then frozen the tab. Past 50 MB (`VIEWER_MAX_BYTES`)
+  it now shows why instead: what the viewer downloads and rebuilds, why that
+  does not finish at this size, and the model drawn to scale against the limit
+  with the multiple spelled out, so the number means something. Decided from
+  the stored size **before any fetch is made**. Amber rather than red, because
+  nothing has failed — the file is whole, it prints, and Download and Open in
+  PrusaSlicer are both better suited to a mesh this size than a browser was
+  ever going to be.
+
 ### Changed
 
 - **"Feature requests" in the nav, and it goes to the board.** The owner's nav
