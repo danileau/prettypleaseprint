@@ -15,6 +15,33 @@ Notable changes. Every entry names a released version; deployments pin
   off it). Triage did not become unreachable: `/frr` grows a **Triage** button
   for the owner, since nothing else in the app linked to it, and the nav item
   stays lit while you are there.
+### Fixed
+
+- **"Open in PrusaSlicer" no longer depends on which branch is checked out.**
+  The `.desktop` entry named `scripts/prusa-open.sh` where it sits in the git
+  working tree, so the button quietly broke whenever that path stopped
+  resolving to the current handler — check out anything cut before the handler
+  landed and the file is gone, the click does nothing, and nothing says why.
+  It bit twice. The installer now copies the helper to `~/.local/bin/ppp-open`
+  and points the entry at that, which severs the dependency for one `cp`. The
+  trade is that the copy does not update itself: re-run the installer after a
+  `git pull`, which is safe at any time and leaves an existing config alone.
+  Existing setups are fixed by re-running it.
+- **The last three controls that looked like text.** After the withdraw button
+  on a ticket was made visible, three siblings were left drawn the old way —
+  a transparent border and muted grey, or a plain underline — so they read as
+  captions rather than controls. All three are now buttons in the shapes the
+  app already uses, and each carries the weight of what it does: the
+  feature-request **Withdraw** is now identical to the print one it shares a
+  label with (an underlined link before, which made the two backlogs look
+  different for no reason); **Forgotten password?** on the guest list is
+  neutral, because it mints a recovery link and takes nothing away, and the
+  list draws one per member; **Revoke access?** carries the same cherry as the
+  other destructive controls, while its **Suspended** state takes the amber the
+  tokens reserve for warnings — it reports a state *and* is the way back, and
+  red would read as a threat rather than a flag. Confirmation steps and wording
+  are unchanged throughout: these actions should be hard to fire by accident,
+  not hard to find.
 
 ### Added
 

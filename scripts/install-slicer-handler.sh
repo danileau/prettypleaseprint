@@ -8,8 +8,8 @@
 #
 # What it does, all under your own home directory — nothing system-wide, no
 # sudo:
-#   1. writes a .desktop entry into ~/.local/share/applications that points at
-#      this checkout's prusa-open.sh by absolute path;
+#   1. copies prusa-open.sh to ~/.local/bin/ppp-open, and writes a .desktop
+#      entry into ~/.local/share/applications pointing at *that copy*;
 #   2. makes it the default handler for the x-scheme-handler/ppp MIME type;
 #   3. creates ~/.config/ppp/slicer.conf (mode 600) for you to fill in, if it
 #      is not already there.
@@ -27,9 +27,27 @@ case "$(uname -s)" in
 esac
 
 here="$(cd "$(dirname "$0")" && pwd)"
-handler="$here/prusa-open.sh"
-[ -f "$handler" ] || { echo "prusa-open.sh is not beside this installer ($handler)" >&2; exit 1; }
+source_handler="$here/prusa-open.sh"
+[ -f "$source_handler" ] || { echo "prusa-open.sh is not beside this installer ($source_handler)" >&2; exit 1; }
+
+# Install a COPY, and point the .desktop at that rather than at the checkout.
+#
+# The entry used to name this script where it sits in the working tree, which
+# quietly made the button depend on which branch happened to be checked out:
+# switch to anything cut before the handler landed and the file is gone, the
+# click does nothing, and nothing anywhere says why. That is not hypothetical —
+# it has bitten twice, most recently when the file was there but was a different
+# version than the deployed app expected.
+#
+# A copy costs one `cp` and severs the dependency entirely. It is overwritten on
+# every run, so re-running after a `git pull` is how you update the helper — and
+# the closing message says so.
+bin_dir="$HOME/.local/bin"
+handler="$bin_dir/ppp-open"
+mkdir -p "$bin_dir"
+cp "$source_handler" "$handler"
 chmod +x "$handler"
+echo "installed $handler"
 
 apps_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 desktop="$apps_dir/ppp-slicer.desktop"
@@ -111,6 +129,10 @@ fi
 echo
 echo "Done. Set PPP_BASE in $conf, then click 'Open in PrusaSlicer' on any"
 echo "ticket. No token to paste — the link carries its own."
+echo
+echo "The helper is a copy at $handler, so the button does not care which"
+echo "branch this checkout is on. After a git pull, re-run this installer to"
+echo "update it."
 if [ -f "$conf" ] && grep -q '^[[:space:]]*PPP_TOKEN=' "$conf" 2>/dev/null; then
   echo
   echo "NOTE: $conf still sets PPP_TOKEN. That was the old way in and it is a"

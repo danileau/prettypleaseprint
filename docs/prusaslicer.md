@@ -50,9 +50,9 @@ of this repo:
 ./scripts/install-slicer-handler.sh
 ```
 
-That registers `ppp://` links to open with
-[`scripts/prusa-open.sh`](../scripts/prusa-open.sh), and creates
-`~/.config/ppp/slicer.conf` (mode `600`) for you to fill in:
+That copies [`scripts/prusa-open.sh`](../scripts/prusa-open.sh) to
+`~/.local/bin/ppp-open`, registers `ppp://` links to open with **that copy**,
+and creates `~/.config/ppp/slicer.conf` for you to fill in:
 
 ```sh
 PPP_BASE="https://print.example"      # your instance, no trailing slash
@@ -62,6 +62,27 @@ PPP_BASE="https://print.example"      # your instance, no trailing slash
 
 That is the whole config: **there is no token to paste.** The clicked link
 carries its own credential.
+
+### Why a copy, and what to do after a `git pull`
+
+The handler is installed as a **copy** at `~/.local/bin/ppp-open`, and the
+`.desktop` entry points there rather than into this checkout.
+
+It used to point at `scripts/prusa-open.sh` where it sits in the working tree,
+which quietly made the button depend on which branch was checked out. Check out
+anything cut before the handler landed and the file is simply gone: the click
+does nothing, and nothing anywhere says why. That is the worst failure mode this
+whole helper is written to avoid, and it bit twice before the copy went in.
+
+The trade is that the copy does not update itself. **After pulling changes,
+re-run the installer** — it overwrites the copy, and that is the only step:
+
+```bash
+git pull && ./scripts/install-slicer-handler.sh
+```
+
+Running it again is safe at any time. It leaves an existing `slicer.conf`
+alone.
 
 ### Finding the slicer
 
@@ -148,6 +169,7 @@ indistinguishable from one that was never wired up. Common lines:
 | It says | Means |
 | --- | --- |
 | `no config at …` | The installer has not run, or `$PPP_SLICER_CONF` points elsewhere. |
+| nothing at all happens, no log line | The handler is not where the `.desktop` says. If you set this up before the copy landed, it still points into the checkout — re-run the installer. |
 | `that link has expired (HTTP 401)` | Links last half an hour. Open the ticket again and click the button. |
 | `the PPP_TOKEN in … is expired` | You are on the old config-token path. Delete the line and click the button in the app — see *If you set this up before*. |
 | `that link carries no credential and … sets no PPP_TOKEN` | An old bookmark, on a config with no token. Open the ticket in the app and click there. |
