@@ -34,6 +34,18 @@ Notable changes. Every entry names a released version; deployments pin
   its holder has lost access to or be edited to fetch a different one. Old
   installs keep working (`PPP_TOKEN` is still honoured when a link carries no
   `t`) but the line can now be deleted. Six new probes; the suite is 103.
+### Fixed
+
+- **Nobody could find how to withdraw a request.** The control on a ticket was
+  drawn with a transparent border and muted grey text, growing an outline only
+  on hover — so at rest it read as a caption rather than a button, and it sat
+  directly above *Print again*, which is a full enamel button. Next to its own
+  neighbour it looked like that button's label. It is now a button in the same
+  shape as *Decline* and *Flag*, tinted cherry-wash with cherry-dark text and
+  going solid red on hover, which keeps the two steps legible as an escalation:
+  an outlined red button opens the drawer, a filled red one commits. The
+  confirmation step and its wording are unchanged — a destructive action should
+  be hard to fire by accident, not hard to locate.
 
 ### Changed
 
