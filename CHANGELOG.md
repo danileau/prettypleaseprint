@@ -30,6 +30,30 @@ Notable changes. Every entry names a released version; deployments pin
   Pure aggregation: no new column, nothing recorded for it, and no charting
   library — a CDN would be refused by `script-src 'self'` and it is four bars.
 
+- **A Cloudflare Tunnel overlay, for a deployment whose public address is not
+  its own to keep.** `docker-compose.tunnel.yml` runs a `cloudflared` connector
+  beside the app, and is used *instead of* `docker-compose.proxy.yml`. The
+  origin dials outward, so there is no port to forward, no `A` record to keep
+  current, and an address the ISP can take back stops being able to take the
+  site down. That is the failure it was written for: a DSL-to-cable migration
+  handed the old address back, the record went on pointing at an IP that no
+  longer routed, and Cloudflare answered 522 while the app stayed healthy, its
+  certificate valid and its own logs entirely quiet — because from the app's
+  side nothing was wrong.
+
+  It publishes no host port, which is the condition that keeps
+  `TRUST_PROXY_HEADERS=cloudflare` honest rather than merely set, and it
+  deliberately declares no `environment:` of its own: a service-level value
+  beats `env_file:`, so an overlay that hard-codes one overrules `.env.docker`
+  in silence. That is the trap `docker-compose.proxy.yml` already carries a
+  paragraph about, and repeating it here would have been the same bug twice.
+
+  Documented beside the Nginx Proxy Manager route, along with the limit
+  Cloudflare imposes either way: its request-body cap is 100 MB on Free and
+  Pro against this app's own 250 MB, and over it the edge answers 413 before
+  the app is reached at all. Any orange-clouded deployment already has that
+  ceiling, tunnel or not.
+
 - **Models up to 250 MB, from 50 MB.** Real work went past the old cap —
   multi-object plates and scanned meshes — and the app's answer was "decimate
   the mesh", which is asking somebody to damage their model to fit an arbitrary

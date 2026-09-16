@@ -165,6 +165,7 @@ with commentary is [`.env.docker.example`](.env.docker.example).
 | `HIBP_DISABLED` | | `true` disables the breach check. Only for a host with no outbound internet — it fails closed, so without it nobody could register. |
 | `SOURCE_URL` | | Where this instance's source lives, shown in the footer. **Change it if you modify the code** — see [Licence](#licence). Defaults to the upstream repository. |
 | `PPP_REGISTRY` / `PPP_TAG` | | Which published image to run. Pin `PPP_TAG` to a release (`v0.1.0`) or a commit SHA; either is also how you roll back. |
+| `CF_TUNNEL_TOKEN` | | Connector token for `docker-compose.tunnel.yml`, from Cloudflare Zero Trust. A credential: anything holding it can serve the hostnames routed to that tunnel. See [Deploying behind a Cloudflare Tunnel](docs/deployment.md#deploying-behind-a-cloudflare-tunnel). |
 
 ## Deploying
 
@@ -175,6 +176,12 @@ The short version: pull a published image, put a reverse proxy in front, point
 docker compose --env-file .env.docker \
   -f docker-compose.prod.yml -f docker-compose.proxy.yml up -d
 ```
+
+On a connection whose public address is not yours to keep — a dynamic one, or
+none at all — `docker-compose.tunnel.yml` replaces the reverse proxy with a
+Cloudflare Tunnel connector that dials *outward*, so there is no port to
+forward and no `A` record to keep current. See
+[Deploying behind a Cloudflare Tunnel](docs/deployment.md#deploying-behind-a-cloudflare-tunnel).
 
 `docker-compose.prod.yml` **consumes** images rather than building them, so a
 deployment needs no source tree and no toolchain, and what runs there is

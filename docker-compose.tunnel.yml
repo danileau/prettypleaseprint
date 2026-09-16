@@ -1,0 +1,88 @@
+# Cloudflare Tunnel — the overlay for a deployment with no inbound path at all.
+#
+#   docker compose --env-file .env.docker \
+#     -f docker-compose.prod.yml -f docker-compose.tunnel.yml up -d
+#
+# Use this INSTEAD OF docker-compose.proxy.yml, not alongside it. That file
+# puts the app on a network so a reverse proxy can reach it; this one dispenses
+# with the reverse proxy for this hostname entirely. Running both would leave
+# two ways in, and the second one is the one you forget about.
+#
+# The difference that matters is direction. A proxy deployment waits to be
+# connected to: it needs a public address, an A record pointing at it, and
+# ports 80/443 forwarded to the host. A tunnel deployment connects *outward* —
+# `cloudflared` opens the connection to Cloudflare and requests arrive back
+# down it. Nothing has to be reachable from the internet, so:
+#
+#   - the WAN address stops mattering, and a dynamic one stops being a
+#     liability. This is not hypothetical: the deployment this file was
+#     written for was migrated from DSL to cable, the ISP handed back the old
+#     address, and the A record went on pointing at an IP that no longer
+#     routed. Cloudflare answered 522 for as long as it took to notice, with
+#     the app healthy and serving correctly the whole time.
+#   - this app no longer needs a port forward or a Let's Encrypt certificate.
+#     Cloudflare terminates TLS at the edge and the tunnel itself is encrypted.
+#     But only remove the router's forwards, the proxy or a wildcard
+#     certificate once nothing ELSE on the host is served through them: every
+#     hostname still proxied the old way goes down with a 522 the moment they
+#     go, while this one stays up on its tunnel. See docs/deployment.md.
+#   - PASSKEY_RP_ID and APP_URL do not change, because the hostname does not.
+#     Passkeys are bound to the RP ID permanently, so a migration that altered
+#     it would silently invalidate every one already registered.
+#
+# WHERE THE ROUTING LIVES. This runs a *remotely-managed* tunnel: the token
+# identifies the tunnel and the ingress rules live in the Cloudflare dashboard,
+# not in a config file here. Zero Trust → Networks → Tunnels → your tunnel →
+# Public Hostnames, one entry:
+#
+#     ppp.example.org  →  HTTP  →  ppp-app:3000
+#
+# `ppp-app` is the container name on this compose network — not an IP, and not
+# localhost, which inside the connector's own container is the connector. Add
+# the hostname there and Cloudflare writes the proxied CNAME for you; the old
+# A record should then be deleted rather than left behind as a second answer.
+#
+# THIS FILE PUBLISHES NO HOST PORTS, and that is load-bearing rather than
+# tidy. TRUST_PROXY_HEADERS=cloudflare tells the app to believe
+# CF-Connecting-IP, which is written at Cloudflare's edge and cannot be forged
+# through it — but only for requests that actually arrive through Cloudflare.
+# Leave a host port published and anyone on the LAN can send that header
+# themselves, and the audit trail fills with addresses of their choosing. The
+# setting is honest exactly as long as this is the only way in. See
+# docs/security-audit.md.
+#
+# It deliberately does NOT set TRUST_PROXY_HEADERS itself, for the reason
+# docker-compose.proxy.yml learned the hard way: a service-level
+# `environment:` beats `env_file:`, so an overlay that hard-codes one leaves
+# you editing .env.docker with no effect. Say it once, in .env.docker:
+#
+#     TRUST_PROXY_HEADERS=cloudflare
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:${CF_TUNNEL_TAG:-latest}
+    container_name: ppp-cloudflared
+    restart: unless-stopped
+    # --no-autoupdate because the binary replacing itself inside a container is
+    # a change nothing here recorded and a restart would undo. Update the way
+    # everything else here updates: pull a new image, deliberately.
+    command: tunnel --no-autoupdate run
+    # Passed as an environment variable, which is how every other secret in
+    # this stack reaches its container — and which does mean it is readable in
+    # `docker inspect ppp-cloudflared`. If that is not a trade you want on a
+    # shared host, cloudflared also reads TUNNEL_TOKEN_FILE: point it at a
+    # mounted file and drop this line. Rotating in the dashboard invalidates
+    # the old value either way, which is the recovery worth knowing.
+    environment:
+      TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN:?set CF_TUNNEL_TOKEN, from Zero Trust > Networks > Tunnels}
+    # Wait for the app to pass its own healthcheck before the connector
+    # registers. Without this a restart advertises the tunnel as up while the
+    # app is still starting, and Cloudflare serves 502 instead of holding the
+    # request.
+    depends_on:
+      app:
+        condition: service_healthy
+    # No healthcheck: the published image is distroless and has neither a shell
+    # nor curl, so the usual in-container probe cannot run. `docker logs
+    # ppp-cloudflared` and the tunnel's own health in the Zero Trust dashboard
+    # are the checks — the dashboard is authoritative anyway, since it knows
+    # whether the edge can see this connector, which nothing on the host can.

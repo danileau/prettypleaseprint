@@ -20,7 +20,7 @@ docker compose --env-file .env.docker \
 App on :3000, Mailpit on :8025 — every invitation and sign-in link lands there,
 so the whole flow is clickable without a mail server.
 
-Five compose files, each with one job:
+Six compose files, each with one job:
 
 | File | Job |
 | --- | --- |
@@ -29,6 +29,7 @@ Five compose files, each with one job:
 | `docker-compose.build.yml` | puts the build context back, for local work and CI |
 | `docker-compose.test.yml` | publishes the ports a local run and the host-side suites need |
 | `docker-compose.proxy.yml` | the proxy network, for any deployment behind a reverse proxy |
+| `docker-compose.tunnel.yml` | a Cloudflare Tunnel connector, for a deployment with no inbound path at all |
 
 `prod` consumes rather than builds on purpose: a deployment then needs no
 source tree and no toolchain, and what runs there is byte-for-byte what CI
@@ -321,3 +322,159 @@ files). A ZFS snapshot of the dataset captures both. `.env.docker` holds the
 secrets and is not in the repo — keep it somewhere you will still have it after
 a rebuild, because losing `BETTER_AUTH_SECRET` invalidates every session and
 losing `DB_PASSWORD` locks you out of the database.
+
+## Deploying behind a Cloudflare Tunnel
+
+The alternative to the section above, and the better answer on a connection
+whose public address is not yours to keep. `docker-compose.tunnel.yml` runs a
+`cloudflared` connector beside the app:
+
+```bash
+docker compose --env-file .env.docker \
+  -f docker-compose.prod.yml -f docker-compose.tunnel.yml up -d
+```
+
+Use it **instead of** `docker-compose.proxy.yml`, not alongside it. Running
+both leaves two ways in, and the second one is the one nobody remembers.
+
+The difference is direction. A proxy deployment waits to be connected to, so it
+needs a public address, an `A` record pointing at it, and 80/443 forwarded to
+the host — three things that must all stay true. A tunnel deployment connects
+outward: `cloudflared` opens the connection to Cloudflare and requests arrive
+back down it. Nothing needs to be reachable from the internet.
+
+That removes a whole class of outage. The deployment this file was written for
+was migrated by its ISP from DSL to cable; the old address was handed back, the
+`A` record went on pointing at an IP that no longer routed, and Cloudflare
+answered **522** for as long as it took someone to notice — with the app
+healthy, the certificate valid and the origin serving correctly the entire
+time. Nothing in the app's own logs said anything was wrong, because from the
+app's point of view nothing was.
+
+It also retires this hostname's origin certificate. Cloudflare terminates TLS
+at the edge and the tunnel itself is encrypted, so the app needs no Let's
+Encrypt certificate at all — one fewer thing with an expiry date. (Only *its*
+certificate: a wildcard that other hostnames still use stays; see below.)
+
+`APP_URL` and `PASSKEY_RP_ID` do not change, because the hostname does not.
+That matters more than it looks: passkeys are bound to the RP ID permanently,
+so a migration that altered it would silently invalidate every passkey already
+registered.
+
+### Setting it up
+
+**In the Cloudflare dashboard**, Zero Trust → Networks → Tunnels → *Create a
+tunnel* → *Cloudflared*. Name it, then copy the connector token it shows.
+
+**In `.env.docker`:**
+
+```bash
+CF_TUNNEL_TOKEN=eyJhIjoi...        # the connector token, a credential
+TRUST_PROXY_HEADERS=cloudflare     # CF-Connecting-IP; see below
+```
+
+**Back in the dashboard**, on that tunnel, add one Public Hostname:
+
+| | |
+| --- | --- |
+| Subdomain / Domain | `ppp` · `example.org` |
+| Type | `HTTP` |
+| URL | `ppp-app:3000` — the container name, not an IP, and not `localhost` |
+
+`localhost` there would be the connector's own container, which is the mistake
+this table exists to prevent. Adding the hostname writes the proxied `CNAME`
+for you; **delete the old `A` record afterwards** rather than leaving it as a
+second, wrong answer.
+
+Then bring the stack up with the overlay, and once it serves, dismantle **this
+app's** old way in: delete its Proxy Host in Nginx Proxy Manager, and stop
+passing `docker-compose.proxy.yml`, so `ppp-app` is no longer on the proxy
+network. Until you do, the app is still directly reachable — and
+`TRUST_PROXY_HEADERS=cloudflare` is only honest while it is not.
+
+**Stop there if anything else is served from the same host.** The 80/443 port
+forwards on the router, the proxy itself and a wildcard certificate are
+usually shared: every other hostname still proxied the old way arrives through
+them. Remove them and those sites go down with **522** — Cloudflare cannot
+reach an origin that no longer answers — while ppp, on its tunnel, stays up and
+makes the cause harder to see. The forwards and the certificate can only go
+once the *last* hostname behind them has moved to a tunnel too; adding each one
+as another Public Hostname on a tunnel is how they get there.
+
+### Cloudflare refuses the upload before the app sees it
+
+The app accepts models up to **250 MB**. Cloudflare's proxy caps request bodies
+well below that, and the cap is per plan:
+
+| plan | maximum request body |
+| --- | --- |
+| Free | 100 MB |
+| Pro | 100 MB |
+| Business | 200 MB |
+| Enterprise | 500 MB by default |
+
+Over the limit, Cloudflare answers **413** at the edge. The request never
+reaches the tunnel, so the app logs nothing — the same silent shape as the
+Nginx `client_max_body_size` problem above, one hop further out.
+
+This is **not** something the tunnel introduces: it applies to any
+orange-clouded hostname, so a deployment already proxied by Cloudflare has the
+cap today. There is no setting below Enterprise that raises it. On a Free plan
+the effective ceiling is 100 MB, not 250 MB, and `MAX_REQUEST_BYTES` cannot
+change that — so either say 100 MB to the people uploading, or move the upload
+path off the proxied hostname.
+
+### How it fails, and where to look
+
+A tunnel fails differently from a port forward, which is worth knowing before
+you are reading an error at speed:
+
+| symptom | meaning |
+| --- | --- |
+| **error 1033** | Cloudflare has the hostname but no healthy connector — `cloudflared` is down, cannot find the edge (below), or the token is wrong |
+| **502** | the connector is up but cannot reach `ppp-app:3000` — wrong service URL, or the app is unhealthy |
+| **413** | the upload cap above |
+| **522** | should stop happening; it means something is still resolving to an origin IP |
+
+`docker logs ppp-cloudflared` and the tunnel's own health in the Zero Trust
+dashboard are the checks. The dashboard is the authoritative one, because it
+knows whether the edge can see the connector — which nothing on the host can.
+
+#### 1033 with a connector that restarts every minute: it is DNS
+
+The connector does not have Cloudflare's addresses built in. It finds the edge
+by looking up an SRV record, `_v2-origintunneld._tcp.argotunnel.com`, through
+Docker's embedded resolver — which forwards to the host's nameservers **in
+order**. If that lookup keeps failing, `cloudflared` retries for about a
+minute, exits, and `restart: unless-stopped` starts it again, forever. The
+dashboard shows the tunnel *Down* with no active replicas; the app is healthy
+throughout.
+
+This is what took the reference deployment down. The host's first nameserver
+— a Pi-hole on the LAN — was accepting connections on port 53 but answering
+nothing, and the second one was unreachable from that line. The host itself still resolved names, slowly, by falling through to the
+third; the connector's lookup timed out before Docker got that far. So every
+check made *from the host* looked fine, which is exactly why it is worth
+knowing:
+
+- the connector process keeps a fresh start time (`ps -eo pid,lstart,args |
+  grep cloudflared`) while the app's does not;
+- it never opens a connection to port **7844**, the edge's — only DNS queries;
+- asking each of the host's nameservers directly shows which one is dead:
+
+```bash
+grep nameserver /etc/resolv.conf
+dig SRV _v2-origintunneld._tcp.argotunnel.com @<nameserver>   # each in turn
+```
+
+Fix the dead resolver, or move a working one to the front of the host's list;
+the next restart picks it up with no change to the stack. A token problem looks
+different in `docker logs ppp-cloudflared` — the edge is reached and refuses
+it — so read the log before rotating a token that was never the problem.
+
+The connector image is distroless and has neither a shell nor `curl`, so it
+carries no compose healthcheck; there is nothing in it to run one with.
+
+`scripts/deploy-wizard.sh` needs no change. It polls the public health URL,
+which is still `https://<your hostname>/api/health`, and rolls back on the same
+signal as before.
