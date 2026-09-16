@@ -474,9 +474,10 @@ healthy, the certificate valid and the origin serving correctly the entire
 time. Nothing in the app's own logs said anything was wrong, because from the
 app's point of view nothing was.
 
-It also retires the origin's certificate. Cloudflare terminates TLS at the edge
-and the tunnel itself is encrypted, so the origin needs no Let's Encrypt
-certificate at all — one fewer thing with an expiry date.
+It also retires this hostname's origin certificate. Cloudflare terminates TLS
+at the edge and the tunnel itself is encrypted, so the app needs no Let's
+Encrypt certificate at all — one fewer thing with an expiry date. (Only *its*
+certificate: a wildcard that other hostnames still use stays; see below.)
 
 `APP_URL` and `PASSKEY_RP_ID` do not change, because the hostname does not.
 That matters more than it looks: passkeys are bound to the RP ID permanently,
@@ -508,11 +509,20 @@ this table exists to prevent. Adding the hostname writes the proxied `CNAME`
 for you; **delete the old `A` record afterwards** rather than leaving it as a
 second, wrong answer.
 
-Then bring the stack up with the overlay, and once it serves, dismantle the old
-way in: remove the 80/443 port forwards on the router, and the Proxy Host and
-its certificate in Nginx Proxy Manager. Until you do, the origin is still
-directly reachable — and `TRUST_PROXY_HEADERS=cloudflare` is only honest while
-it is not.
+Then bring the stack up with the overlay, and once it serves, dismantle **this
+app's** old way in: delete its Proxy Host in Nginx Proxy Manager, and stop
+passing `docker-compose.proxy.yml`, so `ppp-app` is no longer on the proxy
+network. Until you do, the app is still directly reachable — and
+`TRUST_PROXY_HEADERS=cloudflare` is only honest while it is not.
+
+**Stop there if anything else is served from the same host.** The 80/443 port
+forwards on the router, the proxy itself and a wildcard certificate are
+usually shared: every other hostname still proxied the old way arrives through
+them. Remove them and those sites go down with **522** — Cloudflare cannot
+reach an origin that no longer answers — while ppp, on its tunnel, stays up and
+makes the cause harder to see. The forwards and the certificate can only go
+once the *last* hostname behind them has moved to a tunnel too; adding each one
+as another Public Hostname on a tunnel is how they get there.
 
 ### Cloudflare refuses the upload before the app sees it
 

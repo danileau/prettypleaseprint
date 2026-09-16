@@ -20,10 +20,12 @@
 #     address, and the A record went on pointing at an IP that no longer
 #     routed. Cloudflare answered 522 for as long as it took to notice, with
 #     the app healthy and serving correctly the whole time.
-#   - the port forwards can be deleted, along with the origin's Let's Encrypt
-#     certificate. Cloudflare terminates TLS at the edge and the tunnel itself
-#     is encrypted, so the origin no longer needs a certificate at all — one
-#     fewer thing that expires.
+#   - this app no longer needs a port forward or a Let's Encrypt certificate.
+#     Cloudflare terminates TLS at the edge and the tunnel itself is encrypted.
+#     But only remove the router's forwards, the proxy or a wildcard
+#     certificate once nothing ELSE on the host is served through them: every
+#     hostname still proxied the old way goes down with a 522 the moment they
+#     go, while this one stays up on its tunnel. See docs/deployment.md.
 #   - PASSKEY_RP_ID and APP_URL do not change, because the hostname does not.
 #     Passkeys are bound to the RP ID permanently, so a migration that altered
 #     it would silently invalidate every one already registered.
