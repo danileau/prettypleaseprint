@@ -331,6 +331,27 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Fixed
 
+- **The stack could not be pulled any more, and nothing said so.** MinIO
+  stopped publishing its community image to Docker Hub and `minio/minio` now
+  answers 404. A running deployment kept serving from its cached copy, which is
+  what made it quiet — but CI could no longer raise the stack, so every pull
+  request's `verify` failed before a single suite ran, and the deploy wizard
+  would have stopped at `compose pull` on the next deploy. Both compose files
+  now pull `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z`: the same image
+  `latest` already resolved to (the digest matches), from a registry that still
+  serves it, and pinned — a floating tag on an object store is an on-disk format
+  change waiting for a routine pull. MinIO's community edition is no longer
+  maintained, so this keeps the stack deployable rather than current; choosing
+  what replaces it is a separate decision.
+
+- **Two critical and two high advisories, found by the daily scan.** `next`
+  15.5.23 → 15.5.25 (unauthenticated remote code execution in the image
+  optimiser, which is on by default and which the middleware matcher skips —
+  plus a Windows-only one), `nodemailer` 9.0.5 → 9.1.1 (quadratic address
+  parsing, a denial of service), and the `sharp` override ^0.35.3 → ^0.35.4
+  (libheif). The scheduled `Security scan` had been red since 2026-09-09;
+  patch-level bumps only, so the wider dependabot group stays its own change.
+
 - **Four `verify:frr` checks passed without exercising the rule they named.**
   They posted a bare `FormData` at a page URL carrying nothing but an id. A
   server action needs an action id in the body, so Next never routed those

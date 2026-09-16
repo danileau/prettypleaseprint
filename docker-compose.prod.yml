@@ -109,8 +109,22 @@ services:
 
   # Model files. Never exposed to the internet — the app fetches from it
   # server-side and hands out short-lived signed URLs.
+  #
+  # Pulled from quay.io and pinned to a release, not `minio/minio:latest`.
+  # MinIO stopped publishing its community image to Docker Hub and the
+  # repository is gone — it answers 404 — so that reference could no longer be
+  # pulled at all. A running stack kept working on its cached copy, which is
+  # what made it quiet: CI failed to raise the stack, and the deploy wizard
+  # would have stopped at `compose pull` on the next deploy.
+  #
+  # This is the same image, not an upgrade. RELEASE.2025-09-07T16-13-09Z is the
+  # last community release, and it is what `minio/minio:latest` resolved to
+  # (quay's `latest` still carries the same digest). Pinned rather than
+  # `latest` because a floating tag is how an object store gets moved to a new
+  # on-disk format by a routine pull — and MinIO is not dependable about
+  # moving back. Changing this line is a data migration; treat it as one.
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: ppp-minio
     <<: *restart
     command: server /data --console-address ":9001"
