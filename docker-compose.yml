@@ -24,7 +24,7 @@ services:
     # Same pin as docker-compose.prod.yml, and for the same reason: neither
     # Docker Hub nor quay.io serves this image to an anonymous pull any more,
     # so it is mirrored into our own registry. Keep the two in step.
-    image: ghcr.io/danileau/minio:RELEASE.2025-09-07T16-13-09Z@sha256:52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff
+    image: ghcr.io/danileau/minio@sha256:52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff
     container_name: ppp-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"

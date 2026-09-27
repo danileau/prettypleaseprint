@@ -255,37 +255,30 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Changed
 
-- **The object store is built from source, runs as uid 1000, and needs one
-  chown to move to.** This is the only upgrade step in this project that is not
-  pull-and-restart, so it is first in the list.
+- **MinIO is built from source now, for amd64 and arm64 — and nothing runs it
+  yet.** The previous wording of this entry said it ran as uid 1000 and needed a
+  chown. That was written ahead of the wiring and was not true of anything
+  shipped: both compose files still pin the mirror, which runs as root.
 
-  MinIO withdrew its community distribution while the previous change sat
-  unmerged: Docker Hub 404s, quay.io refuses an anonymous pull, and dl.min.io
-  answers 410 for the server binary *and* for `mc`, on every architecture —
-  which also kills upstream's own release Dockerfile, since it is a downloader.
-  The source is still public and AGPL-3.0, so `docker/minio/Dockerfile` compiles
-  it: the same `RELEASE.2025-09-07T16-13-09Z` the deployment already runs, plus
-  `mc` because the healthcheck is `mc ready local`. Same release means the same
-  on-disk format, so the bytes need no migration.
+  What is real: MinIO withdrew its community distribution while the mirror sat
+  unmerged — Docker Hub 404s, quay.io refuses an anonymous pull, and dl.min.io
+  answers 410 for the server binary *and* for `mc`, on every architecture, which
+  also kills upstream's own release Dockerfile since it is a downloader. The
+  source is still public and AGPL-3.0, so `docker/minio/Dockerfile` compiles it
+  at the same release, with `mc` because the healthcheck is `mc ready local`, and
+  `minio-image.yml` publishes and signs it for both platforms.
 
-  The **ownership** does. Building our own image made the scanner able to see
-  what upstream's image had always done — run as root — and rather than record
-  an exception for it, the image now runs as 1000:1000. `/data` is a bind mount,
-  so the host directory decides, and existing model storage is owned by root.
-  Stop the stack, `docker run --rm -v "$DATA_ROOT/models:/data" alpine chown -R
-  1000:1000 /data`, start it again. Skip it and MinIO exits with
-  *"Unable to write to the backend"* rather than starting half-working, which is
-  the right failure. Postgres is untouched.
+  What is not real until somebody pins it: the uid-1000 runtime and the arm64
+  half. `docs/deployment.md` now says which of the two images is running and
+  what adopting the other would cost, instead of describing an upgrade nobody
+  could perform.
 
-  Doing it inside a container is not fussiness: the files are root-owned so
-  doing it as yourself fails, and `sudo chown` on a host where your uid is not
-  1000 is how the wrong number gets written. Full instructions in
-  [deployment](docs/deployment.md).
-
-  This also restores arm64. The mirror that unblocked CI was amd64 only because
-  it was copied from a cached image; a source build is not limited that way, and
-  the image is published for `linux/amd64` and `linux/arm64`.
-
+  That swap is deliberately unscheduled. MinIO's community edition is
+  unmaintained — its newest server release ships byte-identical vulnerable
+  dependencies, `mc` has not been tagged in over a year, and the from-source
+  image still carries 63 HIGH/CRITICAL advisories that no upgrade fixes. The
+  direction is to stop running an object store at all, so asking anyone to chown
+  live storage for an image with a deletion date is maintenance paid twice.
 
 - **"Feature requests" in the nav, and it goes to the board.** The owner's nav
   item was labelled *Requests* and pointed at `/frr/queue`, the triage view —

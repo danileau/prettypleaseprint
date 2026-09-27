@@ -142,8 +142,16 @@ services:
   # linux/amd64 only: mirrored from a cached copy of that platform, because
   # neither upstream will serve the multi-arch manifest any more. An arm64
   # host needs its own mirror of the same release.
+  #
+  # Pinned by digest ALONE, with no tag in front of it, and that is deliberate.
+  # It used to read `minio:RELEASE.2025-09-07T16-13-09Z@sha256:52dfd5c0…` — but
+  # minio-image.yml published the from-source build under that same tag, so the
+  # tag moved and the two halves stopped agreeing. A reference whose tag and
+  # digest name different images is worse than one with no tag at all: it reads
+  # as corroboration and is not. The digest is the whole truth here; `docs/
+  # deployment.md` says which image it is.
   minio:
-    image: ghcr.io/danileau/minio:RELEASE.2025-09-07T16-13-09Z@sha256:52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff
+    image: ghcr.io/danileau/minio@sha256:52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff
     container_name: ppp-minio
     <<: *restart
     command: server /data --console-address ":9001"

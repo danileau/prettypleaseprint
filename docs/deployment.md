@@ -314,27 +314,27 @@ The seed is an upsert, so it is safe on every start and keeps the admin's name
 in step with the environment — but it will refuse to create a *second* admin,
 and so will the database, and it never resets a password that already exists.
 
-### The object store runs as uid 1000, and moving to it needs one chown
+### The object store, and the image that is built but not used
 
-**This is the one upgrade step in this project that is not pull-and-restart.**
-Skip it and MinIO will not start — which is the good outcome, because it fails
-loudly and changes nothing rather than starting and half-working.
+Nothing here needs doing. This section exists because the repository contains
+two MinIO images and it should be obvious which one you are running.
 
-The object store used to run as root, because the upstream image did. It is now
-built from source (MinIO withdrew its published images and binaries, so there
-was nothing left to pull) and runs as **1000:1000**. `/data` is a bind mount, so
-it is the *host* directory's ownership that decides whether the server can
-write, and on an existing deployment those files are owned by the root the old
-container ran as.
+**What runs:** the mirror, pinned by digest in both compose files. It is the
+last upstream community release, `RELEASE.2025-09-07T16-13-09Z`, copied into
+this project's registry because MinIO withdrew it from Docker Hub (404) and
+gated its quay.io repository against anonymous pulls. It runs as **root**, as
+the upstream image always did, and it is **linux/amd64** only because it was
+copied from a cached image of that platform.
 
-You will know if you skipped it, because MinIO says so and then exits:
+**What also exists:** `docker/minio/Dockerfile` builds MinIO and `mc` from the
+AGPL source at the same release, for amd64 and arm64, running as uid 1000.
+`.github/workflows/minio-image.yml` publishes and signs it. **Nothing points at
+it.** It was built and documented ahead of being adopted, which left this
+section briefly describing an upgrade nobody could perform.
 
-```
-FATAL Unable to initialize backend: Unable to write to the backend
-      Please ensure MinIO binary has write permissions for the backend
-```
-
-Stop the stack, chown the model storage, start it again:
+Adopting it would mean one step that is not pull-and-restart. `/data` is a bind
+mount, so the host directory's ownership decides whether the server can write,
+and existing model storage is owned by the root the current container runs as:
 
 ```bash
 docker compose --env-file .env.docker -f docker-compose.prod.yml down
@@ -342,19 +342,20 @@ docker run --rm -v "$DATA_ROOT/models:/data" alpine chown -R 1000:1000 /data
 docker compose --env-file .env.docker -f docker-compose.prod.yml up -d
 ```
 
-The chown runs **inside a container** on purpose, for the same reason the
-backup instructions do: the files are owned by root, so doing it as yourself
-fails, and doing it with `sudo` on a host where your uid is not 1000 is how
-people end up chowning to the wrong number. The container has no such ambiguity
-— 1000 means 1000.
+Inside a container deliberately, for the same reason the backup instructions
+are: the files are root-owned so doing it as yourself fails, and `sudo chown` on
+a host where your own uid is not 1000 writes the wrong number. Skipping it is
+safe in the way that matters — MinIO exits with *"Unable to write to the
+backend"* rather than starting half-working.
 
-Nothing else changes. Same release, same on-disk format, same bucket; only the
-uid that owns the files. `db/` is untouched — Postgres has always run as its
-own uid and is not affected.
-
-If you would rather not move, pin `PPP_TAG` to a commit from before this landed.
-That is a supported position, but it is a pin to an image whose MinIO can no
-longer be pulled from anywhere if your host ever loses its cached copy.
+That swap is **deliberately not scheduled**, because MinIO is on its way out
+rather than in. Its community edition is unmaintained: the newest server release
+ships byte-identical vulnerable dependencies, `mc` has not been tagged in over a
+year, and the from-source image still carries 63 HIGH/CRITICAL advisories that
+no upgrade fixes. The direction is to stop running an object store at all — the
+app already proxies every byte and uses six S3 calls that map directly onto
+filesystem operations. Asking for a chown of live storage, for an image with a
+deletion date, is maintenance paid twice.
 
 ### What to back up
 

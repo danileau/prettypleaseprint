@@ -87,7 +87,12 @@ jobs:
           build-args: |
             MINIO_TAG=${{ steps.rel.outputs.minio }}
             MC_TAG=${{ steps.rel.outputs.mc }}
-          tags: ghcr.io/${{ github.repository_owner }}/minio:${{ steps.rel.outputs.minio }}
+          # `-src` so this never lands on the tag the mirror was published
+          # under. It did once: the compose files pinned tag@digest, this
+          # workflow pushed a different image to the same tag, and the pin's
+          # two halves silently stopped agreeing. A build must not move a tag
+          # something else is using as provenance.
+          tags: ghcr.io/${{ github.repository_owner }}/minio:${{ steps.rel.outputs.minio }}-src
           provenance: true
           sbom: true
 
@@ -104,7 +109,7 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
-          image-ref: ghcr.io/${{ github.repository_owner }}/minio:${{ steps.rel.outputs.minio }}
+          image-ref: ghcr.io/${{ github.repository_owner }}/minio:${{ steps.rel.outputs.minio }}-src
           severity: HIGH,CRITICAL
           exit-code: '1'
           ignore-unfixed: true
@@ -113,5 +118,5 @@ jobs:
       # updating them can copy it rather than going digging in the registry.
       - name: The line to paste into the compose files
         run: |
-          echo "image: ghcr.io/${{ github.repository_owner }}/minio:${{ steps.rel.outputs.minio }}@${{ steps.push.outputs.digest }}" \
+          echo "image: ghcr.io/${{ github.repository_owner }}/minio@${{ steps.push.outputs.digest }}" \
             >> "$GITHUB_STEP_SUMMARY"
