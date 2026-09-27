@@ -347,11 +347,36 @@ to copy every model out of MinIO and prove the copy is complete. **It changes
 nothing about how the app runs.** The app keeps reading from MinIO afterwards,
 and rolling this back is deleting what it wrote.
 
+**Stop the stack first.** This is the one step in the migration that can lose
+data, and it is not obvious: the overlay brings its own MinIO, and a deployment
+that has not been upgraded yet is still running the previous release's one
+against the same `$DATA_ROOT/models`. The container names differ, so Compose
+starts the second quite happily — two MinIO processes on one data directory,
+which is not supported and is exactly the data you are trying to rescue. The
+ordinary path walks straight into it: pull the release, run the migration, then
+deploy. The old container survives the `git pull`.
+
 ```bash
+# 1. snapshot, if you are on ZFS
+zfs snapshot -r storage/applications/ppp@pre-storage-migration
+
+# 2. stop everything
+docker compose --env-file .env.docker -f docker-compose.prod.yml down
+
+# 3. migrate, and read the verification before going further
 docker compose --env-file .env.docker \
   -f docker-compose.prod.yml -f docker-compose.storage-migration.yml \
   run --rm --build migrate-storage
+
+# 4. only once it says every model is accounted for
+docker compose --env-file .env.docker -f docker-compose.prod.yml up -d
 ```
+
+It runs as a one-shot container named `ppp-storage-migration`, built from the
+Dockerfile's `builder` stage and hidden behind a `migration` profile so no `up`
+can start it by accident. Add whatever overlay your deployment normally uses
+(`docker-compose.tunnel.yml`, `docker-compose.proxy.yml`) to steps 2 and 4 —
+step 3 needs only these two.
 
 It gets its own overlay and its own service because neither existing image can
 run it: the runner carries only the Next standalone bundle, and the migrator

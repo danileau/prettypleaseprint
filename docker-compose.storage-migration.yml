@@ -16,6 +16,19 @@
 # the full node_modules, and runs the script there. It is deleted along with the
 # rest of the MinIO furniture once the object store is gone.
 #
+# STOP THE STACK FIRST. `docker compose ... down`, then run this.
+#
+# Not politeness — it is a corruption risk. This overlay brings its own MinIO,
+# `ppp-minio-migration`, mounting $DATA_ROOT/models. A deployment that has not
+# been upgraded yet is still running `ppp-minio` from the previous release
+# against that same directory, and the two names do not collide, so Compose will
+# happily start the second one. Two MinIO processes on one data directory is not
+# a supported configuration and the data is the thing you are trying to rescue.
+#
+# The likely path into it is the ordinary one: pull the new release, run the
+# migration, then deploy. The old container survives the git pull. So: down,
+# migrate, deploy, up.
+#
 # Nothing here is destructive: the script only ever creates files under
 # /uploads, and refuses outright if pointed at MinIO's own data directory.
 #
