@@ -332,25 +332,46 @@ Notable changes. Every entry names a released version; deployments pin
 ### Fixed
 
 - **The stack could not be pulled any more, and nothing said so.** MinIO
-  stopped publishing its community image to Docker Hub and `minio/minio` now
-  answers 404. A running deployment kept serving from its cached copy, which is
-  what made it quiet — but CI could no longer raise the stack, so every pull
-  request's `verify` failed before a single suite ran, and the deploy wizard
-  would have stopped at `compose pull` on the next deploy. Both compose files
-  now pull `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z`: the same image
-  `latest` already resolved to (the digest matches), from a registry that still
-  serves it, and pinned — a floating tag on an object store is an on-disk format
-  change waiting for a routine pull. MinIO's community edition is no longer
-  maintained, so this keeps the stack deployable rather than current; choosing
-  what replaces it is a separate decision.
+  stopped publishing its community image to Docker Hub — `minio/minio` answers
+  404 — and its quay.io repository refuses an anonymous pull at every tag, so
+  neither registry is a route for CI or for a fresh deployment. A running
+  deployment kept serving from its cached copy, which is what made it quiet: CI
+  could no longer raise the stack, so every pull request's `verify` failed
+  before a single suite ran, and the deploy wizard would have stopped at
+  `compose pull` on the next deploy.
 
-- **Two critical and two high advisories, found by the daily scan.** `next`
+  Both compose files now pull the last community release,
+  `RELEASE.2025-09-07T16-13-09Z`, from this project's own registry at
+  `ghcr.io/danileau/minio`, pinned by digest. It is a mirror of exactly what
+  `minio/minio:latest` resolved to, not an upgrade: same release label, and
+  MinIO is AGPL-3.0, so redistributing it is permitted — its source for that
+  release is `minio/minio` at `32d8e52`. Mirroring is what keeps the stack
+  pullable without a credential now that neither upstream registry serves it.
+  The mirror is **`linux/amd64` only**, because that is the platform the
+  original was cached on; an arm64 host — a Pi 5, say — needs its own mirror
+  until a replacement lands.
+
+  MinIO's community edition is no longer maintained, so this keeps the stack
+  deployable rather than current. What replaces it — a maintained fork, Garage,
+  SeaweedFS — is a separate decision with a data migration attached, and is
+  deliberately not made here.
+
+- **Two critical and five high advisories, found by the daily scan.** `next`
   15.5.23 → 15.5.25 (unauthenticated remote code execution in the image
   optimiser, which is on by default and which the middleware matcher skips —
-  plus a Windows-only one), `nodemailer` 9.0.5 → 9.1.1 (quadratic address
-  parsing, a denial of service), and the `sharp` override ^0.35.3 → ^0.35.4
-  (libheif). The scheduled `Security scan` had been red since 2026-09-09;
-  patch-level bumps only, so the wider dependabot group stays its own change.
+  plus a Windows-only one), `nodemailer` 9.0.5 → 9.1.1, and the `sharp`
+  override ^0.35.3 → ^0.35.4 (libheif).
+
+  Nodemailer's list grew while this sat unmerged, and now runs to four:
+  quadratic address parsing (a denial of service), a `resolveContent()` legacy
+  signature that bypasses `disableFileAccess` / `disableUrlAccess`, and two
+  recipient-domain validation bypasses — an IDN/punycode allow-list escape and
+  an RFC 5322 comment mis-parse — either of which delivers mail to a domain the
+  attacker chose. 9.1.1 covers all four, so the bump did not change; what it
+  fixes did.
+
+  The scheduled `Security scan` had been red since 2026-09-09; patch-level
+  bumps only, so the wider dependabot group stays its own change.
 
 - **Four `verify:frr` checks passed without exercising the rule they named.**
   They posted a bare `FormData` at a page URL carrying nothing but an id. A

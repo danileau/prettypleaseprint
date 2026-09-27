@@ -110,21 +110,32 @@ services:
   # Model files. Never exposed to the internet — the app fetches from it
   # server-side and hands out short-lived signed URLs.
   #
-  # Pulled from quay.io and pinned to a release, not `minio/minio:latest`.
-  # MinIO stopped publishing its community image to Docker Hub and the
-  # repository is gone — it answers 404 — so that reference could no longer be
-  # pulled at all. A running stack kept working on its cached copy, which is
-  # what made it quiet: CI failed to raise the stack, and the deploy wizard
-  # would have stopped at `compose pull` on the next deploy.
+  # Mirrored into this project's own registry, and pinned by digest. MinIO
+  # stopped publishing its community image to Docker Hub — `minio/minio`
+  # answers 404 — and its quay.io repository refuses an anonymous pull at every
+  # tag, so neither upstream is a route for CI or for a fresh deployment. A
+  # running stack kept working on its cached copy, which is what made it quiet:
+  # CI failed to raise the stack, and the deploy wizard would have stopped at
+  # `compose pull` on the next deploy.
   #
   # This is the same image, not an upgrade. RELEASE.2025-09-07T16-13-09Z is the
-  # last community release, and it is what `minio/minio:latest` resolved to
-  # (quay's `latest` still carries the same digest). Pinned rather than
-  # `latest` because a floating tag is how an object store gets moved to a new
-  # on-disk format by a routine pull — and MinIO is not dependable about
-  # moving back. Changing this line is a data migration; treat it as one.
+  # last community release and what `minio/minio:latest` resolved to. MinIO is
+  # AGPL-3.0, so mirroring it is permitted; its source for that release is
+  # `minio/minio` at 32d8e52. The digest is what makes that checkable — a tag
+  # in our own namespace could still be moved, and a floating tag is how an
+  # object store gets walked onto a new on-disk format by a routine pull.
+  # Changing this line is a data migration; treat it as one.
+  #
+  # The digest below is this mirror's manifest, not Docker Hub's. Pushing
+  # re-serialises the manifest, so it differs from the original's
+  # sha256:14cea493… while the layers and the image config (69b2ec208575) are
+  # byte-for-byte the same — which is the level at which "same image" is true.
+  #
+  # linux/amd64 only: mirrored from a cached copy of that platform, because
+  # neither upstream will serve the multi-arch manifest any more. An arm64
+  # host needs its own mirror of the same release.
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: ghcr.io/danileau/minio:RELEASE.2025-09-07T16-13-09Z@sha256:52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff
     container_name: ppp-minio
     <<: *restart
     command: server /data --console-address ":9001"
