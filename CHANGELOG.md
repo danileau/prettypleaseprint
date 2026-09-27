@@ -7,6 +7,42 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Added
 
+- **`npm run migrate:storage` — copy every model out of MinIO, and prove the
+  copy is complete.** The first step of removing the object store, and it
+  changes nothing about how the app runs: the app keeps reading from MinIO, and
+  rolling back is deleting what the script wrote.
+
+  It exists as code rather than a documented `mc` command because of one fact
+  about MinIO's on-disk format. Objects are not files — each is a directory
+  named after the key, and anything under the inline threshold lives *inside*
+  `xl.meta` rather than beside it. On the dataset this was written against, 160
+  of 179. So `cp -r` recovers the nineteen that have a separate part file and
+  silently loses the rest: the tree is there, the filenames are there, every
+  ticket page renders, and the only symptom is that opening a model fails. The
+  bytes come out through the S3 API or not at all.
+
+  The verification is the half that matters, and it interrogates the
+  **database**, not MinIO — asking the object store whether it exported
+  everything is asking the wrong witness, since it would confirm all 179 while
+  160 arrived empty. Every `Story` row must have a readable file of the size the
+  row records, whose first bytes are still the model it claims to be: a binary
+  STL states its own triangle count, and `84 + count × 50` has to equal the file
+  length, which is the same structural check the upload validator makes. A
+  zero-filled file of the right size passes a size comparison and fails this.
+
+  It refuses to exit 0 with a single row unaccounted for, and it refuses to run
+  at all if pointed at MinIO's own data directory — the one mistake that would
+  not be recoverable, so it is blocked in code rather than in prose. Writes are
+  atomic (temp file, `fsync`, rename, `fsync` the directory), because S3 gave
+  that for free and a database row will claim the file is whole. Re-running
+  skips what is already correct, so it can be run now and again just before the
+  switch to pick up anything uploaded in between.
+
+  Verified by breaking it on purpose: truncating one exported file and deleting
+  another makes it exit 1 and name both, and a re-run repairs exactly those two
+  and nothing else. A verifier nobody has watched fail is not a verifier.
+
+
 - **`/admin/audit` is a dashboard now, not just a log.** The page was built on
   the argument that a screen somebody glances at beats alerts nobody tunes —
   which only holds if somebody actually looks, and a wall of rows is not

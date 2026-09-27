@@ -357,6 +357,52 @@ app already proxies every byte and uses six S3 calls that map directly onto
 filesystem operations. Asking for a chown of live storage, for an image with a
 deletion date, is maintenance paid twice.
 
+### Moving the models onto the filesystem
+
+The object store is being removed — see the reasoning above. The first step is
+to copy every model out of MinIO and prove the copy is complete. **It changes
+nothing about how the app runs.** The app keeps reading from MinIO afterwards,
+and rolling this back is deleting what it wrote.
+
+```bash
+docker compose --env-file .env.docker -f docker-compose.prod.yml \
+  run --rm -v "$DATA_ROOT/uploads:/uploads" migrate \
+  ./node_modules/.bin/tsx scripts/export-storage.ts
+```
+
+Take a snapshot first if you are on ZFS. One recursive snapshot makes the whole
+exercise reversible, and it costs nothing:
+
+```bash
+zfs snapshot -r storage/applications/ppp@pre-storage-migration
+```
+
+**Do not copy the directory instead.** MinIO does not store objects as files.
+Each one is a directory named after the key, and anything under its inline
+threshold lives *inside* `xl.meta` rather than beside it — on the dataset this
+was written against, 160 of 179 objects. A `cp -r` recovers the handful that
+have a separate part file and silently loses the rest: the tree is there, the
+filenames are there, every ticket page renders, and the only symptom is that
+opening a model fails. The bytes come out through the S3 API or not at all.
+The script refuses to run at all if you point it at MinIO's own directory.
+
+What it reports, and what to do about it:
+
+| | |
+| --- | --- |
+| `verified N / N` and exit 0 | every row in the database has a readable file of the right size. Done. |
+| exit 1, with `MISSING` / `SIZE` / `CONTENT` rows | some models did not arrive. Nothing has been removed and the app is unaffected — fix the cause and run it again. |
+| exit 2 | you pointed `MODELS_ROOT` at MinIO's data directory. It refused rather than mixing plain files into the object store's layout. |
+
+It verifies against **the database**, not against MinIO: every `Story` row must
+have a file, of the size the row records, whose first bytes are still the model
+they claim to be. Asking MinIO whether it exported everything is asking the
+wrong witness.
+
+Re-running is safe and cheap — it skips whatever is already correct — so run it
+once now and again immediately before the app is switched over, to pick up
+anything uploaded in between.
+
 ### What to back up
 
 Everything is under `DATA_ROOT`: `db/` (Postgres) and `models/` (the uploaded
