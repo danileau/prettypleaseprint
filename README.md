@@ -91,7 +91,7 @@ that: there is no multi-tenancy, no billing, and no queue theory.
 
 | | |
 | --- | --- |
-| Host | anything that runs Docker Compose — a NAS, a Pi 5, a VPS, a spare laptop |
+| Host | anything that runs Docker Compose — a NAS, a VPS, a spare laptop. **`linux/amd64` at present:** MinIO withdrew its community image *and* its binaries, so the object store comes from this project's own mirror of the last release, which exists for amd64 alone. A multi-architecture build from source is the next change; until it lands, an arm64 host — a Pi 5, say — cannot complete `docker compose pull`. |
 | Memory | ~1 GB for the whole stack (app, Postgres, MinIO) |
 | Disk | small — the database is megabytes; uploads are capped at 250 MB each |
 | TLS | **required.** The app refuses to start on plain `http://` in production, and passkeys need a secure context |
