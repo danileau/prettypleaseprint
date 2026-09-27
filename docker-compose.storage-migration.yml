@@ -1,0 +1,52 @@
+# One-shot: copy the models out of MinIO onto the filesystem.
+#
+#   docker compose --env-file .env.docker \
+#     -f docker-compose.prod.yml -f docker-compose.storage-migration.yml \
+#     run --rm --build migrate-storage
+#
+# Its own overlay, and its own service, because neither existing image can do
+# this job. The runner carries only the Next standalone bundle — no scripts, no
+# tsx. The migrator deliberately installs "exactly three packages, not the whole
+# dependency tree" and copies only prisma/, which is the right call for a thing
+# that applies migrations at every boot and the wrong shape for this. Teaching
+# either of them about the AWS SDK to run a migration once would be a permanent
+# cost for a temporary need.
+#
+# So this builds the `builder` stage, which already has the full source tree and
+# the full node_modules, and runs the script there. It is deleted along with the
+# rest of the MinIO furniture once the object store is gone.
+#
+# Nothing here is destructive: the script only ever creates files under
+# /uploads, and refuses outright if pointed at MinIO's own data directory.
+services:
+  migrate-storage:
+    build:
+      context: .
+      target: builder
+    image: ppp-storage-migration:local
+    container_name: ppp-storage-migration
+    # Deliberately not in the default set: `run` reaches it by name, and no
+    # `up` can start it by accident.
+    profiles: ["migration"]
+    environment:
+      DATABASE_URL: postgresql://ppp:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/ppp?schema=public
+      # Service names, not localhost: prod publishes no port for MinIO, which
+      # is exactly why this runs inside the network rather than on the host.
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: ${S3_BUCKET:-ppp-models}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-ppp}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+      MODELS_ROOT: /uploads
+      # Who the files must belong to afterwards: the app's uid, from the
+      # Dockerfile's `USER nextjs`. This container runs as root so it can write
+      # into a bind mount Docker created as root, then hands the files over.
+      MODELS_UID: "1001"
+      MODELS_GID: "1001"
+    volumes:
+      - ${DATA_ROOT:-./data}/uploads:/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: ["./node_modules/.bin/tsx", "scripts/export-storage.ts"]

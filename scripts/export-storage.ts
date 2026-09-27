@@ -42,7 +42,7 @@
  */
 import "./_env";
 import { createWriteStream } from "node:fs";
-import { mkdir, open, rename, rm, stat } from "node:fs/promises";
+import { chown, mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { Readable } from "node:stream";
@@ -62,6 +62,25 @@ import { db } from "../src/lib/db";
  */
 const ROOT = resolve(process.env.MODELS_ROOT ?? "/uploads");
 const BUCKET = process.env.S3_BUCKET ?? "ppp-models";
+
+/*
+ * The app serves as uid 1001 (`USER nextjs` in the Dockerfile), and this runs
+ * as root so it can write into a bind mount Docker created as root. Files
+ * would inherit root ownership and mode 0640, which the app could then not
+ * read — a migration that completes and leaves every model unreadable.
+ *
+ * So hand over what we create. Only when running as root: on a host run as a
+ * normal user the files already belong to the right person and chown would
+ * fail.
+ */
+const OWNER_UID = Number(process.env.MODELS_UID ?? 1001);
+const OWNER_GID = Number(process.env.MODELS_GID ?? 1001);
+const RUNNING_AS_ROOT = typeof process.getuid === "function" && process.getuid() === 0;
+
+async function handOver(path: string): Promise<void> {
+  if (!RUNNING_AS_ROOT) return;
+  await chown(path, OWNER_UID, OWNER_GID);
+}
 
 const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT ?? "http://localhost:9000",
@@ -121,6 +140,11 @@ async function looksLikeAModel(path: string, size: number): Promise<string | nul
 /** Write bytes so that a crash can never leave a half file under the real name. */
 async function writeAtomically(finalPath: string, body: Readable): Promise<void> {
   await mkdir(dirname(finalPath), { recursive: true });
+  // Every level we may have just created, not only the leaf.
+  for (let dir = dirname(finalPath); dir.startsWith(ROOT); dir = dirname(dir)) {
+    await handOver(dir);
+    if (dir === ROOT) break;
+  }
   const tmp = `${finalPath}.tmp-${randomUUID()}`;
   try {
     await pipeline(body, createWriteStream(tmp, { mode: 0o640 }));
@@ -131,6 +155,7 @@ async function writeAtomically(finalPath: string, body: Readable): Promise<void>
     await fh.sync();
     await fh.close();
     await rename(tmp, finalPath);
+    await handOver(finalPath);
     // And the directory entry itself.
     const dh = await open(dirname(finalPath), "r");
     await dh.sync();
@@ -197,6 +222,7 @@ async function main() {
   }
 
   await mkdir(ROOT, { recursive: true });
+  await handOver(ROOT);
 
   const rows: Row[] = await db.story.findMany({
     select: { id: true, storageKey: true, filename: true, fileSize: true },

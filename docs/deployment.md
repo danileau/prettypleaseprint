@@ -365,10 +365,17 @@ nothing about how the app runs.** The app keeps reading from MinIO afterwards,
 and rolling this back is deleting what it wrote.
 
 ```bash
-docker compose --env-file .env.docker -f docker-compose.prod.yml \
-  run --rm -v "$DATA_ROOT/uploads:/uploads" migrate \
-  ./node_modules/.bin/tsx scripts/export-storage.ts
+docker compose --env-file .env.docker \
+  -f docker-compose.prod.yml -f docker-compose.storage-migration.yml \
+  run --rm --build migrate-storage
 ```
+
+It gets its own overlay and its own service because neither existing image can
+run it: the runner carries only the Next standalone bundle, and the migrator
+deliberately installs three packages and copies only `prisma/`. That overlay
+builds from source, runs inside the compose network (production publishes no
+port for MinIO, so the host cannot reach it), and hands the files it writes to
+uid 1001 — the app's user — so the app can read them afterwards.
 
 Take a snapshot first if you are on ZFS. One recursive snapshot makes the whole
 exercise reversible, and it costs nothing:
