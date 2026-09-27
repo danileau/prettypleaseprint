@@ -38,16 +38,8 @@ import type { Readable } from "node:stream";
  */
 const ROOT = resolve(process.env.MODELS_ROOT ?? "/uploads");
 
-/**
- * Readable by anyone who can reach the volume, rather than owner-only.
- *
- * Postgres' data directory is mode 700 owned by uid 70, and the README has to
- * carry a whole paragraph explaining that you therefore cannot back it up as
- * yourself and must do it from inside a container. One such trap in a project
- * is enough; models are not secret at rest, they are gated at the route.
- */
-const FILE_MODE = 0o644;
-const DIR_MODE = 0o755;
+// Shared with scripts/export-storage.ts — see storage-layout.ts for why.
+import { DIR_MODE, FILE_MODE } from "@/lib/storage-layout";
 
 /**
  * Storage keys are generated, never derived from the uploaded filename.

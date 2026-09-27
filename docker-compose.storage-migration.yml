@@ -18,7 +18,37 @@
 #
 # Nothing here is destructive: the script only ever creates files under
 # /uploads, and refuses outright if pointed at MinIO's own data directory.
+#
+# It brings its own MinIO, and that is the point. The moment anyone reaches for
+# this overlay is after pulling a release whose compose files no longer define
+# an object store — so depending on one from docker-compose.prod.yml would make
+# the migration unusable exactly when it is needed. Both services sit behind the
+# `migration` profile, so neither starts unless asked for by name.
 services:
+  # The image the stack ran before the switch, reading the data directory it
+  # left behind. Pinned by digest for the same reason it always was: the tag it
+  # was published under no longer points at these bytes.
+  minio:
+    image: ghcr.io/danileau/minio@sha256:52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff
+    container_name: ppp-minio-migration
+    profiles: ["migration"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-ppp}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+    volumes:
+      # Read-write, reluctantly: MinIO writes its own .minio.sys metadata on
+      # start and will not come up otherwise, so :ro is not available however
+      # much the intent suits it. The export only ever reads, and it writes
+      # exclusively under /uploads — but that is a property of the script
+      # rather than something the mount enforces.
+      - ${DATA_ROOT:-./data}/models:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   migrate-storage:
     build:
       context: .

@@ -54,6 +54,7 @@ import {
 } from "@aws-sdk/client-s3";
 
 import { db } from "../src/lib/db";
+import { DIR_MODE, FILE_MODE } from "../src/lib/storage-layout";
 
 /**
  * Where the files are going. Inside the container this is the mount that will
@@ -139,7 +140,7 @@ async function looksLikeAModel(path: string, size: number): Promise<string | nul
 
 /** Write bytes so that a crash can never leave a half file under the real name. */
 async function writeAtomically(finalPath: string, body: Readable): Promise<void> {
-  await mkdir(dirname(finalPath), { recursive: true });
+  await mkdir(dirname(finalPath), { recursive: true, mode: DIR_MODE });
   // Every level we may have just created, not only the leaf.
   for (let dir = dirname(finalPath); dir.startsWith(ROOT); dir = dirname(dir)) {
     await handOver(dir);
@@ -147,7 +148,7 @@ async function writeAtomically(finalPath: string, body: Readable): Promise<void>
   }
   const tmp = `${finalPath}.tmp-${randomUUID()}`;
   try {
-    await pipeline(body, createWriteStream(tmp, { mode: 0o640 }));
+    await pipeline(body, createWriteStream(tmp, { mode: FILE_MODE }));
     // fsync before the rename, or the rename can land before the contents do
     // and a power cut leaves a correctly-named empty file. The database row
     // will claim that file is whole, so this is worth the syscall.
@@ -221,7 +222,7 @@ async function main() {
     // Not MinIO's directory. Good.
   }
 
-  await mkdir(ROOT, { recursive: true });
+  await mkdir(ROOT, { recursive: true, mode: DIR_MODE });
   await handOver(ROOT);
 
   const rows: Row[] = await db.story.findMany({
