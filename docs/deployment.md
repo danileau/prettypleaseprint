@@ -314,6 +314,48 @@ The seed is an upsert, so it is safe on every start and keeps the admin's name
 in step with the environment — but it will refuse to create a *second* admin,
 and so will the database, and it never resets a password that already exists.
 
+### The object store runs as uid 1000, and moving to it needs one chown
+
+**This is the one upgrade step in this project that is not pull-and-restart.**
+Skip it and MinIO will not start — which is the good outcome, because it fails
+loudly and changes nothing rather than starting and half-working.
+
+The object store used to run as root, because the upstream image did. It is now
+built from source (MinIO withdrew its published images and binaries, so there
+was nothing left to pull) and runs as **1000:1000**. `/data` is a bind mount, so
+it is the *host* directory's ownership that decides whether the server can
+write, and on an existing deployment those files are owned by the root the old
+container ran as.
+
+You will know if you skipped it, because MinIO says so and then exits:
+
+```
+FATAL Unable to initialize backend: Unable to write to the backend
+      Please ensure MinIO binary has write permissions for the backend
+```
+
+Stop the stack, chown the model storage, start it again:
+
+```bash
+docker compose --env-file .env.docker -f docker-compose.prod.yml down
+docker run --rm -v "$DATA_ROOT/models:/data" alpine chown -R 1000:1000 /data
+docker compose --env-file .env.docker -f docker-compose.prod.yml up -d
+```
+
+The chown runs **inside a container** on purpose, for the same reason the
+backup instructions do: the files are owned by root, so doing it as yourself
+fails, and doing it with `sudo` on a host where your uid is not 1000 is how
+people end up chowning to the wrong number. The container has no such ambiguity
+— 1000 means 1000.
+
+Nothing else changes. Same release, same on-disk format, same bucket; only the
+uid that owns the files. `db/` is untouched — Postgres has always run as its
+own uid and is not affected.
+
+If you would rather not move, pin `PPP_TAG` to a commit from before this landed.
+That is a supported position, but it is a pin to an image whose MinIO can no
+longer be pulled from anywhere if your host ever loses its cached copy.
+
 ### What to back up
 
 Everything is under `DATA_ROOT`: `db/` (Postgres) and `models/` (the uploaded

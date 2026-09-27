@@ -66,6 +66,11 @@ RUN ISO="$(echo "${MC_TAG}" | sed 's#RELEASE\.\([0-9]\+\)-\([0-9]\+\)-\([0-9]\+\
     LDFLAGS="$(MC_RELEASE=RELEASE go run buildscripts/gen-ldflags.go "${ISO}")" && \
     GOARCH="${TARGETARCH}" go build -trimpath --ldflags "${LDFLAGS}" -o /out/mc .
 
+# An empty /data made here so the runtime stage can COPY it in already owned by
+# the right uid. Creating it there would need a RUN, and a RUN in the runtime
+# stage is what would drag QEMU into the arm64 build.
+RUN mkdir -p /out/data
+
 FROM registry.access.redhat.com/ubi9/ubi-micro:latest
 
 ARG MINIO_TAG
@@ -106,8 +111,26 @@ COPY --from=build --chmod=755 /out/mc /usr/bin/mc
 COPY --from=build --chmod=755 /out/docker-entrypoint.sh /usr/bin/docker-entrypoint.sh
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
+# The object store does not need to be root, and upstream's image only ran that
+# way because it always had. 1000:1000 is the uid MinIO's own documentation uses
+# for a non-root deployment.
+#
+# This has a cost and it is not hidden: /data is a bind mount, so the HOST
+# directory's ownership decides whether the server can write, and an existing
+# deployment's model storage is owned by the root the previous container ran as.
+# Moving to this image needs that storage chowned once, which docs/deployment.md
+# spells out. It is the one thing in this change that is not a pull-and-restart,
+# and it is why the uid is fixed here rather than left to a compose override:
+# a number that can drift per deployment is a number somebody chowns to the
+# wrong value.
+#
+# --chown on COPY, like --chmod above, so this stage still executes nothing.
+COPY --from=build --chown=1000:1000 /out/data /data
+
 EXPOSE 9000
 VOLUME ["/data"]
+
+USER 1000:1000
 
 ENTRYPOINT ["/usr/bin/docker-entrypoint.sh"]
 CMD ["minio"]
