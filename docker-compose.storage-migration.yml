@@ -63,10 +63,13 @@ services:
       retries: 20
 
   migrate-storage:
-    build:
-      context: .
-      target: builder
-    image: ppp-storage-migration:local
+    # A published image, not a build. A deployment holds four files and no
+    # source tree — docker-compose.prod.yml consumes images for exactly that
+    # reason — so `build: { context: . }` here made this overlay unusable on the
+    # only machine that needs it. Pinned to the same PPP_TAG as the rest of the
+    # stack, so the migration is the one that shipped with the release you are
+    # moving to.
+    image: ${PPP_REGISTRY:-ghcr.io/danileau}/ppp-storage-migrate:${PPP_TAG:-latest}
     container_name: ppp-storage-migration
     # Deliberately not in the default set: `run` reaches it by name, and no
     # `up` can start it by accident.
@@ -92,4 +95,3 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-    command: ["./node_modules/.bin/tsx", "scripts/export-storage.ts"]

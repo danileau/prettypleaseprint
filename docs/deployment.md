@@ -366,7 +366,7 @@ docker compose --env-file .env.docker -f docker-compose.prod.yml down
 # 3. migrate, and read the verification before going further
 docker compose --env-file .env.docker \
   -f docker-compose.prod.yml -f docker-compose.storage-migration.yml \
-  run --rm --build migrate-storage
+  run --rm migrate-storage
 
 # 4. only once it says every model is accounted for
 docker compose --env-file .env.docker -f docker-compose.prod.yml up -d

@@ -57,6 +57,11 @@ jobs:
             target: runner
           - name: ppp-migrate
             target: migrator
+          # The one-shot storage migration. Published rather than built on the
+          # host because a deployment has no source tree — see the stage's
+          # comment in the Dockerfile. Goes when the migration tooling goes.
+          - name: ppp-storage-migrate
+            target: storage-migrator
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
