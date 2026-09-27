@@ -479,30 +479,6 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Fixed
 
-- **Nobody could upload a model from a keyboard.** The file input was
-  `display: none`, which does not hide a control so much as delete it from the
-  focus order. A `<label>` is not focusable, so there was no tab stop anywhere
-  that opened the file picker — and the send button is disabled until a file is
-  chosen. So a keyboard or screen-reader user could reach the upload page, read
-  it, and do nothing on it. The app's primary function, unreachable, with no
-  error and nothing to notice.
-
-  It is `sr-only` now: clipped to a 1px box rather than removed, so it stays
-  focusable and Space or Enter opens the picker. The dropzone grows a
-  `focus-within` ring, because the input it wraps is the size of a full stop and
-  its own outline would be invisible — the label carries the visuals, so the
-  label shows the focus.
-
-  `verify:passkey` grew four checks for it, asserted on **computed style and
-  actual focus** rather than on the class name. A class is a means, and the next
-  way to break this will not be called `hidden` — `visibility: hidden` and a
-  zero width both destroy focusability while looking entirely innocent. Proved
-  by putting `display: none` back and watching three of the four fail, then
-  restoring it.
-
-  WCAG 2.1.1 (Level A), on the one screen the whole app exists to serve.
-
-
 - **Seven places where the documentation would have walked a stranger into a
   wall.** Found by reviewing the repo against itself rather than reading it.
 
