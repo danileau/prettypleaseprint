@@ -10,7 +10,7 @@
 | Auth | [Better Auth](https://better-auth.com) 1.7 — username/password, passkeys, breach check, admin plugin |
 | Data | Prisma 6 → PostgreSQL 17 |
 | Styling | Tailwind v4, design tokens from the handoff as CSS variables |
-| Local infra | Docker Compose: Postgres, MinIO (model files), Mailpit (mail) |
+| Local infra | Docker Compose: Postgres, Mailpit (mail). Model files go to `./data/uploads` — there is no storage service |
 
 Chosen to match the existing house style (`huere-siech` is Next 15 + Prisma,
 `danileau.com` is React + TS + Tailwind) and the handoff's own suggested stack.
@@ -19,7 +19,7 @@ Chosen to match the existing house style (`huere-siech` is Next 15 + Prisma,
 
 ```bash
 cp .env.example .env          # then set BETTER_AUTH_SECRET: openssl rand -base64 32
-docker compose up -d          # postgres :5432, minio :9000, mailpit :8025
+docker compose up -d          # postgres :5432, mailpit :8025
 npm install
 npm run db:migrate
 npm run db:seed               # creates the one admin from ADMIN_EMAIL/ADMIN_NAME
@@ -40,7 +40,7 @@ npm run verify:frr            # the feature-request track (file, triage, the flo
 npm run verify:benefits       # the owner-managed benefits (tip) catalogue
 npm run verify:api            # the JSON API, the OpenAPI document and the console
 npm run verify:passkey        # WebAuthn ceremonies in a real browser
-npm run probe:security        # 103 OWASP-mapped security probes
+npm run probe:security        # 120 OWASP-mapped security probes
 ```
 
 ## Verifying it
@@ -72,20 +72,22 @@ as four gates that can be required by name in branch protection:
 
 | Gate | What it does |
 | --- | --- |
-| `guard` | typecheck, and the secret scanner over every tracked file |
+| `guard` | typecheck, the secret scanner over every tracked file, and the markdown link check |
 | `models` | the upload validator against hostile fixtures — no server needed |
-| `verify` | raises the real compose stack and runs all five integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
+| `verify` | raises the real compose stack and runs all eight integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
 | `trivy` | filesystem scan for vulnerabilities, secrets and misconfiguration; HIGH/CRITICAL fail |
 
-`verify` uses docker compose rather than GitHub `services:` for two reasons:
-`services:` cannot override a container's command, which MinIO needs, and
-running the same command a developer runs puts **the compose files themselves
-under test**. A broken overlay fails in CI rather than on the NAS.
+`verify` uses docker compose rather than GitHub `services:` so that running the
+same command a developer runs puts **the compose files themselves under test**. A
+broken overlay fails in CI rather than on the NAS. (It used to have a second
+reason — `services:` cannot override a container's command, which MinIO needed —
+and that one left with the object store.)
 
 Two more workflows:
 
-- **`release-images.yml`** — every merge to main builds `ppp-app` and
-  `ppp-migrate`, pushes them to ghcr.io tagged with the commit SHA and
+- **`release-images.yml`** — every merge to main builds `ppp-app`,
+  `ppp-migrate` and `ppp-storage-migrate` (the one-shot that copies models out of
+  the old object store), pushes them to ghcr.io tagged with the commit SHA and
   `latest`, signs them with cosign (keyless, via GitHub OIDC), and scans the
   *published* image. A base image can carry a CVE that no scan of this
   checkout would ever see.

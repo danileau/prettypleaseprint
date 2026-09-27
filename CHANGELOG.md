@@ -336,6 +336,30 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Changed
 
+- **The documentation caught up with the code.** A sweep after the object store
+  came out, because several documents were describing a stack that no longer
+  exists rather than being wrong in small ways.
+
+  `docs/architecture.md` gained a **Storage is a directory** section — it is the
+  design document and had nothing to say about the largest structural change in
+  the project, while still describing `storage.ts` as "S3/MinIO, signed URLs".
+  The viewer's byte-path reasoning, the upload ordering, the wire-format note and
+  the file layout all now describe files rather than objects.
+
+  `docs/development.md`'s stack table and dev-compose line still promised MinIO
+  on `:9000`, and its reason for preferring `docker compose` over GitHub
+  `services:` was half about MinIO needing a command override — which left with
+  the object store, so the sentence now keeps the reason that survived and notes
+  which one did not. `release-images.yml` also publishes a third image now.
+
+  Counts that had drifted: **nine** suites, not eight, in both the README and
+  CONTRIBUTING — and CONTRIBUTING's claim that all of them run against the built
+  image was never quite true, since `verify:models` is a pure-function test in its
+  own gate. `probe:security` is **120** probes, not 103; `verify:models` is 32
+  checks, not 29; `verify` runs eight integration suites, not five; and `guard`
+  runs three cheap gates, not two.
+
+
 - **The object store is gone. Model files are files.** MinIO served an S3 API
   that this app never needed: every byte was already proxied through
   `/api/models/[id]` — the deployment publishes no port for storage, so a
@@ -523,6 +547,14 @@ Notable changes. Every entry names a released version; deployments pin
   plausibly has a MinIO data directory left.
 
 ### Fixed
+
+- **The board and the header at phone width.** A card title long enough to wrap
+  overflowed its card on `/board`, and the shared header did not fit a narrow
+  viewport. Shipped in August and never written down here — found while checking
+  the changelog covered every commit since v0.1.0, which it now does. Reproduced
+  in a headless browser at 360, 390, 430, 768 and 1180 for both roles, before and
+  after.
+
 
 - **Seven places where the documentation would have walked a stranger into a
   wall.** Found by reviewing the repo against itself rather than reading it.

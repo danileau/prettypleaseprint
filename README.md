@@ -92,7 +92,7 @@ that: there is no multi-tenancy, no billing, and no queue theory.
 | | |
 | --- | --- |
 | Host | anything that runs Docker Compose on **`linux/amd64`** — a NAS, an x86 VPS, a spare laptop. **Not arm64.** The published `ppp-app` and `ppp-migrate` images are built for amd64 only, and a second architecture would have to be verified rather than merely built — the suites are this project's contract, and running them twice is not a commitment it makes. An arm64 host (a Pi 5, an Ampere VPS, an Apple Silicon Mac) fails at `docker compose pull` with `no matching manifest for linux/arm64`. |
-| Memory | ~1 GB for the whole stack (app, Postgres, MinIO) |
+| Memory | ~1 GB for the whole stack (app, Postgres) |
 | Disk | small — the database is megabytes; uploads are capped at 250 MB each |
 | TLS | **required.** The app refuses to start on plain `http://` in production, and passkeys need a secure context |
 | Mail | **optional.** Nothing needs it — see [Mail is optional](docs/authentication.md#mail-is-optional--genuinely) |
@@ -395,7 +395,7 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 | **[Development](docs/development.md)** | stack, local setup, the verification suites, CI |
 | **[Security audit](docs/security-audit.md)** | the OWASP Top 10 assessment, findings, and residual risk accepted |
 | **[Security policy](SECURITY.md)** | how to report a vulnerability |
-| **[Contributing](CONTRIBUTING.md)** | the eight suites are the contract; what a good change looks like |
+| **[Contributing](CONTRIBUTING.md)** | the nine suites are the contract; what a good change looks like |
 | **[Changelog](CHANGELOG.md)** | what changed in each release |
 
 ## Security
@@ -426,11 +426,12 @@ something, see [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
-Issues and pull requests are welcome. The eight verification suites in
-`scripts/` are the contract — `npm run verify:auth`, `verify:upload`,
-`verify:queue`, `verify:models`, `verify:passkey` and `probe:security` all run
-in CI against the built container image, not a dev server. If a change makes
-one fail, that is the change talking.
+Issues and pull requests are welcome. The nine verification suites in
+`scripts/` are the contract — `verify:models`, `verify:auth`, `verify:upload`,
+`verify:queue`, `verify:frr`, `verify:benefits`, `verify:api`, `verify:passkey`
+and `probe:security`. All but `verify:models` run in CI against the built
+container image rather than a dev server. If a change makes one fail, that is the
+change talking.
 
 See [docs/development.md](docs/development.md) to get set up.
 

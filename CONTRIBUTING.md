@@ -5,9 +5,10 @@ maintainer — so the bar is not "be an expert", it is "leave it working".
 
 ## The contract
 
-Eight verification suites, all of which run in CI **against the built container
-image** rather than a dev server. They are the specification; if a change makes
-one fail, that is the change talking.
+Nine verification suites. Eight of them run in CI **against the built container
+image** rather than a dev server; `verify:models` is a pure-function test of the
+upload validator and runs in its own gate with nothing else up. They are the
+specification; if a change makes one fail, that is the change talking.
 
 ```bash
 npm run verify:models     # upload validator vs. hostile fixtures — needs nothing running

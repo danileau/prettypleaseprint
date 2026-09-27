@@ -33,21 +33,22 @@ size where a browser is not.
 
 Three details worth knowing:
 
-- **The bytes are proxied, not signed.** `/api/models/[id]` streams from
-  object storage through the app. That is not the elegant option, it is the
-  only correct one here: the deployment publishes no port for MinIO, so a
-  signed URL would point at something the browser cannot reach. Proxying also
-  keeps `connect-src` at `'self'`, so the viewer needs no CSP relaxation —
-  verified with zero violations in a real browser.
+- **The bytes come through the app.** `/api/models/[id]` streams the file from
+  disk. There is nothing else it could do — files are not in the web root and
+  there is no storage service to hand out a URL for — but it was the right shape
+  even when an object store was in the way, because it keeps `connect-src` at
+  `'self'` and the viewer needs no CSP relaxation. Verified with zero violations
+  in a real browser.
 - **It is scoped like the story.** Same `storyScope` fragment, so a client
   asking for someone else's model gets 404, not 403.
 - **three.js is imported dynamically**, inside the effect. It is fetched when
   someone opens a ticket and never on the board or the queue.
 
 The trade: every viewer load moves the whole file through Next. At 250 MB and a
-handful of people that is fine. If this ever faces a wider audience, put
-storage behind the same reverse proxy, hand out a signed URL, and widen
-`connect-src` to that origin.
+handful of people that is fine. If this ever faces a wider audience, serve
+`$DATA_ROOT/uploads` from the reverse proxy directly and widen `connect-src` to
+that origin — but note that the ownership check in `authz.ts` is what makes a
+model private, so anything bypassing the route has to carry that check with it.
 
 ## Uploads
 
@@ -55,9 +56,12 @@ storage behind the same reverse proxy, hand out a signed URL, and widen
 browser can watch a real XHR progress bar — a large model over office wifi is
 too long for a spinner.
 
-Nothing is written to storage until the bytes have been inspected, and no
-story row exists until the object is in place: a rejected file leaves nothing
-behind, and a story never points at an object that was not stored.
+Nothing is written to disk until the bytes have been inspected, and no story row
+exists until the file is in place: a rejected upload leaves nothing behind, and a
+story never points at a file that was not written. The write itself is atomic —
+temp file, `fsync`, rename, `fsync` the directory — because the row created
+immediately afterwards claims the file is whole, and a filesystem gives none of
+that away for free.
 
 `src/lib/models.ts` decides what is acceptable, against the bytes rather than
 the filename:
@@ -78,7 +82,7 @@ the filename:
 Bounding boxes are measured from the actual mesh, honouring the 3MF `unit`
 attribute. Nothing is inferred beyond that — see the estimate decision above.
 
-`npm run verify:models` covers all of this with 29 checks, including a PDF and
+`npm run verify:models` covers all of this with 32 checks, including a PDF and
 an ELF binary renamed `.stl`, an STL that lies about its triangle count, a
 traversal path inside a 3MF, and a zip bomb.
 
@@ -124,6 +128,47 @@ in a header, or a two-phase upload — because by the time a route handler can
 see the request, the framework has already buffered it. That is a protocol
 change touching the form, the API, the OpenAPI document and two suites, and it
 is worth doing the day the queue is the thing that hurts.
+
+## Storage is a directory
+
+Model files live in `$DATA_ROOT/uploads`, at the path their `storageKey` names.
+`src/lib/storage.ts` is six operations — `mkdir`, an atomic write, a read
+stream, `unlink`, `copyFile`, and a path resolver — and that is the whole of it.
+
+It used to be MinIO behind the S3 API, and the S3 part was never doing any work.
+Every byte was already proxied through the app, because the deployment published
+no port for storage and a signed URL would have pointed somewhere the browser
+could not reach. The app made six calls. Those six calls are the six operations
+above.
+
+What the object store cost in exchange was a container, a credential pair, a
+healthcheck, two AWS SDK packages, and eventually a supply-chain problem: MinIO
+withdrew its community images *and* binaries, so the project mirrored one image
+and then compiled its own, which still carried 63 HIGH/CRITICAL advisories that
+no upgrade fixed because upstream's newest release shipped byte-identical
+vulnerable dependencies. For five people and one printer, putting a few hundred
+megabytes of STL onto a disk the app already had mounted, that was a great deal
+of machinery to keep alive. [Deployment](deployment.md) tells that story from the
+operator's side.
+
+Three decisions inside it are worth knowing:
+
+- **Writes are atomic, deliberately.** Temp file, `fsync`, rename, `fsync` the
+  directory. S3 gave that away for free — an object appeared whole or not at all
+  — and a filesystem does not, while the story row created immediately afterwards
+  claims the file is complete.
+- **Mode 644 under 755 directories**, not owner-only. Postgres' data directory
+  being mode 700 is why the README carries a paragraph explaining you cannot back
+  it up as yourself; one such trap is enough. Models are not secret at rest —
+  they are gated at the route by `storyScope`. The cost is that *removing* the
+  tree needs root or a container, which is the lesser annoyance: backups happen
+  often and deletions once. Both modes live in `storage-layout.ts` because the
+  app and the one-shot migration have to agree and once did not.
+- **Keys are resolved, not prefix-matched.** `storageKey` comes from a database
+  column, so `pathFor` resolves it and refuses anything that lands outside the
+  root — the same reasoning `safe-redirect.ts` sets out at length. Keys are
+  generated UUIDs, so it should never fire; the cost of being wrong is writing
+  outside the volume.
 
 ## Decisions taken against the handoff
 
@@ -195,9 +240,9 @@ Three decisions inside it that look odd on purpose:
   invitation to skip a step, and the board's whole claim is that it shows where
   work actually is.
 - **Nothing spreads a database row onto the wire.** `src/lib/api.ts` names
-  every field it emits. That is what keeps `storageKey` — the object's name in
-  the bucket — out of every response without anyone having to remember to strip
-  it, and it is what makes a column added tomorrow private by default.
+  every field it emits. That is what keeps `storageKey` — the file's path under
+  `MODELS_ROOT` — out of every response without anyone having to remember to
+  strip it, and it is what makes a column added tomorrow private by default.
 
 The document at `/api/openapi.json` is assembled per request from two halves:
 the app's own paths, written out, with request bodies converted from the same
@@ -328,7 +373,8 @@ src/app/
   csp.ts                 Content-Security-Policy builder + nonce
   audit.ts               the append-only trail
   models.ts              upload validation + mesh measurement
-  storage.ts             S3/MinIO, signed URLs, generated keys
+  storage.ts             model files on disk: atomic writes, generated keys
+  storage-layout.ts      file and directory modes, shared with the migration
   catalog.ts             the fixed choices a request is made from
   stories.ts             every operation on a ticket — the rules, once
   notifications.ts       the Activity feed, scoped by recipient

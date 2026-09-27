@@ -4,8 +4,9 @@
 
 ## Running it in containers
 
-The dev stack (`docker-compose.yml`) runs Postgres, MinIO and Mailpit while the
-app runs on the host under `npm run dev`. That is the loop for building.
+The dev stack (`docker-compose.yml`) runs Postgres and Mailpit while the app runs
+on the host under `npm run dev`. That is the loop for building. Model files go to
+`./data/uploads`; there is no storage service to run.
 
 `docker-compose.prod.yml` runs **everything**, including the app, and is also
 the basis for deployment:
@@ -46,9 +47,9 @@ unmigrated schema. The **runner** is the slim runtime — standalone Next output
 non-root, with a healthcheck.
 
 To run the verification suites against the containerised app, add
-`-f docker-compose.test.yml`, which publishes Postgres, MinIO and Mailpit's
-SMTP port so the host-side scripts can reach them. **Never apply that overlay
-on a deployed host** — those are internal services.
+`-f docker-compose.test.yml`, which publishes Postgres and Mailpit's SMTP port so
+the host-side scripts can reach them. **Never apply that overlay on a deployed
+host** — those are internal services.
 
 ## Deploying to TrueNAS SCALE, behind Nginx Proxy Manager
 

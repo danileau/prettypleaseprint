@@ -22,7 +22,7 @@ docker run --rm -v "$PWD:/src:ro" semgrep/semgrep semgrep scan \
   --config=p/owasp-top-ten --config=p/security-audit --config=p/nextjs /src/src
 docker run --rm --network host ghcr.io/zaproxy/zaproxy:stable \
   zap-baseline.py -t http://localhost:3000        # DAST
-npm run probe:security                     # DAST, app-specific (103 probes)
+npm run probe:security                     # DAST, app-specific (120 probes)
 ```
 
 ## Result
