@@ -351,6 +351,17 @@ Behind Cloudflare's proxy, visitors see Cloudflare's certificate regardless, so
 an **Origin Certificate** plus SSL mode *Full (strict)* removes ACME from the
 picture entirely.
 
+**Every page loads and nothing works — sign-in included.**
+Cloudflare's **Rocket Loader** rewrites every `<script>` to load through its own
+deferred loader, and the rewritten tags do not carry the per-request CSP nonce
+this app's `script-src` requires. Hydration never happens, so no client-side code
+runs: the pages render from server HTML and look perfectly normal, but the
+sign-in form, the upload progress bar, the 3D viewer and the Activity menu all do
+nothing. The console shows CSP violations; the app's own logs show nothing at
+all, because the requests never reach it. Turn Rocket Loader off, globally or
+with a Configuration Rule scoped to the hostname — see
+[deployment](docs/deployment.md). Auto Minify and Brotli are fine.
+
 **Audit rows have no IP address.**
 `TRUST_PROXY_HEADERS` is unset or `false`, so nothing is trusted. Behind
 Cloudflare set it to `cloudflare` — not `true`, because Cloudflare *appends* to

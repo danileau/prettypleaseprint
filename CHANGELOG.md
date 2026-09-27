@@ -7,6 +7,27 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Added
 
+- **Rocket Loader has to be off, and the docs now say so.** Reported by NelsonFx
+  on the pull request that added the tunnel overlay, and it is the first thing an
+  orange-clouded deployment hits. Cloudflare's Rocket Loader rewrites every
+  `<script>` to load through its own deferred loader, and the rewritten tags do
+  not carry the per-request nonce that `script-src 'self' 'nonce-…'
+  'strict-dynamic'` requires — so hydration never happens and no client-side code
+  runs at all.
+
+  The failure is quieter than an error: every page renders from server HTML and
+  looks right, and simply does nothing. Sign-in is where it shows first, because
+  `/signin` is a client component and both the passkey and password paths go
+  through the auth client, but it takes the upload progress bar, the viewer and
+  the Activity menu with it. CSP violations appear in the browser console and
+  nothing appears in the app's logs, because the requests never arrive.
+
+  There is no way to keep both: the alternative is `unsafe-inline`, which throws
+  away what the nonce is for. Documented in the README's troubleshooting list and
+  in the Cloudflare section of [deployment](docs/deployment.md), with Auto Minify
+  and Brotli noted as safe.
+
+
 - **`npm run migrate:storage` — copy every model out of MinIO, and prove the
   copy is complete.** The first step of removing the object store, and it
   changes nothing about how the app runs: the app keeps reading from MinIO, and

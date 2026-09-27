@@ -524,6 +524,44 @@ makes the cause harder to see. The forwards and the certificate can only go
 once the *last* hostname behind them has moved to a tunnel too; adding each one
 as another Public Hostname on a tunnel is how they get there.
 
+### Turn Rocket Loader off, or nobody can sign in
+
+Reported by NelsonFx on the pull request that added this overlay, and it is the
+first thing an orange-clouded deployment is likely to hit.
+
+Rocket Loader (Cloudflare dashboard → Speed → Optimization) rewrites every
+`<script>` on the page to load through its own deferred loader. This app's
+production CSP is:
+
+```
+script-src 'self' 'nonce-<per request>' 'strict-dynamic'
+```
+
+— with no `unsafe-inline`, on purpose. Next hydrates from an inline bootstrap
+script carrying that request's nonce, and `strict-dynamic` lets it pull in the
+rest of the chunk graph. Rocket Loader's rewritten scripts **do not carry the
+nonce**, so the browser refuses them, hydration never happens, and no client-side
+code runs at all.
+
+What you see is worse than an error. Every page renders correctly, because the
+server sent the HTML — the board, the ticket, the sign-in form all look right.
+They simply do nothing. Sign-in is where it bites first, because `/signin` is a
+client component and the passkey and password paths both go through the auth
+client, but it takes the upload progress bar, the 3D viewer and the Activity menu
+with it. The console shows CSP violations; nothing in the app's own logs does,
+because the requests never arrive.
+
+**Fix:** turn Rocket Loader off, either globally or with a Configuration Rule
+scoped to this hostname.
+
+There is no way to keep both. The alternative is adding `unsafe-inline` to
+`script-src`, which discards what the nonce is there for — see
+[the security audit](security-audit.md), where the nonce-and-`strict-dynamic`
+policy is the whole answer to "no Content-Security-Policy". A page-speed feature
+is not worth that trade on an invite-only app used by five people.
+
+Auto Minify and Brotli are fine; they do not move script tags.
+
 ### Cloudflare refuses the upload before the app sees it
 
 The app accepts models up to **250 MB**. Cloudflare's proxy caps request bodies
