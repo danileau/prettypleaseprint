@@ -333,12 +333,18 @@ Notable changes. Every entry names a released version; deployments pin
 
 - **The stack could not be pulled any more, and nothing said so.** MinIO
   stopped publishing its community image to Docker Hub — `minio/minio` answers
-  404 — and its quay.io repository refuses an anonymous pull at every tag, so
-  neither registry is a route for CI or for a fresh deployment. A running
+  404 — and its quay.io repository now refuses an anonymous pull at every tag,
+  so neither registry is a route for CI or for a fresh deployment. A running
   deployment kept serving from its cached copy, which is what made it quiet: CI
   could no longer raise the stack, so every pull request's `verify` failed
   before a single suite ran, and the deploy wizard would have stopped at
   `compose pull` on the next deploy.
+
+  Both of MinIO's public routes closed in sequence, which is the part worth
+  keeping. quay.io genuinely worked: CI pulled `quay.io/minio/minio`
+  anonymously on 2026-09-16 and brought the stack up healthy. Eleven days later
+  the same tag answers `unauthorized`. So the fix is not a better MinIO
+  registry — the next one closes too — it is holding the bytes ourselves.
 
   Both compose files now pull the last community release,
   `RELEASE.2025-09-07T16-13-09Z`, from this project's own registry at

@@ -112,11 +112,19 @@ services:
   #
   # Mirrored into this project's own registry, and pinned by digest. MinIO
   # stopped publishing its community image to Docker Hub — `minio/minio`
-  # answers 404 — and its quay.io repository refuses an anonymous pull at every
-  # tag, so neither upstream is a route for CI or for a fresh deployment. A
-  # running stack kept working on its cached copy, which is what made it quiet:
-  # CI failed to raise the stack, and the deploy wizard would have stopped at
-  # `compose pull` on the next deploy.
+  # answers 404 — and its quay.io repository now refuses an anonymous pull at
+  # every tag, so neither upstream is a route for CI or for a fresh deployment.
+  # A running stack kept working on its cached copy, which is what made it
+  # quiet: CI failed to raise the stack, and the deploy wizard would have
+  # stopped at `compose pull` on the next deploy.
+  #
+  # The quay route was real, and then it went away. CI pulled
+  # quay.io/minio/minio anonymously on 2026-09-16 — the job log records
+  # `minio Pulling` / `minio Pulled` on a fresh runner holding no quay
+  # credential, and the stack came up healthy — and eleven days later the same
+  # tag answers `unauthorized`. That is the reason this mirrors the image
+  # instead of chasing MinIO to whichever registry still serves it: the
+  # pattern is withdrawal, so the next one closes too.
   #
   # This is the same image, not an upgrade. RELEASE.2025-09-07T16-13-09Z is the
   # last community release and what `minio/minio:latest` resolved to. MinIO is
