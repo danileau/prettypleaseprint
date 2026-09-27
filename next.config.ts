@@ -24,8 +24,16 @@ const securityHeaders = [
   // embedding our responses.
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
   { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
-  // COEP is deliberately "credentialless" rather than "require-corp": Google
-  // Fonts serves no CORP header, and require-corp would block the webfonts.
+  // COEP is "credentialless" rather than "require-corp". The original reason —
+  // Google Fonts serving no CORP header — stopped applying when the faces were
+  // vendored into src/app/fonts, and nothing cross-origin is embedded any more:
+  // the fonts are local, Swagger UI is copied out of node_modules at build, and
+  // there is no <img> in the app at all.
+  //
+  // So require-corp is now reachable, and tightening to it is worth doing. It is
+  // deliberately not done here: this line ships in a change about typefaces, and
+  // a header that decides what the browser will load for every request deserves
+  // its own change and its own verification rather than riding along on one.
   { key: "Cross-Origin-Embedder-Policy", value: "credentialless" },
   ...(isProd
     ? [
