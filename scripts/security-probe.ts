@@ -17,6 +17,7 @@ import { db } from "../src/lib/db";
 import { issuePasswordSetupUrl } from "../src/lib/password-reset";
 import { TEST_PASSWORD, ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 import { SESSION_IDLE_SECONDS } from "../src/lib/auth-rules";
+import { safeRedirect } from "../src/lib/safe-redirect";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 const MAILPIT = process.env.MAILPIT_URL ?? "http://localhost:8025";
@@ -804,6 +805,69 @@ async function main() {
   probe("A07-protorel", "a protocol-relative ?next is not honoured",
         !(protoRel.headers.get("location") ?? "").includes("evil.example"),
         protoRel.headers.get("location") ?? "");
+
+  /*
+   * Every spelling a URL parser resolves off-origin, not just the one that
+   * looks off-origin to a person.
+   *
+   * The guard this pins used to be `startsWith("/") && !startsWith("//")`,
+   * which three of these five walk straight through: the WHATWG parser treats
+   * a backslash as a slash in the relative-slash state, so `/\evil.example`
+   * starts with a single slash, passes the check, and resolves to
+   * https://evil.example/.
+   *
+   * Asserted against the function rather than over HTTP, and that is the
+   * interesting part. Two earlier attempts at this probe were both useless,
+   * for reasons worth keeping:
+   *
+   *   - Searching the response body flagged everything, including targets that
+   *     are correctly refused. Middleware builds its sign-in redirect from the
+   *     raw `pathname + search`, so a refused target legitimately reappears
+   *     inside an encoded same-origin return path, and Next serialises raw
+   *     `searchParams` into the RSC flight payload regardless.
+   *   - Asserting on the redirect Location proved nothing either, because Next
+   *     normalises the Location it emits — the backslash spellings came back
+   *     same-origin even with the broken guard in place. The server redirect
+   *     was never the exploitable path.
+   *
+   * What is exploitable is the client half: `signin-form.tsx` and
+   * `reauth-form.tsx` hand `next` to `window.location.assign` after a
+   * successful sign-in, and the browser resolves the backslash there. No HTTP
+   * probe can see a client-side navigation, so the honest pin is the decision
+   * itself. `safe-redirect.ts` is pure for exactly this reason, the same
+   * reasoning that keeps `scope.ts` out of `authz.ts`.
+   */
+  const OFFSITE = [
+    "//evil.example",
+    String.raw`/\evil.example`,
+    String.raw`/\/evil.example`,
+    String.raw`/\\evil.example`,
+    "https://evil.example",
+    "https:/evil.example",
+    String.raw`\\evil.example`,
+  ];
+  const SENTINEL = "https://redirect.invalid";
+  const leaked = OFFSITE.filter((t) => {
+    const out = safeRedirect(t, "/");
+    try {
+      return new URL(out, SENTINEL).origin !== SENTINEL;
+    } catch {
+      return true;
+    }
+  });
+  probe("A07-offsite-next", "no ?next spelling survives the redirect guard",
+        leaked.length === 0, leaked.map((t) => `${t} -> ${safeRedirect(t, "/")}`).join("  "));
+
+  // The other half: a target that IS same-origin has to survive intact, or the
+  // guard is just a redirect to "/" wearing a costume.
+  const KEPT: Array<[string, string]> = [
+    ["/board", "/board"],
+    ["/history?status=Done", "/history?status=Done"],
+    ["/admin/invites", "/admin/invites"],
+  ];
+  const mangled = KEPT.filter(([input, want]) => safeRedirect(input, "/") !== want);
+  probe("A07-offsite-keeps", "and a same-origin target is preserved, query and all",
+        mangled.length === 0, mangled.map(([i]) => `${i} -> ${safeRedirect(i, "/")}`).join("  "));
 
   // ---------------------------------------------------------------------
   // How long a session is worth something.

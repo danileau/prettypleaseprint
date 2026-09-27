@@ -136,6 +136,38 @@ answer to the wrong audience is how auth bugs hide.
 A build artifact would have been committed. Found indirectly: Semgrep's only
 hit was a false positive *inside* that generated file.
 
+### 8. Open redirect via a backslash — *moderate, fixed*
+
+`safeNext` on the sign-in and re-auth pages, and the `from` guards in the two
+server-action helpers, all asked the same question the same way:
+
+```ts
+raw.startsWith("/") && !raw.startsWith("//")
+```
+
+`/\evil.example` answers yes to both halves. The WHATWG URL parser treats `\`
+as `/` in the relative-slash state, so the browser resolved it to
+`https://evil.example/`; `/\/` and `/\\` did the same. The value was handed to
+`window.location.assign` after a **successful** sign-in, so the victim
+authenticated on the real origin, with the real passkey, and was then delivered
+to a lookalike — which is the whole shape of the attack the code comment already
+warned about.
+
+`/reauth` was the worse of the two. That page exists to be the "confirm it's
+you" moment before access changes hands, so it is the page a person is least
+likely to re-read the address bar on.
+
+The fix is one helper, `src/lib/safe-redirect.ts`, used by all four call sites.
+It resolves the target against an origin that cannot exist and keeps it only if
+it stayed there. The point is not that backslashes are now also rejected — it is
+that prefix matching cannot answer the question, because the question is what a
+URL parser will do, so the check asks one.
+
+Caught by review, not by the suite: `A07-protorel` tested `//evil.example`
+only, and the bug sat directly behind the one case a person thinks of.
+`A07-offsite-signin` and `A07-offsite-reauth` now assert the parser's five
+spellings against both pages.
+
 ## Findings correctly dismissed
 
 - **Semgrep "Facebook OAuth detected"** in `tsconfig.tsbuildinfo` — a regex
@@ -159,7 +191,7 @@ hit was a false positive *inside* that generated file.
 | **A04** | Insecure Design | **Pass.** No public registration route: `/signup` and `/register` do not exist, and the sign-up endpoint that *does* exist — the one an invitation link posts to — answers 403 to anybody without a pending invite, leaving no row. Invite-only enforced in one hook across every auth method. Invites single-use, expiring, revocable, rotated on resend. Password guessing rate-limited and confirmed firing. |
 | **A05** | Security Misconfiguration | **Pass, after fixes 2 and 3.** Full header set; `X-Powered-By` suppressed; `.env`, `.git/config`, `package.json` and the Prisma schema all unreachable; malformed input returns no stack trace. A write to the API carrying a foreign `Origin` is refused. Neither `/api/openapi.json` nor the console at `/docs` is served to a stranger, and the console loads no subresource from another origin — Swagger UI is vendored into `public/` at build time rather than pulled from a CDN, so the CSP needed no relaxation. |
 | **A06** | Vulnerable Components | **Pass, after fixes 4 and 5.** Zero across three independent scanners. |
-| **A07** | Auth Failures | **Pass, after fix 1.** Passwords: ≥10 characters, breach-checked against HIBP by k-anonymity, guessing capped at 10/min per IP. No user enumeration — a wrong password and an invented username give byte-identical responses, and an unknown username still pays for a hash so the wall clock does not answer either. Set-password links single-use, 30-minute TTL, hashed at rest, and they establish **no session**. Setting a password revokes the sessions the old one opened. Off-site and protocol-relative redirect targets refused, both via `?next=` and via the API's `callbackURL`. Sign-out kills the session server-side. A bearer token is the session token rather than a separate credential: an invented one grants nothing, and sign-out revokes the token at the same instant it revokes the cookie — probed, because a token that outlived sign-out would be a way back into an account whose owner believes they have left. See the section below. |
+| **A07** | Auth Failures | **Pass, after fix 1.** Passwords: ≥10 characters, breach-checked against HIBP by k-anonymity, guessing capped at 10/min per IP. No user enumeration — a wrong password and an invented username give byte-identical responses, and an unknown username still pays for a hash so the wall clock does not answer either. Set-password links single-use, 30-minute TTL, hashed at rest, and they establish **no session**. Setting a password revokes the sessions the old one opened. Off-site redirect targets refused, both via `?next=` and via the API's `callbackURL` — decided by resolving the target against a sentinel origin rather than by matching its prefix, because `/\evil.example` passes “starts with / and not //” and then resolves off-site. That is fix 8 below. Sign-out kills the session server-side. A bearer token is the session token rather than a separate credential: an invented one grants nothing, and sign-out revokes the token at the same instant it revokes the cookie — probed, because a token that outlived sign-out would be a way back into an account whose owner believes they have left. See the section below. |
 | **A08** | Integrity Failures | **Pass.** `role`, `initials` and `invitedById` cannot be set from the request body: declared `input: false`, and Better Auth refuses the whole sign-up with `FIELD_NOT_ALLOWED` rather than silently trimming it. A chosen `id` and a posted `emailVerified` reach the endpoint undeclared and are overruled server-side from the invite. Both halves probed. On upload, `uploaderId` comes from the session and a posted `status` is ignored, both probed. Storage keys are generated, never derived from the filename. Lockfile committed. |
 | **A09** | Logging & Monitoring | **Pass.** An append-only `AuditEvent` table records invitations sent, resent, revoked, accepted and *rejected*; access revoked and restored; password resets requested and completed; sign-in and sign-out; story creation and refused uploads. The client address is recorded only from a header the deployment has explicitly named as trustworthy (`TRUST_PROXY_HEADERS`), and no address at all otherwise — a blank rather than a fiction. Rows are denormalised (`actorEmail`, `subject`) so the trail still reads correctly after the user or story it refers to is deleted, and a probe asserts no token or secret reaches `detail`. |
 | **A10** | SSRF | **Pass (low exposure).** The app makes no outbound request from user input. A link-local `callbackURL` (`169.254.169.254`) is refused. |
