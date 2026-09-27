@@ -363,6 +363,32 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Fixed
 
+- **Every build depended on Google answering, and the failure did not say so.**
+  The four faces came from `next/font/google`, which downloads them at build
+  time. So CI's `verify` gate, `release-images.yml` and the README's own
+  build-from-source quick start all needed fonts.googleapis.com reachable and
+  willing — and when it was not, the build died with a webpack stack trace
+  pointing at `@next/font/dist/google/loader.js`, which is nowhere near where
+  anyone would look. Caught by it happening, not by reasoning about it.
+
+  The woff2 files now live in `src/app/fonts/` and load through
+  `next/font/local`. Latin subset, the same faces, 124 kB in total; Archivo is a
+  single variable file covering the four weights it used to fetch separately.
+  Nothing is fetched at build or at runtime, which is also why `font-src` can
+  stay `'self'`.
+
+  It was an inconsistency as much as a fragility: Swagger UI is copied out of
+  `node_modules` at build time precisely because "a CDN would be unreachable on
+  a NAS with no outbound internet", and the app's own typefaces were exempt from
+  that reasoning for no reason anybody had written down.
+
+  Verified by building the image with `fonts.googleapis.com` and
+  `fonts.gstatic.com` pointed at 127.0.0.1 — the build that used to need them
+  now completes without them. All four are SIL OFL 1.1; the licence and the
+  per-family copyright notices travel with the files in
+  `src/app/fonts/README.md`.
+
+
 - **The stack could not be pulled any more, and nothing said so.** MinIO
   stopped publishing its community image to Docker Hub — `minio/minio` answers
   404 — and its quay.io repository now refuses an anonymous pull at every tag,

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Alfa_Slab_One, Archivo, Courier_Prime, Pacifico } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 import { SourceLink } from "@/components/source-link";
@@ -9,36 +9,50 @@ import { sourceUrl } from "@/lib/runtime";
  * Four faces, each with a job, which is how a real diner sign works: a script
  * logotype, fat slab for the shouting, a workhorse for the reading, and a
  * typewriter for anything that behaves like a docket.
+ *
+ * Loaded from ./fonts rather than `next/font/google`, which downloads them at
+ * build time and so made every image build depend on fonts.googleapis.com
+ * answering — CI's verify gate, the release build, and the README's own
+ * build-from-source quick start. It failed that way once, and the error arrives
+ * as a webpack stack trace about a font loader, which is nowhere near where
+ * anyone looks. See ./fonts/README.md for the files and their licence.
  */
 
 /** The logotype. Script logo over slab supporting type is period-correct. */
-const script = Pacifico({
-  subsets: ["latin"],
+const script = localFont({
+  src: "./fonts/pacifico-400.woff2",
   weight: "400",
   variable: "--font-script",
   display: "swap",
 });
 
 /** Headings. A Clarendon-ish fat slab — the "EAT" sign face. */
-const slab = Alfa_Slab_One({
-  subsets: ["latin"],
+const slab = localFont({
+  src: "./fonts/alfa-slab-one-400.woff2",
   weight: "400",
   variable: "--font-slab",
   display: "swap",
 });
 
-/** Everything you actually read. Sturdy grotesque, holds up small. */
-const archivo = Archivo({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+/**
+ * Everything you actually read. Sturdy grotesque, holds up small.
+ *
+ * One variable file covers the 400/500/600/700 this app uses, which is why
+ * there is a single woff2 here and a range rather than four weights.
+ */
+const archivo = localFont({
+  src: "./fonts/archivo-100-900.woff2",
+  weight: "100 900",
   variable: "--font-archivo",
   display: "swap",
 });
 
 /** Order tickets, refs, filenames, dimensions — anything typed on a docket. */
-const courier = Courier_Prime({
-  subsets: ["latin"],
-  weight: ["400", "700"],
+const courier = localFont({
+  src: [
+    { path: "./fonts/courier-prime-400.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/courier-prime-700.woff2", weight: "700", style: "normal" },
+  ],
   variable: "--font-courier",
   display: "swap",
 });
