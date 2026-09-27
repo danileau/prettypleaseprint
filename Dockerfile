@@ -91,7 +91,15 @@ ENV NODE_ENV=production
 # it is the one migrate subcommand safe to run unattended against real data.
 # The seed is an upsert of the single admin, so re-running it is a no-op that
 # also keeps ADMIN_NAME in step with the environment.
-CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/tsx prisma/seed.ts"]
+# /uploads is created and handed to the app's uid here, before the app
+# starts. The runner serves as uid 1001 and Docker creates a missing
+# bind-mount source as root, so a fresh deployment would otherwise come up
+# with a store it cannot write to and fail on the first upload. The
+# migrator already exists to prepare state at boot, and it runs as root,
+# so it is the one place that can. Non-recursive: files the app and the
+# storage migration write already belong to 1001, and a recursive chown
+# over every model on every boot is work for nothing.
+CMD ["sh", "-c", "mkdir -p /uploads && chown 1001:1001 /uploads && ./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/tsx prisma/seed.ts"]
 
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS runner

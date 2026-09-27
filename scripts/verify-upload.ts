@@ -10,31 +10,29 @@
  * DESTRUCTIVE: wipes users, stories and invites. Development database only.
  */
 import "./_env";
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 import { db } from "../src/lib/db";
 import { ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 /**
- * A client of its own rather than the app's.
+ * The storage directory, read directly rather than through the app.
  *
- * `src/lib/storage.ts` is marked `server-only` because it holds credentials,
- * and that guard is worth keeping intact. Reading the bucket from outside is
- * also the more honest check: it confirms the object is really there rather
- * than trusting the module that put it there.
+ * `src/lib/storage.ts` is `server-only`, and that guard is worth keeping
+ * intact. Looking at the files from outside is also the more honest check: it
+ * confirms the bytes are really on disk rather than trusting the module that
+ * claims to have put them there. That property is why these assertions
+ * survived the move off object storage instead of being dropped — they are the
+ * ones that would notice if `putModel` or `copyModel` quietly stopped writing.
+ *
+ * `npm run env:container` points this at the host side of the container's
+ * /uploads mount.
  */
-const s3 = new S3Client({
-  endpoint: process.env.S3_ENDPOINT ?? "http://localhost:9000",
-  region: process.env.S3_REGION ?? "us-east-1",
-  forcePathStyle: true,
-  credentials: {
-    accessKeyId: process.env.S3_ACCESS_KEY ?? "ppp",
-    secretAccessKey: process.env.S3_SECRET_KEY ?? "dev-only-not-a-secret",
-  },
-});
+const MODELS_ROOT = resolve(process.env.MODELS_ROOT ?? "./data/uploads");
+const pathForKey = (key: string) => join(MODELS_ROOT, key);
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
-const BUCKET = process.env.S3_BUCKET ?? "ppp-models";
 
 let passed = 0;
 const failures: string[] = [];
@@ -236,13 +234,13 @@ async function main() {
 
   let storedBytes = 0;
   try {
-    const obj = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: story!.storageKey }));
-    storedBytes = (await obj.Body!.transformToByteArray()).length;
-  } catch (e) {
+    storedBytes = (await stat(pathForKey(story!.storageKey))).size;
+  } catch {
     storedBytes = -1;
   }
-  check("the bytes really landed in object storage",
-        storedBytes === story?.fileSize, `stored ${storedBytes}, expected ${story?.fileSize}`);
+  check("the bytes really landed on disk",
+        storedBytes === story?.fileSize,
+        `stored ${storedBytes}, expected ${story?.fileSize}, at ${pathForKey(story?.storageKey ?? "")}`);
 
   check("the admin was notified",
         (await db.notification.count({ where: { recipientId: admin.id, storyId: story!.id } })) === 1);
@@ -489,18 +487,18 @@ async function main() {
   check("re-queue was audited",
         (await db.auditEvent.count({ where: { action: "story.requeued", actorId: ayla.id } })) === 1);
 
-  const objExists = async (key: string) => {
-    try { await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key })); return true; }
+  const fileExists = async (key: string) => {
+    try { return (await stat(pathForKey(key))).isFile(); }
     catch { return false; }
   };
-  check("the copied object really landed in storage", await objExists(copy!.storageKey));
+  check("the copied file really landed on disk", await fileExists(copy!.storageKey));
   // Withdraw the copy (through the DELETE route it delegates to) and confirm
   // the original's file survives — proof the copy is genuinely independent.
   const del = await aylaB.raw(`${APP}/api/stories/${newId}`, { method: "DELETE" });
   check("the copy can be withdrawn",
         del.status === 200 && (await db.story.count({ where: { id: newId } })) === 0,
         `status ${del.status}`);
-  check("and the original's file is still in storage afterwards", await objExists(beforeKey));
+  check("and the original's file is still in storage afterwards", await fileExists(beforeKey));
 
   section("print settings ride on the request (FRR-103)");
 

@@ -291,6 +291,40 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Changed
 
+- **The object store is gone. Model files are files.** MinIO served an S3 API
+  that this app never needed: every byte was already proxied through
+  `/api/models/[id]` — the deployment publishes no port for storage, so a
+  signed URL would have pointed at something the browser cannot reach — and
+  the whole surface was six calls. Head and create a bucket, put, get, delete,
+  copy. Those are `stat`, `mkdir`, a write, a read, `unlink` and `copyFile`.
+
+  What it cost in exchange was a container, a credential pair, a healthcheck,
+  two AWS SDK packages, and finally a supply-chain problem: MinIO withdrew its
+  community images *and* binaries, so the project ended up mirroring one and
+  then compiling its own, which still carried 63 HIGH/CRITICAL advisories no
+  upgrade fixes. For five people and one printer, putting a few hundred
+  megabytes of STL onto a disk the app already has mounted, that was a great
+  deal of machinery to keep alive.
+
+  Files land in `$DATA_ROOT/uploads`, mode 644 under 755 directories —
+  deliberately readable, so a backup needs no root. Postgres' data directory
+  being mode 700 is why the README carries a paragraph about backing up from
+  inside a container; one such trap is enough, and models are not secret at
+  rest, they are gated at the route. Writes are atomic (temp file, `fsync`,
+  rename, `fsync` the directory), because S3 gave that away for free and the
+  database row created straight afterwards claims the file is whole.
+
+  **Upgrading needs the migration first** — `npm run migrate:storage`, see
+  [deployment](docs/deployment.md). The bytes cannot be copied with `cp`: MinIO
+  inlines most objects into their metadata. Nothing here deletes anything, and
+  the old directory stays until you remove it yourself.
+
+  The `verify:upload` assertions that read storage from outside the app moved
+  with it rather than being dropped. They are the ones that would notice if
+  `putModel` or `copyModel` quietly stopped writing, and they caught a path
+  mistake during this very change.
+
+
 - **The Requirements table promised a Pi 5, and never delivered one.** It listed
   "a NAS, a Pi 5, a VPS, a spare laptop" as hosts. A Pi 5 is arm64, and
   `ppp-app` and `ppp-migrate` have only ever been published for `linux/amd64` —

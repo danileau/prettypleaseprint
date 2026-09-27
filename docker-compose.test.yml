@@ -15,10 +15,6 @@ services:
   db:
     ports:
       - "5432:5432"
-  minio:
-    ports:
-      - "9000:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
   mailpit:
     ports:
       # 8025 is the web UI where invitation and reset links show up;
