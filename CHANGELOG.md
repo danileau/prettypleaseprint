@@ -453,6 +453,30 @@ Notable changes. Every entry names a released version; deployments pin
   deployed has to change. Renaming them would break every pinned `PPP_TAG`
   and orphan `v0.1.0` in exchange for tidiness.
 
+### Removed
+
+- **The MinIO furniture, all of it.** `docker/minio/Dockerfile`,
+  `.github/workflows/minio-image.yml`, and the dead `S3_ACCESS_KEY` allowance in
+  the secret scanner. Nothing builds, publishes, signs or scans an object-store
+  image any more, because nothing runs one — which also takes the permanently
+  red `MinIO image` run off `main`.
+
+  What that thread cost, for the record: a mirror after Docker Hub started
+  answering 404, a digest pin, a tag collision that made the pin's two halves
+  name different images, a multi-architecture build from AGPL source, a uid-1000
+  migration, a Trivy exception that was argued for and then not taken, and 63
+  HIGH/CRITICAL advisories that no upgrade could fix because upstream's newest
+  release shipped byte-identical vulnerable dependencies. None of it survives
+  not having an object store.
+
+  **Deliberately kept:** `scripts/export-storage.ts`,
+  `docker-compose.storage-migration.yml` and their documentation. Anyone
+  upgrading from a release that had MinIO still needs to get their models out,
+  and that cannot happen if the tooling left in the same change. The overlay
+  pins the mirror image by digest, so the `ghcr.io/danileau/minio` package has
+  to stay published too — both go a release or two from now, once nobody
+  plausibly has a MinIO data directory left.
+
 ### Fixed
 
 - **Every build depended on Google answering, and the failure did not say so.**

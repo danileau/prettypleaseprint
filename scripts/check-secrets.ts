@@ -36,7 +36,7 @@ const KNOWN_DEV_VALUES = new Set([
 /** Env keys whose values are credentials rather than configuration. */
 const SECRET_KEY = /(SECRET|PASSWORD|PRIVATE|TOKEN|_KEY|APIKEY|API_KEY|DSN)$/;
 /** Names that contain those words but are public identifiers. */
-const NOT_SECRET = /^(PASSKEY_RP_NAME|PASSKEY_RP_ID|S3_ACCESS_KEY|NEXT_PUBLIC_)/;
+const NOT_SECRET = /^(PASSKEY_RP_NAME|PASSKEY_RP_ID|NEXT_PUBLIC_)/;
 
 const PATTERNS: Array<[string, RegExp]> = [
   ["GitHub token", /\bgh[pousr]_[A-Za-z0-9]{36,}\b/],
