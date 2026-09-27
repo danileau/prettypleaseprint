@@ -185,6 +185,43 @@ async function main() {
     check("a fresh session exists",
           (await db.session.count({ where: { userId: user.id } })) === 1);
 
+    /*
+     * The upload control has to be reachable from a keyboard.
+     *
+     * This lives in the passkey suite because it is the only one that drives a
+     * real browser, and the property is not visible any other way: the file
+     * input was `display:none`, which removes it from the focus order, and a
+     * <label> is not focusable. So there was no tab stop that opened the file
+     * picker, and the submit button is disabled until a file is chosen — the
+     * app's primary function, unreachable by keyboard, with nothing to notice.
+     *
+     * Asserted on computed style and on focus rather than on the class name: a
+     * class is a means, and the next way to break this will not be called
+     * "hidden".
+     */
+    await page.goto(`${APP}/upload`, { waitUntil: "networkidle2" });
+    const upload = await page.evaluate(() => {
+      const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+      if (!input) return { found: false, display: "", focusable: false, visible: false };
+      const style = getComputedStyle(input);
+      input.focus();
+      return {
+        found: true,
+        display: style.display,
+        visibility: style.visibility,
+        focusable: document.activeElement === input,
+        // sr-only clips rather than removes: a 1px box is expected, zero is not.
+        visible: input.getBoundingClientRect().width > 0,
+      };
+    });
+    check("the upload page has a file input", upload.found);
+    check("the file input is not display:none", upload.display !== "none", `display: ${upload.display}`);
+    check("the file input can take keyboard focus", upload.focusable,
+          "focusing it did not make it document.activeElement");
+    check("and it is clipped rather than removed from layout", upload.visible,
+          "zero width — sr-only clips to 1px; display:none and visibility:hidden do not focus");
+
+    await page.goto(`${APP}/board`, { waitUntil: "networkidle2" });
     const body = await page.evaluate(() => document.body.innerText);
     check("the app rendered for the signed-in user", body.includes("backlog") || body.includes("Backlog"),
           body.slice(0, 160));

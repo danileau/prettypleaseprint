@@ -196,17 +196,37 @@ export function UploadForm({
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
-        className={`block cursor-pointer rounded-panel border-[3px] border-dashed px-[26.4px] py-[35.2px] text-center transition-colors ${
+        /*
+         * focus-within, because the input it wraps is visually hidden and its
+         * own outline would be drawn on a 1px clipped box nobody can see. The
+         * label carries the visuals, so the label shows the focus. Same colour
+         * and offset as the global ring in globals.css.
+         */
+        className={`block cursor-pointer rounded-panel border-[3px] border-dashed px-[26.4px] py-[35.2px] text-center transition-colors focus-within:outline focus-within:outline-[3px] focus-within:outline-offset-2 focus-within:outline-cherry-dk ${
           dragging
             ? "border-ink bg-sun"
             : "border-ink-3 bg-porcelain hover:border-ink hover:bg-sun-wash"
         }`}
       >
+        {/*
+         * sr-only, NOT hidden.
+         *
+         * This was `className="hidden"` — display:none — which takes the input
+         * out of the focus order entirely. A <label> is not focusable, so there
+         * was no tab stop anywhere that opened the file picker, and the submit
+         * button is disabled until a file is chosen. A keyboard or screen-reader
+         * user therefore could not upload anything at all: the app's primary
+         * function, unreachable, with no error and nothing to notice.
+         *
+         * sr-only clips it to a 1px box instead of removing it, so it stays
+         * focusable and operable (Space and Enter open the picker) while the
+         * dropzone above keeps every bit of the visual design.
+         */}
         <input
           ref={inputRef}
           type="file"
           accept=".stl,.3mf,model/stl,model/3mf"
-          className="hidden"
+          className="sr-only"
           disabled={busy}
           onChange={(e) => accept(e.target.files?.[0] ?? null)}
         />
