@@ -168,6 +168,47 @@ only, and the bug sat directly behind the one case a person thinks of.
 `A07-offsite-signin` and `A07-offsite-reauth` now assert the parser's five
 spellings against both pages.
 
+### 9. The admin plugin's HTTP surface was open — *moderate, fixed*
+
+`admin()` is enabled in `src/lib/auth.ts` for what it adds to the schema and to
+sign-in — the `role` and `banned` fields, and the refusal to create a session for
+a suspended account. It also mounts a dozen endpoints under
+`/api/auth/admin/`, and this app uses none of them: every admin screen goes
+through Prisma directly, and `authClient.admin` is never called from the browser.
+
+Measured with an admin session before closing them, which is worth recording
+because the first assessment of this was wrong. Most of the surface already
+refused: `set-user-password`, `remove-user`, `ban-user`, `update-user`,
+`list-user-sessions` and `revoke-user-sessions` all answered **403** from Better
+Auth's own permission statements, and `create-user` answered 403 from this app's
+invite hook — confirming the invite gate holds even against the plugin's own
+back door. Two did not:
+
+| endpoint | with an admin cookie |
+| --- | --- |
+| `impersonate-user` | **200**, with a session token for another account |
+| `list-users` | **200**, with every account's name, e-mail and verified flag |
+
+`set-role` answered 500, which is an unhandled path rather than a refusal.
+
+The impersonation is not theoretical. The probe that called it had its own
+browser become the impersonated user, and the next check found `/admin/invites`
+rendering an error page because the caller was no longer an admin. This is the
+primitive that recovery deliberately stopped using — the "Closed since the first
+pass" section below says `access.reissued` "is gone", and the capability was
+still mounted.
+
+Closed as a whole prefix rather than as two paths, because the 403s are not this
+app's doing. They come from the plugin's default permission statements, so they
+can widen on a version bump with nothing in this repository changing — and a new
+endpoint in a future release is then closed by default instead of newly exposed.
+404, not 403, so the paths do not confirm their own existence.
+
+Twenty probes assert it, for an admin as well as a client. The previous probes
+here asserted 401/403 for a client only, and had to be changed by this fix, which
+is the honest signal that behaviour changed rather than an assertion being
+widened to fit.
+
 ## Findings correctly dismissed
 
 - **Semgrep "Facebook OAuth detected"** in `tsconfig.tsbuildinfo` — a regex

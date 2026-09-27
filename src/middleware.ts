@@ -66,6 +66,58 @@ export function middleware(request: NextRequest) {
     return withCsp(new NextResponse(null, { status: 404 }));
   }
 
+  /*
+   * The admin plugin's whole HTTP surface, closed for the same reason and with
+   * more at stake.
+   *
+   * `admin()` is enabled in src/lib/auth.ts for what it adds to the schema and
+   * to sign-in — the `role` and `banned` fields, and the refusal to create a
+   * session for a suspended account. It also mounts a dozen endpoints this app
+   * does not use: every admin screen goes through Prisma directly
+   * (`db.user.findMany` for the member list, `db.user.update` for suspension),
+   * and `authClient.admin` is never called from the browser.
+   *
+   * Measured before closing them, rather than assumed, because the assumption
+   * was wrong. With an admin session most of this surface already refused:
+   * set-user-password, remove-user, ban-user, update-user, list-user-sessions
+   * and revoke-user-sessions all answered 403 from the plugin's own access
+   * control, and create-user answered 403 from this app's invite hook. Two did
+   * not:
+   *
+   *   impersonate-user   200, with a session token for another account. Not
+   *                      theoretical — the probe that called it had its own
+   *                      browser become that user, and the next check found
+   *                      /admin/invites rendering an error page because the
+   *                      caller was no longer an admin. This is the primitive
+   *                      that recovery deliberately stopped using; the audit
+   *                      doc says "access.reissued … is gone", and it was not.
+   *   list-users         200, with every account's name, e-mail and verified
+   *                      flag. A roster, to anyone holding an admin cookie.
+   *
+   * And set-role answered 500, which is an unhandled path rather than a refusal.
+   *
+   * The 403s are the reason to close the whole prefix rather than those two.
+   * They come from Better Auth's default permission statements — not from
+   * anything this app asserts — so they can widen on a version bump without a
+   * line of this repository changing. Nothing here writes to the audit trail
+   * either, and every path is listed at /api/openapi.json for any signed-in
+   * client to read.
+   *
+   * It matters because src/lib/reauth.ts exists on the reasoning that four
+   * actions outlive a session, so each asks for the password or passkey again
+   * when the sign-in is over five minutes old — "the thief has the session, not
+   * the passkey". A copied admin cookie could reach impersonation inside its
+   * twenty idle minutes without ever meeting that bar.
+   *
+   * The whole prefix rather than a list of names, so a plugin version that adds
+   * an endpoint has it closed by default instead of newly exposed. In-process
+   * calls are unaffected: middleware sees HTTP, and `auth.api.*` from a server
+   * component never becomes a request.
+   */
+  if (pathname.startsWith("/api/auth/admin/")) {
+    return withCsp(new NextResponse(null, { status: 404 }));
+  }
+
   // API routes are never redirected. A caller that is not signed in needs a
   // 401 with a JSON body, not a 307 to an HTML page it cannot parse — an XHR
   // upload following that redirect would report a mystifying success.
