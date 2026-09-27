@@ -44,7 +44,7 @@ services:
   #
   # On a first deploy it also prints a one-use link for the admin to set a
   # username and a password — that link is the whole bootstrap, so read the
-  # logs:  docker compose -f docker-compose.prod.yml logs migrate
+  # logs:  docker compose --env-file .env.docker -f docker-compose.prod.yml logs migrate
   migrate:
     image: ${PPP_REGISTRY:-ghcr.io/danileau}/ppp-migrate:${PPP_TAG:-latest}
     container_name: ppp-migrate

@@ -104,18 +104,22 @@ git clone https://github.com/danileau/prettypleaseprint.git && cd prettypleasepr
 cp .env.docker.example .env.docker
 ```
 
-Edit `.env.docker` — at minimum generate the three secrets and set your
-hostname and admin:
+Edit `.env.docker` — generate the two secrets and say who the admin is:
 
 ```bash
 BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
 DB_PASSWORD="$(openssl rand -hex 24)"
-S3_SECRET_KEY="$(openssl rand -hex 24)"
-APP_URL="https://print.example.org"
-PASSKEY_RP_ID="print.example.org"
 ADMIN_EMAIL="you@example.org"
 ADMIN_NAME="Your Name"
 ```
+
+**Leave `APP_URL` and `PASSKEY_RP_ID` at the example's localhost values for
+now.** They are what Better Auth derives cookie scope and the WebAuthn relying
+party from, so setting them to a public hostname and then running on
+`http://localhost:3000` gives you a stack you cannot sign into: the browser
+sends an origin the app does not trust, and receives a `__Secure-` cookie it
+discards over plain HTTP. Set them when you deploy — see
+**[docs/deployment.md](docs/deployment.md)**.
 
 Then bring it up. This build-from-source variant publishes ports and catches
 mail locally, which is what you want for a first look:
@@ -150,9 +154,6 @@ with commentary is [`.env.docker.example`](.env.docker.example).
 | --- | --- | --- |
 | `BETTER_AUTH_SECRET` | **yes** | Signs session cookies. `openssl rand -base64 32`. Losing it invalidates every session. |
 | `DB_PASSWORD` | **yes** | Postgres password. Baked into the data directory on first start — see [Restore](#restore). |
-| `S3_SECRET_KEY` | **yes** | MinIO root password. |
-| `S3_ACCESS_KEY` | | MinIO root user. Default `ppp`. |
-| `S3_BUCKET` | | Default `ppp-models`. |
 | `APP_URL` | **yes** | The origin the browser sees, including scheme. Cookies, invitation links and the WebAuthn relying party derive from it. Must be `https://` in production. |
 | `PASSKEY_RP_ID` | **yes** | Registrable domain, no scheme or port. **Permanent** — changing it kills every enrolled passkey. |
 | `PASSKEY_RP_NAME` | | Shown in the browser's passkey prompt. |

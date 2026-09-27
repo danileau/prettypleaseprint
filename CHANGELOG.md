@@ -479,6 +479,41 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Fixed
 
+- **Seven places where the documentation would have walked a stranger into a
+  wall.** Found by reviewing the repo against itself rather than reading it.
+
+  - **`scripts/deploy-wizard.sh` health-checked this project's own deployment
+    by default.** `PPP_HEALTH_URL` defaulted to `https://ppp.danileau.com/api/health`,
+    and neither that variable nor `deploy.conf` appears in any `.md` or
+    `.example` file — so somebody else's run printed *our* host as "Live health:
+    healthy", gated its post-swap health loop on it, and could roll back a
+    perfectly good deploy because an unrelated machine blipped. It now derives
+    from `APP_URL` in the same `.env.docker` it already reads the tag from, and
+    refuses to guess if neither that nor `PPP_HEALTH_URL` is set. This is the
+    only script in the repo that changes production.
+  - **The documented bootstrap command errored out as written.** Both
+    `.env.docker.example` and a comment in `docker-compose.prod.yml` gave
+    `docker compose -f docker-compose.prod.yml logs migrate` without
+    `--env-file`, which dies on `required variable DB_PASSWORD is missing`. That
+    is the command that prints the one-use admin link — the single thing a fresh
+    deployment cannot proceed without.
+  - **Quick start handed you a stack you could not sign into.** It said to set
+    `APP_URL` and `PASSKEY_RP_ID` to a public hostname, then to raise the
+    build-and-test stack on `http://localhost:3000`. Better Auth derives its
+    trusted origin and cookie prefix from those, so the browser sent an untrusted
+    origin and threw away a `__Secure-` cookie over plain HTTP. It now says to
+    leave the localhost values until you deploy, and why.
+  - **`PPP_TAG` and `PPP_REGISTRY` were undocumented in the file every user
+    copies**, while the wizard refuses to run without the first and the README
+    calls that file "the full file with commentary".
+  - **Two compose files that have not existed since #18** were still cited in
+    `.env.docker.example` (in the guidance for when `TRUST_PROXY_HEADERS` is
+    safe) and in a source comment. `check:links` cannot catch these: it reads
+    markdown only.
+  - **Three `S3_*` rows and one `S3_SECRET_KEY` in Quick start** outlived the
+    object store by a change, describing variables nothing reads.
+
+
 - **Every build depended on Google answering, and the failure did not say so.**
   The four faces came from `next/font/google`, which downloads them at build
   time. So CI's `verify` gate, `release-images.yml` and the README's own

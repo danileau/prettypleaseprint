@@ -44,7 +44,12 @@ set -euo pipefail
 PROJECT_DIR="${PPP_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 [ -f "$PROJECT_DIR/deploy.conf" ] && . "$PROJECT_DIR/deploy.conf"
 
-HEALTH_URL="${PPP_HEALTH_URL:-https://ppp.danileau.com/api/health}"
+# Derived from APP_URL below, not defaulted to a hostname. It used to default to
+# this project's own deployment, which meant a stranger running the wizard saw
+# somebody else's host reported as "Live health: healthy", gated their post-swap
+# health loop on it, and could have a perfectly good deploy rolled back because
+# an unrelated machine blipped. PPP_HEALTH_URL still overrides.
+HEALTH_URL="${PPP_HEALTH_URL:-}"
 REGISTRY_OWNER="${PPP_REGISTRY_OWNER:-danileau}"
 REPO="${PPP_REPO:-danileau/prettypleaseprint}"
 IMAGES="${PPP_IMAGES:-ppp-app ppp-migrate}"
@@ -82,7 +87,14 @@ docker compose version >/dev/null 2>&1 || die "the docker compose plugin is requ
 [ -f "$PROJECT_DIR/.env.docker" ] || die "no .env.docker in $PROJECT_DIR — is PPP_DIR right?"
 
 CURRENT="$(sed -n 's/^PPP_TAG="\{0,1\}\([^"]*\)"\{0,1\}.*/\1/p' "$PROJECT_DIR/.env.docker" | head -1)"
-[ -n "$CURRENT" ] || die "PPP_TAG not found in .env.docker"
+[ -n "$CURRENT" ] || die "PPP_TAG not found in .env.docker (see .env.docker.example)"
+
+# The health check follows this deployment, read from the same file as the tag.
+if [ -z "$HEALTH_URL" ]; then
+  APP_URL_CFG="$(sed -n 's/^APP_URL="\{0,1\}\([^"]*\)"\{0,1\}.*/\1/p' "$PROJECT_DIR/.env.docker" | head -1)"
+  [ -n "$APP_URL_CFG" ] || die "APP_URL not found in .env.docker, and PPP_HEALTH_URL is unset — refusing to guess which host to health-check"
+  HEALTH_URL="${APP_URL_CFG%/}/api/health"
+fi
 
 # ----- which compose files? -------------------------------------------------
 # Asked of the running stack, not assumed. Guessing here is not a cosmetic

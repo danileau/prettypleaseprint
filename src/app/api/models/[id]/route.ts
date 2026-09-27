@@ -14,7 +14,7 @@ import { openModel } from "@/lib/storage";
  *
  * Streamed through the app rather than handed out as a signed URL straight to
  * object storage. That is not the more elegant option, it is the only correct
- * one for this deployment: docker-compose.truenas.yml publishes no port for
+ * one for this deployment: docker-compose.prod.yml publishes no port for
  * MinIO, so a browser cannot reach it at all — a signed URL would resolve to
  * nothing. Proxying also keeps `connect-src 'self'` intact, which means the
  * viewer needs no CSP relaxation.
