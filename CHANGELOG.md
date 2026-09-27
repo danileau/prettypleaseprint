@@ -479,58 +479,6 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Fixed
 
-- **The admin plugin's HTTP surface was mounted, and two of it was reachable.**
-  `admin()` is enabled for what it adds to the schema and to sign-in — the `role`
-  and `banned` fields, and the refusal to create a session for a suspended
-  account. It also mounts a dozen endpoints under `/api/auth/admin/` that this
-  app does not use: every admin screen goes through Prisma directly, and
-  `authClient.admin` is never called from the browser.
-
-  Measured with an admin cookie rather than assumed, and the assumption was
-  wrong. Most of it already refused — `set-user-password`, `remove-user`,
-  `ban-user`, `update-user` and both session endpoints answered 403 from the
-  plugin's own permission statements, and `create-user` answered 403 from this
-  app's invite hook, which is the invite gate holding against the plugin's own
-  back door. Two did not: **`impersonate-user` returned a session token for
-  another account**, and **`list-users` returned every name, e-mail and verified
-  flag**. `set-role` returned 500, an unhandled path rather than a refusal.
-
-  The impersonation was not theoretical. The probe that called it had its own
-  browser become the impersonated user, and the next check found `/admin/invites`
-  rendering an error page because the caller was no longer an admin.
-
-  Closed as a whole prefix, 404 rather than 403. The refusals were the plugin's
-  defaults, not anything this app asserts, so they could widen on a version bump
-  with nothing here changing — and a future endpoint is closed by default instead
-  of newly exposed. Twenty probes assert it for an admin as well as a client;
-  the previous ones checked a client only, and had to change with the fix, which
-  is the honest signal that behaviour moved.
-
-
-- **Nobody could upload a model from a keyboard.** The file input was
-  `display: none`, which does not hide a control so much as delete it from the
-  focus order. A `<label>` is not focusable, so there was no tab stop anywhere
-  that opened the file picker — and the send button is disabled until a file is
-  chosen. So a keyboard or screen-reader user could reach the upload page, read
-  it, and do nothing on it. The app's primary function, unreachable, with no
-  error and nothing to notice.
-
-  It is `sr-only` now: clipped to a 1px box rather than removed, so it stays
-  focusable and Space or Enter opens the picker. The dropzone grows a
-  `focus-within` ring, because the input it wraps is the size of a full stop and
-  its own outline would be invisible — the label carries the visuals, so the
-  label shows the focus.
-
-  `verify:passkey` grew four checks for it, asserted on **computed style and
-  actual focus** rather than on the class name. A class is a means, and the next
-  way to break this will not be called `hidden` — `visibility: hidden` and a
-  zero width both destroy focusability while looking entirely innocent. Proved
-  by putting `display: none` back and watching three of the four fail, then
-  restoring it.
-
-  WCAG 2.1.1 (Level A), on the one screen the whole app exists to serve.
-
-
 - **Seven places where the documentation would have walked a stranger into a
   wall.** Found by reviewing the repo against itself rather than reading it.
 
