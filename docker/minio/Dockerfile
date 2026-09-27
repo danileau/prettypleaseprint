@@ -80,12 +80,22 @@ LABEL name="MinIO" \
       summary="MinIO object storage, built from source for Pretty Please Print." \
       description="MinIO ${MINIO_TAG} and mc ${MC_TAG} compiled from the AGPL-3.0 sources, because MinIO withdrew its published images and binaries. Same release as the upstream image this replaces."
 
-ENV MINIO_ACCESS_KEY_FILE=access_key \
-    MINIO_SECRET_KEY_FILE=secret_key \
-    MINIO_ROOT_USER_FILE=access_key \
-    MINIO_ROOT_PASSWORD_FILE=secret_key \
-    MINIO_KMS_SECRET_KEY_FILE=kms_master_key \
-    MINIO_CONFIG_ENV_FILE=config.env \
+# Upstream also sets MINIO_ACCESS_KEY_FILE, MINIO_SECRET_KEY_FILE,
+# MINIO_ROOT_USER_FILE, MINIO_ROOT_PASSWORD_FILE and MINIO_KMS_SECRET_KEY_FILE,
+# naming files a credential may be read from instead of an environment
+# variable. They are dropped here. This deployment passes MINIO_ROOT_USER and
+# MINIO_ROOT_PASSWORD directly from compose and has never used the file route,
+# so they enabled nothing and cost a second way to inject a credential.
+#
+# They also trip AVD-DS-0031 four times, because the names contain SECRET,
+# PASSWORD and ACCESS_KEY while the values are only filenames. That is a false
+# positive, but removing dead configuration is a better answer to one than an
+# ignore file: nothing is silenced, and the finding cannot come back.
+#
+# MC_CONFIG_DIR stays and is load-bearing: mc writes its configuration on
+# first use, $HOME is not reliably writable here, and the healthcheck is
+# `mc ready local`.
+ENV MINIO_CONFIG_ENV_FILE=config.env \
     MC_CONFIG_DIR=/tmp/.mc
 
 # --chmod on COPY rather than a RUN chmod, so this stage executes nothing. That
