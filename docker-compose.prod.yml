@@ -54,6 +54,12 @@ services:
       # The set-password link it prints has to point at the hostname the
       # browser uses, not at the container's idea of localhost.
       BETTER_AUTH_URL: ${APP_URL:-http://localhost:3000}
+    # Mounted so the migrator can create it and hand it to the app's uid. The
+    # app runs as 1001 and Docker creates a missing bind-mount source as root,
+    # so without this a fresh deployment starts with an unwritable store and
+    # the first upload fails — on a path nobody walks twice.
+    volumes:
+      - ${DATA_ROOT:-./data}/uploads:/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -66,7 +72,10 @@ services:
     env_file: [.env.docker]
     environment:
       DATABASE_URL: postgresql://ppp:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/ppp?schema=public
-      S3_ENDPOINT: http://minio:9000
+      # Model files, on a disk rather than behind an S3 API. `migrate` creates
+      # this directory and hands it to uid 1001 before the app ever starts —
+      # see its command below.
+      MODELS_ROOT: /uploads
       # Better Auth derives cookie scope, invitation and set-password link
       # URLs, and the WebAuthn relying party from this. It must match what the browser actually sees,
       # including scheme and port.
@@ -77,10 +86,10 @@ services:
     # No ports are published here on purpose. A deployment puts a reverse proxy
     # in front (docker-compose.proxy.yml); local testing publishes them with
     # docker-compose.test.yml. Nothing is reachable by default.
+    volumes:
+      - ${DATA_ROOT:-./data}/uploads:/uploads
     depends_on:
       db:
-        condition: service_healthy
-      minio:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -106,69 +115,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-
-  # Model files. Never exposed to the internet — the app fetches from it
-  # server-side and hands out short-lived signed URLs.
-  #
-  # Mirrored into this project's own registry, and pinned by digest. MinIO
-  # stopped publishing its community image to Docker Hub — `minio/minio`
-  # answers 404 — and its quay.io repository now refuses an anonymous pull at
-  # every tag, so neither upstream is a route for CI or for a fresh deployment.
-  # A running stack kept working on its cached copy, which is what made it
-  # quiet: CI failed to raise the stack, and the deploy wizard would have
-  # stopped at `compose pull` on the next deploy.
-  #
-  # The quay route was real, and then it went away. CI pulled
-  # quay.io/minio/minio anonymously on 2026-09-16 — the job log records
-  # `minio Pulling` / `minio Pulled` on a fresh runner holding no quay
-  # credential, and the stack came up healthy — and eleven days later the same
-  # tag answers `unauthorized`. That is the reason this mirrors the image
-  # instead of chasing MinIO to whichever registry still serves it: the
-  # pattern is withdrawal, so the next one closes too.
-  #
-  # This is the same image, not an upgrade. RELEASE.2025-09-07T16-13-09Z is the
-  # last community release and what `minio/minio:latest` resolved to. MinIO is
-  # AGPL-3.0, so mirroring it is permitted; its source for that release is
-  # `minio/minio` at 32d8e52. The digest is what makes that checkable — a tag
-  # in our own namespace could still be moved, and a floating tag is how an
-  # object store gets walked onto a new on-disk format by a routine pull.
-  # Changing this line is a data migration; treat it as one.
-  #
-  # The digest below is this mirror's manifest, not Docker Hub's. Pushing
-  # re-serialises the manifest, so it differs from the original's
-  # sha256:14cea493… while the layers and the image config (69b2ec208575) are
-  # byte-for-byte the same — which is the level at which "same image" is true.
-  #
-  # linux/amd64 only: mirrored from a cached copy of that platform, because
-  # neither upstream will serve the multi-arch manifest any more. An arm64
-  # host needs its own mirror of the same release.
-  #
-  # Pinned by digest ALONE, with no tag in front of it, and that is deliberate.
-  # It used to read `minio:RELEASE.2025-09-07T16-13-09Z@sha256:52dfd5c0…` — but
-  # minio-image.yml published the from-source build under that same tag, so the
-  # tag moved and the two halves stopped agreeing. A reference whose tag and
-  # digest name different images is worse than one with no tag at all: it reads
-  # as corroboration and is not. The digest is the whole truth here; `docs/
-  # deployment.md` says which image it is.
-  minio:
-    image: ghcr.io/danileau/minio@sha256:52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff
-    container_name: ppp-minio
-    <<: *restart
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-ppp}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
-    volumes:
-      - ${DATA_ROOT:-./data}/models:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  # Development and staging only. Catches every outgoing email so invitation
-  # and password-reset links can be clicked without a real mail server.
-  # Enable with:  --profile mailcatcher
   mailpit:
     image: axllent/mailpit:latest
     container_name: ppp-mailpit

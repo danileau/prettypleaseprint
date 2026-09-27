@@ -18,7 +18,7 @@ import {
   MAX_QUEUED_UPLOADS,
   MAX_REQUEST_BYTES,
 } from "@/lib/upload-limits";
-import { MIME_FOR, ensureBucket, putModel, storageKeyFor } from "@/lib/storage";
+import { MIME_FOR, ensureStorageRoot, putModel, storageKeyFor } from "@/lib/storage";
 
 /**
  * Model upload.
@@ -38,7 +38,7 @@ export const runtime = "nodejs";
  *  the slot gate below for what keeps that buffering bounded. */
 export const dynamic = "force-dynamic";
 
-let bucketReady: Promise<void> | null = null;
+let storageReady: Promise<void> | null = null;
 
 const bad = (status: number, error: string) =>
   NextResponse.json({ error }, { status });
@@ -168,11 +168,11 @@ async function handleUpload(request: Request, user: Actor) {
   const key = storageKeyFor(extension);
 
   try {
-    bucketReady ??= ensureBucket();
-    await bucketReady;
-    await putModel(key, bytes, MIME_FOR[extension] ?? "application/octet-stream");
+    storageReady ??= ensureStorageRoot();
+    await storageReady;
+    await putModel(key, bytes);
   } catch (error) {
-    bucketReady = null; // let the next attempt retry the bucket check
+    storageReady = null; // let the next attempt retry creating the directory
     console.error("[upload] storage write failed", error);
     return bad(502, "The file could not be stored. Try again in a moment.");
   }

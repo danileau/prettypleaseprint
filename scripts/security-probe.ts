@@ -244,7 +244,7 @@ async function main() {
     data: {
       title: "Ayla's private hook", uploaderId: ayla.id, colorName: "Slate",
       colorHex: "#4a5d78", tip: "A beer", filename: "a.stl", fileSize: 1,
-      mimeType: "model/stl", storageKey: "k1",
+      mimeType: "model/stl", storageKey: "secret-key-a1",
     },
   });
   // Imported from scope.ts, not authz.ts: the pure rule, no "server-only".
@@ -463,8 +463,17 @@ async function main() {
   // database row and the object key is public. src/lib/api.ts names every
   // field it emits for exactly this reason.
   const own = await (await client.raw(`${APP}/api/stories/${aylaStory.id}`)).text();
+  /*
+   * The fixture's key is a distinctive string, not "k1" as it was, because the
+   * assertion is a substring search over the whole response body and
+   * `uploader.id` is a cuid — 25 lowercase alphanumerics. Two characters
+   * collide with one roughly 1.8% of the time, so this probe failed about one
+   * run in fifty, for years, on a body that never contained the key at all. A
+   * gate that reddens at random is a gate people learn to re-run. Its sibling
+   * below already had this right with `secret-key-m1`.
+   */
   probe("A02-api-key", "the object's storage key is not on the wire",
-        !own.includes("storageKey") && !own.includes("k1"), own.slice(0, 200));
+        !own.includes("storageKey") && !own.includes("secret-key-a1"), own.slice(0, 200));
   probe("A02-api-email", "and neither is anybody's e-mail address",
         !own.includes("@office.example") && !own.includes(admin.email), own.slice(0, 200));
 

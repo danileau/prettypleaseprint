@@ -31,7 +31,18 @@ for (const line of readFileSync(SOURCE, "utf8").split("\n")) {
   if (m) env.set(m[1]!, m[2]!.trim());
 }
 
-const need = (key: string, fallback = "") => env.get(key) ?? fallback;
+/**
+ * A value for the generated `.env`.
+ *
+ * The real environment wins over `.env.docker`, which is the same rule
+ * `_env.ts` states for the suites themselves. It matters for DATA_ROOT: the
+ * stack is routinely raised with it overridden in the shell, and deriving the
+ * host path from the file instead sends the suites looking in ./data while the
+ * files are somewhere else — three assertions fail and point at the app rather
+ * than at the plumbing.
+ */
+const need = (key: string, fallback = "") =>
+  process.env[key] ?? env.get(key) ?? fallback;
 
 // Service names inside the compose network; localhost ports outside it.
 const written = [
@@ -40,10 +51,10 @@ const written = [
   `DATABASE_URL="postgresql://ppp:${need("DB_PASSWORD")}@localhost:5432/ppp?schema=public"`,
   `BETTER_AUTH_URL="${need("APP_URL", "http://localhost:3000")}"`,
   `BETTER_AUTH_SECRET="${need("BETTER_AUTH_SECRET")}"`,
-  `S3_ENDPOINT="http://localhost:9000"`,
-  `S3_BUCKET="${need("S3_BUCKET", "ppp-models")}"`,
-  `S3_ACCESS_KEY="${need("S3_ACCESS_KEY", "ppp")}"`,
-  `S3_SECRET_KEY="${need("S3_SECRET_KEY")}"`,
+  // The host side of the container's /uploads mount. The suites read files
+  // straight off disk to confirm the app really wrote them, so they need the
+  // path as this machine sees it, not as the container does.
+  `MODELS_ROOT="${need("DATA_ROOT", "./data")}/uploads"`,
   `ADMIN_EMAIL="${need("ADMIN_EMAIL")}"`,
   `ADMIN_NAME="${need("ADMIN_NAME")}"`,
   `MAIL_FROM="${need("MAIL_FROM")}"`,
@@ -57,6 +68,6 @@ writeFileSync(TARGET, written);
 console.info(
   `.env now points at the container stack (previous saved to ${TARGET}.backup).\n` +
     `  database  localhost:5432\n` +
-    `  storage   localhost:9000\n` +
+    `  storage   ${need("DATA_ROOT", "./data")}/uploads\n` +
     `  mail      localhost:1025 (Mailpit UI on :8025)`,
 );

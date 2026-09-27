@@ -211,7 +211,8 @@ Everything that matters is under `DATA_ROOT` plus one file:
 | | |
 | --- | --- |
 | `$DATA_ROOT/db/` | Postgres — accounts, tickets, comments, the audit trail |
-| `$DATA_ROOT/models/` | the uploaded `.stl` / `.3mf` files |
+| `$DATA_ROOT/uploads/` | the uploaded `.stl` / `.3mf` files, as plain files |
+| `$DATA_ROOT/models/` | **only if you have not migrated yet** — the old object store's data directory. Plain `tar` cannot read it usefully; see [Deployment](docs/deployment.md). |
 | `.env.docker` | the secrets. **Not** under `DATA_ROOT`, and not in the repo. |
 
 On ZFS, one recursive snapshot of the parent dataset captures all three:

@@ -410,9 +410,28 @@ Re-running is safe and cheap — it skips whatever is already correct — so run
 once now and again immediately before the app is switched over, to pick up
 anything uploaded in between.
 
+### Removing the old object store's directory
+
+Once the app is on the filesystem and you are satisfied, `$DATA_ROOT/models`
+is the object store's leftovers and can go. It will not delete as yourself:
+MinIO ran as root, so the tree is root-owned, and the same is true in reverse
+of `uploads/`, which belongs to the app's uid 1001.
+
+```bash
+docker run --rm -v "$DATA_ROOT:/data" alpine rm -rf /data/models
+```
+
+From inside a container, for exactly the reason the backup instructions are:
+your own account does not own these files. Reading them does work — `uploads/`
+is mode 644 with 755 directories on purpose, so a `tar` or a snapshot needs no
+root. It is only removal that does.
+
+Take the snapshot first, and do this last. Nothing else in the migration is
+irreversible; this is.
+
 ### What to back up
 
-Everything is under `DATA_ROOT`: `db/` (Postgres) and `models/` (the uploaded
+Everything is under `DATA_ROOT`: `db/` (Postgres) and `uploads/` (the uploaded
 files). A ZFS snapshot of the dataset captures both. `.env.docker` holds the
 secrets and is not in the repo — keep it somewhere you will still have it after
 a rebuild, because losing `BETTER_AUTH_SECRET` invalidates every session and
