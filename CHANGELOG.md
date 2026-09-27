@@ -255,6 +255,28 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Changed
 
+- **The Requirements table promised a Pi 5, and never delivered one.** It listed
+  "a NAS, a Pi 5, a VPS, a spare laptop" as hosts. A Pi 5 is arm64, and
+  `ppp-app` and `ppp-migrate` have only ever been published for `linux/amd64` —
+  `release-images.yml` sets no `platforms:`, so buildx quietly built for the
+  runner it happened to be on. An arm64 host has always failed at
+  `docker compose pull`, and nothing said so.
+
+  The row now says amd64 and explains why, rather than naming a board that
+  cannot run it. The previous wording — added alongside the MinIO mirror — blamed
+  that mirror's single architecture, which was wrong in a more interesting way:
+  the mirror was amd64-only, but so were the app images, so MinIO was never the
+  binding constraint. Both statements were made without checking the manifest
+  that would have settled it.
+
+  Building for arm64 is a reasonable thing to want, and it is not what this
+  fixes. A second architecture that the suites never run against is a platform
+  shipped on faith, which is the same mistake as a registry nobody tried
+  anonymously; and running them twice is not a commitment this project makes.
+  Correcting the sentence is the honest half of the fix, and it is the half that
+  costs nobody anything.
+
+
 - **The object store is built from source, runs as uid 1000, and needs one
   chown to move to.** This is the only upgrade step in this project that is not
   pull-and-restart, so it is first in the list.
