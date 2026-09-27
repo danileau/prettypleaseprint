@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 
 import { requireAdmin, requireUser } from "@/lib/authz";
 import {
@@ -41,8 +42,7 @@ import {
  * a phishing page borrows your domain's credibility.
  */
 function back(from: FormDataEntryValue | null, params: Record<string, string>): never {
-  const raw = typeof from === "string" ? from : "";
-  const safe = raw.startsWith("/") && !raw.startsWith("//") ? raw.split("?")[0]! : "/queue";
+  const safe = safeRedirectPath(from, "/queue");
   const q = new URLSearchParams(params).toString();
   redirect(`${safe}?${q}`);
 }

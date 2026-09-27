@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 
 import { requireAdmin, requireUser } from "@/lib/authz";
 import {
@@ -29,8 +30,7 @@ function back(to: string, params: Record<string, string>): never {
 
 /** A same-origin absolute path from the form, or a fallback. Open-redirect guard. */
 function safeFrom(from: FormDataEntryValue | null, fallback: string): string {
-  const raw = typeof from === "string" ? from : "";
-  return raw.startsWith("/") && !raw.startsWith("//") ? raw.split("?")[0]! : fallback;
+  return safeRedirectPath(from, fallback);
 }
 
 /** File a new request, then land on its detail page. */

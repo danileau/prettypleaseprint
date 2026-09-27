@@ -2,16 +2,7 @@ import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/authz";
 import { AuthShell, H1, Kicker, Lead, Notice } from "@/components/ui";
 import { SignInForm } from "./signin-form";
-
-/**
- * Open redirects are how a phishing page borrows your domain's credibility.
- * Only same-origin, absolute-path targets survive this.
- */
-function safeNext(raw: string | undefined): string {
-  if (!raw) return "/";
-  if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
-  return raw;
-}
+import { safeRedirect } from "@/lib/safe-redirect";
 
 const ERRORS: Record<string, string> = {
   invite_required:
@@ -33,7 +24,7 @@ export default async function SignInPage({
   const { next, error, reset } = await searchParams;
 
   const user = await currentUser();
-  if (user) redirect(safeNext(next));
+  if (user) redirect(safeRedirect(next));
 
   return (
     <AuthShell>
@@ -57,7 +48,7 @@ export default async function SignInPage({
         </div>
       )}
 
-      <SignInForm next={safeNext(next)} />
+      <SignInForm next={safeRedirect(next)} />
     </AuthShell>
   );
 }

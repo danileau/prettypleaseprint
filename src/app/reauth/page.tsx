@@ -5,16 +5,7 @@ import { requireUser } from "@/lib/authz";
 import { isFreshAuth } from "@/lib/reauth";
 import { AuthShell, H1, Kicker, Lead } from "@/components/ui";
 import { ReauthForm } from "./reauth-form";
-
-/**
- * Same rule as the sign-in page: only a same-origin absolute path survives, so
- * this cannot be dressed up as a way to bounce somebody off-site.
- */
-function safeNext(raw: string | undefined): string {
-  if (!raw) return "/";
-  if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
-  return raw;
-}
+import { safeRedirect } from "@/lib/safe-redirect";
 
 /**
  * "Confirm it's you" before the actions that move access around.
@@ -30,7 +21,7 @@ export default async function ReauthPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const { next } = await searchParams;
-  const target = safeNext(next);
+  const target = safeRedirect(next);
 
   // You have to be somebody before you can prove you are still them.
   const user = await requireUser(`/reauth?next=${encodeURIComponent(target)}`);
