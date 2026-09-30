@@ -140,6 +140,10 @@ jobs:
       # rendering the list + preferences, and server-side tip validation.
       - name: Benefits, owner-managed
         run: npm run verify:benefits
+      # Owner-managed materials and colours: admin CRUD and ordering, dynamic
+      # upload choices, authoritative validation, and historical snapshots.
+      - name: Materials and colours, owner-managed
+        run: npm run verify:catalog
       # The second front door onto the same operations. Runs against the built
       # image, which is the only place the production CSP is in force — the
       # console's inline-script nonce and its stylesheet-in-a-file are both

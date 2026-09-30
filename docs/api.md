@@ -110,6 +110,11 @@ been inspected and no ticket exists until the object is in place, so a rejected
 upload leaves nothing behind. The uploader comes from the session: an
 `uploaderId` or a `status` in the body is ignored.
 
+Material and colour values come from the owner's live catalogue, not a fixed
+API enum. Fetch the upload page to see the currently offered combinations. The
+server checks the pair again when the upload arrives, so a retired or removed
+choice is refused even if an older client still posts it.
+
 ```bash
 curl -s https://print.example/api/upload \
   -H "authorization: Bearer $TOKEN" \

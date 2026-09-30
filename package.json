@@ -41,6 +41,7 @@
     "verify:queue": "tsx scripts/verify-queue.ts",
     "verify:frr": "tsx scripts/verify-frr.ts",
     "verify:benefits": "tsx scripts/verify-benefits.ts",
+    "verify:catalog": "tsx scripts/verify-catalog.ts",
     "verify:api": "tsx scripts/verify-api.ts",
     "vendor:swagger": "tsx scripts/vendor-swagger.ts",
     "migrate:storage": "tsx scripts/export-storage.ts"
@@ -54,7 +55,7 @@
     "better-auth": "1.7.1",
     "fflate": "^0.8.3",
     "next": "15.5.25",
-    "nodemailer": "9.1.1",
+    "nodemailer": "10.0.13",
     "react": "19.0.8",
     "react-dom": "19.0.8",
     "resend": "6.22.0",

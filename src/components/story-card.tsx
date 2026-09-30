@@ -3,6 +3,7 @@ import type { Story, User } from "@prisma/client";
 
 import { relativeTime } from "@/lib/catalog";
 import { storyRef } from "@/lib/scope";
+import { ColorSwatch } from "@/components/color-swatch";
 
 export type CardStory = Story & { uploader: Pick<User, "name" | "initials"> };
 
@@ -35,10 +36,10 @@ export function StoryCard({
       className="ticket group block rounded-card border-[3px] border-ink bg-porcelain shadow-stamp transition-transform hover:-translate-y-[2px] hover:shadow-stamp-lg"
     >
       {/* The filament colour, worn as a stripe. */}
-      <span
-        aria-hidden
+      <ColorSwatch
+        mode={story.colorMode}
+        style={story.colorStyle ?? story.colorHex}
         className="block h-[8px] rounded-t-[7px] border-b-[3px] border-ink"
-        style={{ background: story.colorHex }}
       />
 
       <div className={compact ? "px-[13.2px] py-[11px]" : "px-[15px] py-[13.2px]"}>
@@ -71,10 +72,10 @@ export function StoryCard({
 
         <div className="flex flex-wrap items-center gap-[6px]">
           <span className="flex items-center gap-[5px] rounded-chip border-2 border-ink bg-cream-2 px-[9px] py-[2px] font-mono text-[11px] font-bold uppercase tracking-[0.05em] text-ink">
-            <span
-              aria-hidden
+            <ColorSwatch
+              mode={story.colorMode}
+              style={story.colorStyle ?? story.colorHex}
               className="h-[9px] w-[9px] rounded-full border border-ink"
-              style={{ background: story.colorHex }}
             />
             {story.material}
           </span>

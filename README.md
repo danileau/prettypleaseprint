@@ -59,6 +59,11 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   owner's to define at `/admin/benefits`, and the ones they mark *preferred* are
   starred on the upload form so people know what the owner actually wants. Editing
   or retiring a benefit never rewrites a past request's tip.
+- **Owner-managed materials and colours** — the printer owner decides what is
+  currently on the shelf at `/admin/catalog`, including display order, solid
+  or gradient swatches, and a rainbow “whatever” option. Turning off, renaming,
+  or removing an entry changes future requests without rewriting old tickets.
+  See **[Materials and colours](docs/material-catalog.md)**.
 - **Revoke access when someone leaves** — suspends the account, signs them out
   everywhere and refuses new sign-ins, while keeping their tickets, comments
   and history. Reversible, and audited.

@@ -1,22 +1,19 @@
-/**
- * The fixed choices a request can be made from, exactly as the handoff lists
- * them. The form renders from these and the server validates against them, so
- * the two cannot drift apart.
- */
 import { z } from "zod";
 
-export const MATERIALS = ["PLA", "PETG", "TPU", "Resin"] as const;
-export const DEFAULT_MATERIAL = "PETG";
-
-/** Filament swatches. Light ones need the inset ring to stay visible. */
-export const COLORS = [
-  { name: "Teal", hex: "#12645f" },
-  { name: "Slate", hex: "#4a5d78" },
-  { name: "Bone white", hex: "#eaecee" },
-  { name: "Graphite", hex: "#1b2126" },
-  { name: "Whatever's on", hex: "#b6bcc2" },
-] as const;
-export const DEFAULT_COLOR = COLORS[1]; // Slate
+export const COLOR_MODES = ["solid", "gradient", "whatever"] as const;
+export type ColorMode = (typeof COLOR_MODES)[number];
+export type CatalogColorChoice = {
+  id: string;
+  name: string;
+  hex: string;
+  style: string;
+  mode: ColorMode;
+};
+export type CatalogMaterialChoice = {
+  id: string;
+  name: string;
+  colors: CatalogColorChoice[];
+};
 
 /**
  * The default tips, seeded into the `Benefit` table on first run. The live
@@ -47,8 +44,6 @@ export const STATUS_CHIP: Record<
   Declined: { bg: "#e2e6ea", fg: "#6b747c" },
 };
 
-const colorNames = COLORS.map((c) => c.name) as unknown as [string, ...string[]];
-
 export const QuantitySchema = z.coerce
   .number()
   .int("Whole prints only.")
@@ -64,8 +59,11 @@ export const WishSchema = z.object({
     .max(120, "Keep the title under 120 characters.")
     .optional()
     .default(""),
-  material: z.enum(MATERIALS),
-  colorName: z.enum(colorNames),
+  // Availability and the material/colour relationship are checked against
+  // the database in the upload route. These bounds keep hostile form values
+  // small before that query runs.
+  material: z.string().trim().min(1, "Pick a material.").max(40),
+  colorName: z.string().trim().min(1, "Pick a colour.").max(40),
   quantity: QuantitySchema,
   // The tip is no longer a compile-time enum — it is an owner-managed list.
   // This module is shared with the client bundle and cannot read the database,
@@ -84,10 +82,6 @@ export const WishSchema = z.object({
 });
 
 export type Wish = z.infer<typeof WishSchema>;
-
-export function hexForColor(name: string): string {
-  return COLORS.find((c) => c.name === name)?.hex ?? DEFAULT_COLOR.hex;
-}
 
 /** "4 prints" / "1 print" */
 export const quantityText = (n: number) => `${n} ${n === 1 ? "print" : "prints"}`;

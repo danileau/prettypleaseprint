@@ -7,6 +7,15 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Added
 
+- **Materials and colours are owner-managed.** `/admin/catalog` replaces the
+  fixed compile-time list with an ordered catalogue. The owner can add, rename,
+  temporarily hide, remove, and reorder materials and their colours. Swatches
+  can be solid, a two-colour gradient, or an explicit “whatever” rainbow with
+  a question mark. Uploads validate against the live catalogue on the server;
+  old tickets retain label, representative colour, rendered swatch, and mode
+  snapshots when catalogue entries later change. `npm run verify:catalog`
+  covers the owner-only forms, ordering, validation, and snapshot contract.
+
 - **Rocket Loader has to be off, and the docs now say so.** Reported by NelsonFx
   on the pull request that added the tunnel overlay, and it is the first thing an
   orange-clouded deployment hits. Cloudflare's Rocket Loader rewrites every
@@ -26,7 +35,6 @@ Notable changes. Every entry names a released version; deployments pin
   away what the nonce is for. Documented in the README's troubleshooting list and
   in the Cloudflare section of [deployment](docs/deployment.md), with Auto Minify
   and Brotli noted as safe.
-
 
 - **`npm run migrate:storage` — copy every model out of MinIO, and prove the
   copy is complete.** The first step of removing the object store, and it
@@ -62,7 +70,6 @@ Notable changes. Every entry names a released version; deployments pin
   Verified by breaking it on purpose: truncating one exported file and deleting
   another makes it exit 1 and name both, and a re-run repairs exactly those two
   and nothing else. A verifier nobody has watched fail is not a verifier.
-
 
 - **`/admin/audit` is a dashboard now, not just a log.** The page was built on
   the argument that a screen somebody glances at beats alerts nobody tunes —

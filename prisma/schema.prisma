@@ -251,11 +251,10 @@ enum StoryStatus {
   Declined
 }
 
-enum Material {
-  PLA
-  PETG
-  TPU
-  Resin
+enum CatalogColorMode {
+  solid
+  gradient
+  whatever
 }
 
 model Story {
@@ -268,9 +267,17 @@ model Story {
   uploader   User   @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
 
   quantity  Int      @default(1)
-  material  Material @default(PETG)
+  /// Snapshots the catalog label at submission time. Catalog entries may be
+  /// renamed or disabled later without rewriting an old order.
+  material  String   @default("PETG")
   colorName String
   colorHex  String
+  /// CSS swatch snapshot. Gradients render here while colorHex remains the
+  /// representative solid used by the 3D viewer.
+  colorStyle String?
+  /// Snapshot of how the swatch behaves. Kept separate from the editable
+  /// label so renaming "Whatever's on" cannot change an old ticket.
+  colorMode  CatalogColorMode @default(solid)
   tip       String
   note      String   @default("")
 
@@ -306,6 +313,43 @@ model Story {
   @@index([uploaderId])
   @@index([status])
   @@map("story")
+}
+
+/// A material the printer owner can currently offer. Disabling an entry only
+/// removes it from new requests; stories keep their material snapshot.
+model CatalogMaterial {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  colors    CatalogColor[]
+
+  @@index([active, sortOrder])
+  @@map("catalogMaterial")
+}
+
+/// A spool colour belongs to one material: the upload form changes its colour
+/// choices as soon as the requester picks a different material.
+model CatalogColor {
+  id         String          @id @default(cuid())
+  materialId String
+  material   CatalogMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  name       String
+  hex        String
+  /// A CSS colour or linear-gradient used by swatches in the UI.
+  style      String
+  /// `solid`, `gradient`, or `whatever`; never inferred from the display name.
+  mode       CatalogColorMode @default(solid)
+  active     Boolean         @default(true)
+  sortOrder  Int             @default(0)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@unique([materialId, name])
+  @@index([materialId, active, sortOrder])
+  @@map("catalogColor")
 }
 
 model Comment {

@@ -331,6 +331,13 @@ side:
   `Story.tip` stays a plain string so a past request survives an edit, and the
   upload endpoint validates the tip against the current *active* list — the
   catalogue, not the form, is authoritative.
+- **Materials and colours are owner-managed data**, with ordered
+  `CatalogMaterial` and `CatalogColor` rows. The upload page reads only active
+  combinations and the upload endpoint repeats that lookup authoritatively.
+  A story snapshots the labels, representative hex, CSS swatch, and swatch
+  mode so later catalogue edits or deletion do not rewrite history. Swatch
+  mode is explicit data (`solid`, `gradient`, or `whatever`), never inferred
+  from an editable label.
 - **A feature request's priority is editable in any status, and both `/frr`
   views filter** by priority/status/category. The filter is ANDed onto
   `featureScope`, so it can only ever narrow a caller's own set.
@@ -375,7 +382,8 @@ src/app/
   models.ts              upload validation + mesh measurement
   storage.ts             model files on disk: atomic writes, generated keys
   storage-layout.ts      file and directory modes, shared with the migration
-  catalog.ts             the fixed choices a request is made from
+  catalog.ts             shared request schemas and catalogue wire types
+  catalog-data.ts        live material/colour reads and authoritative lookup
   stories.ts             every operation on a ticket — the rules, once
   notifications.ts       the Activity feed, scoped by recipient
   api.ts                 the JSON boundary: 401/403, Origin, wire format
@@ -403,9 +411,11 @@ scripts/
   verify-api.ts          the JSON API, the document and the console
   verify-frr.ts          the feature-request track, filed and triaged
   verify-benefits.ts     the owner-managed benefits catalogue
+  verify-catalog.ts      the owner-managed material/colour catalogue
   security-probe.ts      OWASP-mapped security probes
 src/app/admin/
   invites/               the guest list
   benefits/              the benefits catalogue (admin only)
+  catalog/               the material/colour catalogue (admin only)
   audit/                 the audit log, admin only
 ```

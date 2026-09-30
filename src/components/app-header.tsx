@@ -28,6 +28,7 @@ const NAV: Record<Actor["role"], Array<{ label: string; href: string }>> = {
     { label: "The pass", href: "/queue" },
     { label: "The rail", href: "/board" },
     { label: "The books", href: "/me" },
+    { label: "Materials", href: "/admin/catalog" },
     { label: "History", href: "/history" },
     // The board, not the triage queue: the owner wants to see everything that
     // has been asked for, and triage is one button away on that page.
@@ -67,21 +68,35 @@ export async function AppHeader({
   return (
     <header data-authenticated="true" className="sticky top-0 z-40">
       <div className="layers border-b-[3px] border-ink bg-ink">
-        {/* Two tiers on a phone, one row on desktop. The nav takes `order-last
-            w-full` so it drops to its own line below the brand and the account
-            controls on narrow screens; from `lg` it returns inline
-            (`lg:order-none lg:w-auto`) for the original single-row bar. The
-            account cluster is pushed right with `ml-auto` rather than a
-            flex-1 spacer, which was what scattered the wrapped layout. */}
-        <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-x-[16px] gap-y-[11px] px-[16px] py-[11px] sm:px-[26.4px] sm:py-[13.2px] lg:gap-x-[22px]">
-          <Link href={user.role === "admin" ? "/queue" : "/board"} aria-label="Pretty Please Print, home">
-            {/* On the dark bar the script reads cream, not cherry. */}
-            <span className="[&_span]:text-cream">
-              <Brand size={34} />
-            </span>
-          </Link>
+        {/* Keep identity and account controls on a stable top row. Navigation
+            has its own wrapping row, so adding destinations cannot push the
+            activity or profile menus away from the wordmark. */}
+        <div className="mx-auto max-w-[1180px] px-[16px] py-[11px] sm:px-[26.4px] sm:py-[13.2px]">
+          <div className="flex items-center gap-[16px] lg:gap-[22px]">
+            <Link href={user.role === "admin" ? "/queue" : "/board"} aria-label="Pretty Please Print, home">
+              {/* On the dark bar the script reads cream, not cherry. */}
+              <span className="[&_span]:text-cream">
+                <Brand size={34} />
+              </span>
+            </Link>
 
-          <nav className="order-last flex w-full flex-wrap items-center gap-[6px] lg:order-none lg:w-auto">
+            <div className="ml-auto flex items-center gap-[8.8px] sm:gap-[13.2px]">
+              <ActivityMenu
+                items={items}
+                unread={unread}
+                title={user.role === "admin" ? "New from the group" : "Updates on your prints"}
+              />
+              <UserMenu
+                name={user.name}
+                initials={user.initials}
+                email={user.email}
+                role={user.role}
+                passkeyCount={passkeyCount}
+              />
+            </div>
+          </div>
+
+          <nav className="mt-[11px] flex flex-wrap items-center gap-[6px]">
             {NAV[user.role].map((item) => {
               const current = item.href === active;
               return (
@@ -100,21 +115,6 @@ export async function AppHeader({
               );
             })}
           </nav>
-
-          <div className="ml-auto flex items-center gap-[8.8px] sm:gap-[13.2px]">
-            <ActivityMenu
-              items={items}
-              unread={unread}
-              title={user.role === "admin" ? "New from the group" : "Updates on your prints"}
-            />
-            <UserMenu
-              name={user.name}
-              initials={user.initials}
-              email={user.email}
-              role={user.role}
-              passkeyCount={passkeyCount}
-            />
-          </div>
         </div>
       </div>
 

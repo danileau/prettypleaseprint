@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
-import { COLORS, MATERIALS, TIPS, WishSchema } from "@/lib/catalog";
+import { TIPS, WishSchema } from "@/lib/catalog";
 import { ACCEPTED_EXTENSIONS, MAX_BYTES, formatBytes } from "@/lib/models";
 import { FLOW } from "@/lib/scope";
 import { BodySchema, LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX, ReasonSchema } from "@/lib/stories";
@@ -93,11 +93,17 @@ const STORY_SCHEMA = {
     flagged: { type: "boolean" },
     flagReason: { type: ["string", "null"] },
     quantity: { type: "integer", minimum: 1 },
-    material: { type: "string", enum: [...MATERIALS] },
+    material: {
+      type: "string",
+      description: "The owner-managed material label, snapshotted when the request was made.",
+    },
     color: {
       type: "object",
       properties: {
-        name: { type: "string", enum: COLORS.map((c) => c.name) },
+        name: {
+          type: "string",
+          description: "The owner-managed colour label, snapshotted when the request was made.",
+        },
         hex: { type: "string", examples: ["#4a5d78"] },
       },
     },

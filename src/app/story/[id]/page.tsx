@@ -12,6 +12,7 @@ import { ModelViewer } from "@/components/model-viewer";
 import { OpenInSlicer } from "@/components/open-in-slicer";
 import { DownloadModel } from "@/components/download-model";
 import { Toast } from "@/components/toast";
+import { ColorSwatch } from "@/components/color-swatch";
 import { WithdrawStory } from "@/components/withdraw-story";
 import { RequeueStory } from "@/components/requeue-story";
 
@@ -126,10 +127,10 @@ export default async function StoryPage({
                 <Fact label="Material">{story.material}</Fact>
                 <Fact label="Colour wish">
                   <span className="flex items-center gap-[8.8px]">
-                    <span
-                      aria-hidden
+                    <ColorSwatch
+                      mode={story.colorMode}
+                      style={story.colorStyle ?? story.colorHex}
                       className="h-[18px] w-[18px] rounded-full border-2 border-ink"
-                      style={{ background: story.colorHex }}
                     />
                     {story.colorName}
                   </span>

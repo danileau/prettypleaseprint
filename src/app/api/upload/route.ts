@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { currentUser, notify, printerOwner, storyRef } from "@/lib/authz";
 import type { Actor } from "@/lib/scope";
 import { record } from "@/lib/audit";
-import { WishSchema, hexForColor } from "@/lib/catalog";
+import { WishSchema } from "@/lib/catalog";
+import { availableSelection } from "@/lib/catalog-data";
 import { activeBenefitLabels } from "@/lib/benefits";
 import {
   MAX_BYTES,
@@ -136,6 +137,11 @@ async function handleUpload(request: Request, user: Actor) {
     return bad(400, wish.error.issues[0]?.message ?? "Check the form.");
   }
 
+  const selection = await availableSelection(wish.data.material, wish.data.colorName);
+  if (!selection) {
+    return bad(400, "That material and colour combination is no longer available.");
+  }
+
   // The tip is owner-managed data, so the list — not a compile-time enum — is
   // what decides. A benefit the owner has retired, or one never on the list,
   // is refused here even if the form somehow posted it. If the owner has no
@@ -189,7 +195,9 @@ async function handleUpload(request: Request, user: Actor) {
         quantity: wish.data.quantity,
         material: wish.data.material,
         colorName: wish.data.colorName,
-        colorHex: hexForColor(wish.data.colorName),
+        colorHex: selection.hex,
+        colorStyle: selection.style,
+        colorMode: selection.mode,
         tip: wish.data.tip,
         note: wish.data.note,
         printSettings: wish.data.printSettings,

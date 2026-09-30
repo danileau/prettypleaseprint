@@ -4,11 +4,8 @@ import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
-  COLORS,
-  DEFAULT_COLOR,
-  DEFAULT_MATERIAL,
-  MATERIALS,
   QUANTITY_PRESETS,
+  type CatalogMaterialChoice,
 } from "@/lib/catalog";
 // The same numbers the server enforces. `models.ts` cannot be imported here —
 // it would pull `fflate` and the mesh parser into the browser bundle — which
@@ -22,6 +19,7 @@ import {
 /** One owner-managed tip option, passed from the server (see upload/page.tsx). */
 type Benefit = { label: string; preferred: boolean };
 import { Button, Label, Notice } from "@/components/ui";
+import { ColorSwatch } from "@/components/color-swatch";
 
 type Phase =
   | { kind: "idle" }
@@ -73,9 +71,11 @@ function Segmented<T extends string | number>({
 
 export function UploadForm({
   owner,
+  catalog,
   benefits,
 }: {
   owner: string;
+  catalog: CatalogMaterialChoice[];
   benefits: Benefit[];
 }) {
   // Default to a preferred benefit if the owner has marked one, else the first
@@ -84,15 +84,17 @@ export function UploadForm({
   const defaultTip = preferredLabels[0] ?? benefits[0]?.label ?? "";
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const initialMaterial = catalog.find((item) => item.name === "PETG") ?? catalog[0]!;
+  const initialColor = initialMaterial.colors.find((item) => item.name === "Slate") ?? initialMaterial.colors[0]!;
 
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
 
   const [title, setTitle] = useState("");
-  const [material, setMaterial] = useState<string>(DEFAULT_MATERIAL);
+  const [material, setMaterial] = useState<string>(initialMaterial.name);
   const [quantity, setQuantity] = useState<number>(1);
-  const [color, setColor] = useState<string>(DEFAULT_COLOR.name);
+  const [color, setColor] = useState<string>(initialColor.name);
   const [tip, setTip] = useState<string>(defaultTip);
   const [note, setNote] = useState("");
   const [printSettings, setPrintSettings] = useState("");
@@ -185,6 +187,14 @@ export function UploadForm({
   }
 
   const busy = phase.kind === "uploading";
+  const selectedMaterial = catalog.find((item) => item.name === material) ?? catalog[0]!;
+
+  function chooseMaterial(next: string) {
+    const item = catalog.find((candidate) => candidate.name === next);
+    if (!item) return;
+    setMaterial(item.name);
+    setColor((item.colors.find((candidate) => candidate.name === "Slate") ?? item.colors[0]!).name);
+  }
 
   return (
     <form onSubmit={submit} className="max-w-[780px]">
@@ -278,9 +288,9 @@ export function UploadForm({
           <Label htmlFor="material">Material you&rsquo;d like</Label>
           <Segmented
             label="Material"
-            options={MATERIALS}
+            options={catalog.map((item) => item.name)}
             value={material}
-            onChange={setMaterial}
+            onChange={chooseMaterial}
           />
         </div>
       </div>
@@ -317,7 +327,7 @@ export function UploadForm({
           Colour you&rsquo;re hoping for
         </legend>
         <div className="flex flex-wrap gap-[13.2px]">
-          {COLORS.map((c) => {
+          {selectedMaterial.colors.map((c) => {
             const active = c.name === color;
             return (
               <button
@@ -329,12 +339,12 @@ export function UploadForm({
                 onClick={() => setColor(c.name)}
                 className="flex w-[80px] cursor-pointer flex-col items-center gap-[7px] border-0 bg-transparent p-0"
               >
-                <span
-                  aria-hidden
+                <ColorSwatch
+                  mode={c.mode}
+                  style={c.style}
                   className={`h-[48px] w-[48px] rounded-full border-[3px] border-ink transition-transform ${
                     active ? "scale-110 ring-[4px] ring-cherry-dk ring-offset-2 ring-offset-cream" : ""
                   }`}
-                  style={{ background: c.hex }}
                 />
                 <span
                   className={`font-mono text-[11px] font-bold uppercase tracking-[0.04em] ${

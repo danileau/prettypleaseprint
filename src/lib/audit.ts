@@ -43,6 +43,17 @@ export type AuditAction =
   | "comment.added"
   | "file.downloaded"
   | "file.refused"
+  // catalog
+  | "catalog.material_added"
+  | "catalog.material_updated"
+  | "catalog.material_removed"
+  | "catalog.material_reordered"
+  | "catalog.material_availability_changed"
+  | "catalog.color_added"
+  | "catalog.color_updated"
+  | "catalog.color_removed"
+  | "catalog.color_reordered"
+  | "catalog.color_availability_changed"
   // benefits (the owner-managed tip catalogue)
   | "benefit.created"
   | "benefit.updated"
