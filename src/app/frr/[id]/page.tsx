@@ -6,6 +6,7 @@ import { FEATURE_FLOW, featureLabel, featureRef } from "@/lib/scope";
 import { findFeature, listFeatureComments } from "@/lib/features";
 import { changeFeaturePriority, withdrawFeature } from "@/app/actions/features";
 import { relativeTime, PRIORITY_CHIP, CATEGORY_LABEL, FEATURE_PRIORITIES } from "@/lib/catalog";
+import { PriorityPicker } from "@/components/priority-picker";
 import { AppHeader } from "@/components/app-header";
 import { Fact, Notice, StatusChip } from "@/components/ui";
 import { FeatureActions } from "@/components/feature-actions";
@@ -90,42 +91,15 @@ export default async function FeaturePage({
             <Fact label="Filed">{relativeTime(feature.createdAt)}</Fact>
           </div>
 
-          {/* Change the priority after filing. A plain form + submit, so it
-              works with JS off; no auto-submit-on-change. */}
+          {/* Change the priority after filing. A plain form of three submit
+              buttons, so it works with JS off — see PriorityPicker. */}
           {canReprioritise && (
-            <form
+            <PriorityPicker
               action={changeFeaturePriority}
-              className="mt-[17.6px] flex flex-wrap items-end gap-[8.8px] border-t-2 border-dashed border-rule pt-[17.6px]"
-            >
-              <input type="hidden" name="id" value={feature.id} />
-              <input type="hidden" name="from" value={`/frr/${feature.id}`} />
-              <div>
-                <label
-                  htmlFor="priority"
-                  className="mb-[4px] block font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink-3"
-                >
-                  Change priority
-                </label>
-                <select
-                  id="priority"
-                  name="priority"
-                  defaultValue={feature.priority}
-                  className="rounded-card border-[3px] border-ink bg-porcelain px-[13px] py-[8px] text-[15px] font-bold text-ink"
-                >
-                  {FEATURE_PRIORITIES.map((p) => (
-                    <option key={p} value={p}>
-                      {PRIORITY_CHIP[p]?.label ?? p}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button
-                type="submit"
-                className="stamp cursor-pointer rounded-chip border-[3px] border-ink bg-aqua px-[18px] py-[9px] text-[14px] font-bold text-ink hover:bg-sun"
-              >
-                Set
-              </button>
-            </form>
+              fields={{ featureId: feature.id, from: `/frr/${feature.id}` }}
+              options={FEATURE_PRIORITIES}
+              current={feature.priority}
+            />
           )}
         </div>
 

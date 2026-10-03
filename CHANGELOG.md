@@ -21,6 +21,13 @@ Notable changes. Every entry names a released version; deployments pin
   history says was asked for. And the board card marks priority only when it is
   not medium — a chip on every card is a chip nobody reads.
 
+  Changing it is three buttons — Low, Medium, High, the current one filled in —
+  not a dropdown, and the feature-request page, which had a dropdown, changes
+  to match. A `<select>` can be dressed while it is closed, but the list it
+  opens is drawn by the operating system: square, grey and in the system font,
+  the one thing on the page that looked like another app. One click, and it
+  still works with JavaScript off.
+
   Over the API it is `priority` on a ticket, an optional `priority` field on
   `POST /api/upload` and on a re-queue, and `POST /api/stories/{id}/priority`.
   Optional on upload so a client written before this still files a request.

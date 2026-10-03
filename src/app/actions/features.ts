@@ -101,7 +101,10 @@ export async function withdrawFeature(formData: FormData): Promise<void> {
 export async function changeFeaturePriority(formData: FormData): Promise<void> {
   const user = await requireUser();
   const from = safeFrom(formData.get("from"), "/frr");
-  const id = featureIdOr400(formData.get("id"));
+  // `featureId`, not `id`, is what the picker posts: a field named `id` breaks
+  // a multi-button form under React (see PriorityPicker). `id` is still read
+  // for anything that posts the older shape.
+  const id = featureIdOr400(formData.get("featureId") ?? formData.get("id"));
   try {
     const done = await reprioritise(user, id, formData.get("priority") ?? "");
     back(from, {

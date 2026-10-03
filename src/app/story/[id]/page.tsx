@@ -5,6 +5,7 @@ import { getStoryOr404, printerName, requireUser, storyRef, FLOW } from "@/lib/a
 import { PRIORITY_CHIP, STORY_PRIORITIES, quantityText, relativeTime } from "@/lib/catalog";
 import { changeStoryPriority } from "@/app/actions/stories";
 import { formatBytes } from "@/lib/models";
+import { PriorityPicker } from "@/components/priority-picker";
 import { AppHeader } from "@/components/app-header";
 import { Fact, Notice, StatusChip } from "@/components/ui";
 import { AdminActions } from "@/components/admin-actions";
@@ -152,38 +153,12 @@ export default async function StoryPage({
                   rail. A plain form, so it works with JavaScript off. The
                   service decides; this only decides whether to draw it. */}
               {canReprioritise && (
-                <form
+                <PriorityPicker
                   action={changeStoryPriority}
-                  className="mt-[17.6px] flex flex-wrap items-end gap-[8.8px] border-t-2 border-dashed border-rule pt-[17.6px]"
-                >
-                  <input type="hidden" name="storyId" value={story.id} />
-                  <div>
-                    <label
-                      htmlFor="priority"
-                      className="mb-[4px] block font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink-3"
-                    >
-                      Change priority
-                    </label>
-                    <select
-                      id="priority"
-                      name="priority"
-                      defaultValue={story.priority}
-                      className="rounded-card border-[3px] border-ink bg-porcelain px-[13px] py-[8px] text-[15px] font-bold text-ink"
-                    >
-                      {STORY_PRIORITIES.map((p) => (
-                        <option key={p} value={p}>
-                          {PRIORITY_CHIP[p]?.label ?? p}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <button
-                    type="submit"
-                    className="stamp cursor-pointer rounded-chip border-[3px] border-ink bg-aqua px-[18px] py-[9px] text-[14px] font-bold text-ink hover:bg-sun"
-                  >
-                    Set
-                  </button>
-                </form>
+                  fields={{ storyId: story.id }}
+                  options={STORY_PRIORITIES}
+                  current={story.priority}
+                />
               )}
             </div>
 
