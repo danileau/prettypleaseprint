@@ -607,6 +607,15 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Fixed
 
+- **The quantity box could not be cleared.** "Or type a number" coerced every
+  keystroke to a quantity, so emptying it snapped straight back to `1` and
+  typing a 3 gave 13 — the only way to enter a number was to select the digit
+  first. The box now keeps what is being typed apart from the quantity: it can
+  be empty mid-edit, a whole number of one or more takes effect as it is typed,
+  and leaving the box with anything else in it falls back to the last quantity.
+  It mattered little while the box started at 1 on a new request, and more once
+  printing a ticket again opened the form with an old quantity to change.
+
 - **Better Auth 1.7.1 → 1.7.7, and the migration that upgrade needs.** The
   weekly dependency group had been failing `verify` since 2026-09-27 and looked,
   from the first failing check, like a broken invite gate: sign-up with no

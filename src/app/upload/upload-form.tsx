@@ -129,6 +129,12 @@ export function UploadForm({
   const [title, setTitle] = useState(again?.title ?? "");
   const [material, setMaterial] = useState<string>(initialMaterial.name);
   const [quantity, setQuantity] = useState<number>(again?.quantity ?? 1);
+  // What is in the "type a number" box while it is being typed in, or null
+  // when it simply shows `quantity`. Kept apart from the number because a box
+  // being edited passes through states that are not quantities — empty, most
+  // obviously. Coercing each keystroke turned an emptied box straight back
+  // into "1", so clearing it to type 3 produced 13.
+  const [quantityDraft, setQuantityDraft] = useState<string | null>(null);
   const [color, setColor] = useState<string>(initialColor.name);
   const [tip, setTip] = useState<string>(
     again && (tipStillOffered || benefits.length === 0) ? again.tip : defaultTip,
@@ -195,6 +201,9 @@ export function UploadForm({
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (phase.kind === "uploading") return;
+    // Enter in the quantity box submits without blurring it; show what is
+    // actually being sent rather than a half-typed draft.
+    setQuantityDraft(null);
     if (again) return void sendAgain(again);
     if (!file) return;
 
@@ -386,7 +395,10 @@ export function UploadForm({
           mono
           options={QUANTITY_PRESETS}
           value={QUANTITY_PRESETS.includes(quantity as never) ? quantity : 0}
-          onChange={setQuantity}
+          onChange={(n) => {
+            setQuantityDraft(null);
+            setQuantity(n);
+          }}
         />
         <div className="mt-[8.8px] flex items-center gap-[8.8px]">
           <label htmlFor="quantity-other" className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-ink-3">
@@ -397,8 +409,17 @@ export function UploadForm({
             type="number"
             min={1}
             max={24}
-            value={quantity}
-            onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
+            value={quantityDraft ?? quantity}
+            onChange={(e) => {
+              setQuantityDraft(e.target.value);
+              // Only a whole number of at least one becomes the quantity. The
+              // upper limit is left to the server, whose refusal says who to ask.
+              const n = Number(e.target.value);
+              if (Number.isInteger(n) && n >= 1) setQuantity(n);
+            }}
+            // Leaving the box settles it: whatever is not a quantity gives way
+            // to the last one that was.
+            onBlur={() => setQuantityDraft(null)}
             className="w-[80px] rounded-card border-[3px] border-ink bg-porcelain px-[10px] py-[6px] font-mono text-[14px] font-bold tabular-nums text-ink"
           />
         </div>
