@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getStoryOr404, printerName, requireUser, storyRef, FLOW } from "@/lib/authz";
-import { quantityText, relativeTime } from "@/lib/catalog";
+import { PRIORITY_CHIP, STORY_PRIORITIES, quantityText, relativeTime } from "@/lib/catalog";
+import { changeStoryPriority } from "@/app/actions/stories";
 import { formatBytes } from "@/lib/models";
 import { AppHeader } from "@/components/app-header";
 import { Fact, Notice, StatusChip } from "@/components/ui";
@@ -43,6 +44,11 @@ export default async function StoryPage({
   const owner = await printerName();
 
   const currentIndex = (FLOW as readonly string[]).indexOf(story.status);
+  // Matches `changeStoryPriority` in src/lib/stories.ts: the requester or the
+  // owner, and only while there is still something to order.
+  const canReprioritise =
+    (user.role === "admin" || story.uploader.id === user.id) &&
+    story.status !== "Done" && story.status !== "Declined";
 
   return (
     <>
@@ -124,6 +130,7 @@ export default async function StoryPage({
               <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-[17.6px]">
                 <Fact label="Asked by">{story.uploader.name}</Fact>
                 <Fact label="Quantity">{quantityText(story.quantity)}</Fact>
+                <Fact label="Priority">{PRIORITY_CHIP[story.priority]?.label ?? story.priority}</Fact>
                 <Fact label="Material">{story.material}</Fact>
                 <Fact label="Colour wish">
                   <span className="flex items-center gap-[8.8px]">
@@ -139,6 +146,45 @@ export default async function StoryPage({
                   <span className="text-cherry-dk">{story.tip}</span>
                 </Fact>
               </div>
+
+              {/* Change the priority after filing — the requester's on their
+                  own ticket, the owner's on any, while it is still on the
+                  rail. A plain form, so it works with JavaScript off. The
+                  service decides; this only decides whether to draw it. */}
+              {canReprioritise && (
+                <form
+                  action={changeStoryPriority}
+                  className="mt-[17.6px] flex flex-wrap items-end gap-[8.8px] border-t-2 border-dashed border-rule pt-[17.6px]"
+                >
+                  <input type="hidden" name="storyId" value={story.id} />
+                  <div>
+                    <label
+                      htmlFor="priority"
+                      className="mb-[4px] block font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink-3"
+                    >
+                      Change priority
+                    </label>
+                    <select
+                      id="priority"
+                      name="priority"
+                      defaultValue={story.priority}
+                      className="rounded-card border-[3px] border-ink bg-porcelain px-[13px] py-[8px] text-[15px] font-bold text-ink"
+                    >
+                      {STORY_PRIORITIES.map((p) => (
+                        <option key={p} value={p}>
+                          {PRIORITY_CHIP[p]?.label ?? p}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="submit"
+                    className="stamp cursor-pointer rounded-chip border-[3px] border-ink bg-aqua px-[18px] py-[9px] text-[14px] font-bold text-ink hover:bg-sun"
+                  >
+                    Set
+                  </button>
+                </form>
+              )}
             </div>
 
             {/* Optional slicer settings the requester noted (FRR-103). Shown so

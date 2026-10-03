@@ -156,6 +156,8 @@ function upload(b: Browser, filename: string, bytes: Uint8Array, fields: Record<
   form.set("tip", fields.tip ?? "A beer");
   form.set("note", fields.note ?? "No rush.");
   form.set("printSettings", fields.printSettings ?? "");
+  // Only when asked for: a client written before priority existed sends none.
+  if (fields.priority !== undefined) form.set("priority", fields.priority);
   return b.raw(`${APP}/api/upload`, { method: "POST", body: form });
 }
 
@@ -209,6 +211,9 @@ async function main() {
   check("the wish was stored", story?.material === "PETG" && story?.quantity === 2 &&
         story?.colorName === "Slate" && story?.colorHex === "#4a5d78",
         JSON.stringify({ m: story?.material, q: story?.quantity, c: story?.colorName }));
+
+  check("with no priority sent it is medium — older clients keep working",
+        story?.priority === "medium", `${story?.priority}`);
 
   check("the storage key is generated, not derived from the filename",
         !!story && !story.storageKey.includes("monitor-hook") &&
@@ -524,6 +529,18 @@ async function main() {
   const copy2 = await db.story.findUnique({ where: { id: newId2 } });
   check("re-queue carries the print settings onto the copy", copy2?.printSettings === SETTINGS, copy2?.printSettings);
 
+  section("priority rides on the request");
+  const rushUp = await upload(aylaB, "rush.stl", binaryStl(12, 12, 12), { title: "Rush part", priority: "high" });
+  const rushRow = await db.story.findFirst({ where: { title: "Rush part" } });
+  check("an upload can say how much it matters", rushUp.status < 300 && rushRow?.priority === "high",
+        `status ${rushUp.status} ${rushRow?.priority}`);
+  const sillyUp = await upload(aylaB, "silly.stl", binaryStl(12, 12, 12), { title: "Silly part", priority: "URGENT!!" });
+  check("a priority that is not one is refused, and files nothing",
+        sillyUp.status === 400 && (await db.story.count({ where: { title: "Silly part" } })) === 0,
+        `status ${sillyUp.status}`);
+  const rushForm = rendered(await (await aylaB.go(`${APP}/upload`)).text());
+  check("the request form asks", rushForm.includes("How much does it matter?"));
+
   section("printing again with the settings tuned");
 
   const TUNED = "0.12mm layers, 60% infill — the first one snapped";
@@ -540,6 +557,17 @@ async function main() {
   check("what was left alone is carried over",
         tunedCopy?.title === psStory!.title && tunedCopy?.tip === psStory!.tip &&
         tunedCopy?.filename === psStory!.filename && tunedCopy?.dims === psStory!.dims);
+  const rushAgain = await requeue(aylaB, rushRow!.id, {});
+  const rushCopy = await db.story.findUnique({
+    where: { id: Number(((await rushAgain.json()) as { story?: { id?: number } }).story?.id) },
+  });
+  check("printing again keeps the priority unless it is changed", rushCopy?.priority === "high", `${rushCopy?.priority}`);
+  const calmer = await requeue(aylaB, rushRow!.id, { priority: "low" });
+  const calmCopy = await db.story.findUnique({
+    where: { id: Number(((await calmer.json()) as { story?: { id?: number } }).story?.id) },
+  });
+  check("and takes a new one when it is", calmCopy?.priority === "low", `${calmCopy?.priority}`);
+
   const stillOld = await db.story.findUnique({ where: { id: psStory!.id } });
   check("the old ticket is exactly as it was",
         stillOld?.quantity === psStory!.quantity && stillOld?.material === psStory!.material &&

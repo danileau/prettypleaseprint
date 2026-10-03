@@ -18,7 +18,7 @@ import {
 import { copyModel, deleteModel, storageKeyFor } from "@/lib/storage";
 import { extensionOf } from "@/lib/models";
 import { availableSelection } from "@/lib/catalog-data";
-import { WishSchema } from "@/lib/catalog";
+import { STORY_PRIORITIES, WishSchema } from "@/lib/catalog";
 import { activeBenefitLabels } from "@/lib/benefits";
 
 /**
@@ -130,6 +130,7 @@ export const STORY_FIELDS = {
   flagged: true,
   flagReason: true,
   quantity: true,
+  priority: true,
   material: true,
   colorName: true,
   colorHex: true,
@@ -585,8 +586,8 @@ export async function requeueStory(
   const src = await db.story.findFirst({
     where: { AND: [{ id }, storyScope(actor)] },
     select: {
-      id: true, title: true, quantity: true, material: true, colorName: true,
-      tip: true, note: true, printSettings: true,
+      id: true, title: true, quantity: true, priority: true, material: true,
+      colorName: true, tip: true, note: true, printSettings: true,
       filename: true, fileSize: true,
       mimeType: true, storageKey: true, dims: true, uploaderId: true,
     },
@@ -609,6 +610,7 @@ export async function requeueStory(
     material: pick("material"),
     colorName: pick("colorName"),
     quantity: pick("quantity"),
+    priority: pick("priority"),
     tip: pick("tip"),
     note: pick("note"),
     printSettings: pick("printSettings"),
@@ -655,6 +657,7 @@ export async function requeueStory(
       uploaderId: actor.id,
       status: "Requested",
       quantity: wish.quantity,
+      priority: wish.priority,
       material: wish.material,
       colorName: wish.colorName,
       colorHex: selection.hex,
@@ -676,7 +679,7 @@ export async function requeueStory(
   // Which fields differ from the old ticket — names only, for the trail. The
   // values are on the two tickets, and a note is not something to copy into
   // a log.
-  const changed = (["title", "material", "colorName", "quantity", "tip", "note", "printSettings"] as const)
+  const changed = (["title", "material", "colorName", "quantity", "priority", "tip", "note", "printSettings"] as const)
     .filter((key) => (key === "title" ? title : wish[key]) !== src[key]);
 
   const owner = await printerOwner();
@@ -702,6 +705,77 @@ export async function requeueStory(
     title,
     fromRef: storyRef(src.id),
   };
+}
+
+/**
+ * Change how much a print matters.
+ *
+ * The requester sets a priority when they file, and things change: the part
+ * is suddenly holding up a build, or it turns out there is no rush after all.
+ * Open to the two people it concerns — the requester on their own ticket, and
+ * the printer owner on any, who may have a view about what goes on the bed
+ * first. Somebody else's ticket is a 404 through the scope, like every read.
+ *
+ * Only while the ticket is still on the rail. Once it is `Done` or `Declined`
+ * there is nothing left to order, and a priority edited afterwards would only
+ * rewrite what the history says was asked for. (A feature request allows the
+ * edit in any status; a closed request there is still a statement of what
+ * someone wants. A printed part is finished.)
+ *
+ * It orders the owner's queue and promises nothing else: `high` is a request,
+ * not a booking.
+ */
+export async function changeStoryPriority(actor: Actor, id: number, rawPriority: unknown) {
+  const priority = typeof rawPriority === "string" ? rawPriority : "";
+  if (!(STORY_PRIORITIES as readonly string[]).includes(priority)) {
+    throw problem(400, "That is not a priority.");
+  }
+
+  const story = await db.story.findFirst({
+    where: { AND: [{ id }, storyScope(actor)] },
+    select: { id: true, title: true, status: true, priority: true, uploaderId: true },
+  });
+  if (!story) throw problem(404, "That ticket no longer exists.");
+
+  if (actor.role !== "admin" && story.uploaderId !== actor.id) {
+    throw problem(403, "Only the person who asked for it, or the printer owner, can reprioritise it.");
+  }
+  if (story.status === "Done" || story.status === "Declined") {
+    throw problem(409, `${storyRef(story.id)} is ${story.status.toLowerCase()} — there is nothing left to prioritise.`);
+  }
+
+  const result = {
+    id: story.id, ref: storyRef(story.id), title: story.title,
+    from: story.priority as string, to: priority,
+  };
+  // Setting it to what it already is writes nothing and tells nobody.
+  if (priority === story.priority) return { ...result, unchanged: true };
+
+  await db.story.update({
+    where: { id: story.id },
+    data: { priority: priority as Prisma.StoryUpdateInput["priority"] },
+  });
+
+  // The other side, the same direction a comment travels.
+  const recipientId =
+    actor.role === "admin" ? story.uploaderId : (await printerOwner())?.id;
+  if (recipientId && recipientId !== actor.id) {
+    await notify({
+      recipientId,
+      storyId: story.id,
+      text: `${firstName(actor.name)} set “${story.title}” to ${priority} priority.`,
+    });
+  }
+
+  await record({
+    action: "story.priority_changed",
+    actor,
+    subject: storyRef(story.id),
+    detail: { title: story.title, from: story.priority, to: priority },
+  });
+
+  refresh(story.id);
+  return { ...result, unchanged: false };
 }
 
 // ---------------------------------------------------------------------------

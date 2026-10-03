@@ -4,6 +4,7 @@ import type { Story, User } from "@prisma/client";
 import { relativeTime } from "@/lib/catalog";
 import { storyRef } from "@/lib/scope";
 import { ColorSwatch } from "@/components/color-swatch";
+import { PriorityChip } from "@/components/ui";
 
 export type CardStory = Story & { uploader: Pick<User, "name" | "initials"> };
 
@@ -49,6 +50,8 @@ export function StoryCard({
           <span className="whitespace-nowrap font-mono text-[12px] font-bold tracking-[0.08em] text-ink-3">
             {storyRef(story.id)}
           </span>
+          {/* Only when it is not medium, so the mark means something. */}
+          <PriorityChip priority={story.priority} quiet />
           {story.flagged && (
             <span className="rounded-chip border-2 border-ink bg-cherry px-[8px] py-[1px] font-mono text-[10.5px] font-bold uppercase tracking-[0.06em] text-ink">
               needs a look

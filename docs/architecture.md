@@ -344,6 +344,16 @@ side:
 - **A feature request's priority is editable in any status, and both `/frr`
   views filter** by priority/status/category. The filter is ANDed onto
   `featureScope`, so it can only ever narrow a caller's own set.
+- **A print request has a priority**, as a feature request has had since
+  FRR-104 — and built as the parallel of that, not a shared piece: its own
+  `StoryPriority` enum and `changeStoryPriority` in `stories.ts`, drawn with
+  the same `PRIORITY_CHIP`. Set on the request form, changeable on the ticket
+  by the requester or the owner, and over `POST /api/stories/{id}/priority`.
+  Two deliberate differences from the feature side: it is only editable while
+  the ticket is on the rail (a finished print has nothing left to order, and
+  editing it afterwards would rewrite what was asked for), and the board card
+  marks it only when it is *not* medium, so the mark means something. The
+  queue's *Waiting on you* reads high first, oldest first within a priority.
 - **An optional free-text print-settings field** rides along on a request and
   shows on the ticket for the owner. The structured / access-gated "advanced
   mode" is deferred.

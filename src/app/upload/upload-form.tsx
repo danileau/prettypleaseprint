@@ -4,8 +4,12 @@ import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
+  DEFAULT_STORY_PRIORITY,
+  PRIORITY_CHIP,
   QUANTITY_PRESETS,
+  STORY_PRIORITIES,
   type CatalogMaterialChoice,
+  type StoryPriorityName,
 } from "@/lib/catalog";
 // The same numbers the server enforces. `models.ts` cannot be imported here —
 // it would pull `fflate` and the mesh parser into the browser bundle — which
@@ -35,6 +39,7 @@ export type Again = {
   material: string;
   colorName: string;
   quantity: number;
+  priority: StoryPriorityName;
   tip: string;
   note: string;
   printSettings: string;
@@ -135,6 +140,7 @@ export function UploadForm({
   // obviously. Coercing each keystroke turned an emptied box straight back
   // into "1", so clearing it to type 3 produced 13.
   const [quantityDraft, setQuantityDraft] = useState<string | null>(null);
+  const [priority, setPriority] = useState<StoryPriorityName>(again?.priority ?? DEFAULT_STORY_PRIORITY);
   const [color, setColor] = useState<string>(initialColor.name);
   const [tip, setTip] = useState<string>(
     again && (tipStillOffered || benefits.length === 0) ? again.tip : defaultTip,
@@ -184,7 +190,7 @@ export function UploadForm({
       const res = await fetch(`/api/stories/${source.id}/requeue`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title, material, colorName: color, quantity, tip, note, printSettings }),
+        body: JSON.stringify({ title, material, colorName: color, quantity, priority, tip, note, printSettings }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -213,6 +219,7 @@ export function UploadForm({
     body.set("material", material);
     body.set("colorName", color);
     body.set("quantity", String(quantity));
+    body.set("priority", priority);
     body.set("tip", tip);
     body.set("note", note);
     body.set("printSettings", printSettings);
@@ -423,6 +430,33 @@ export function UploadForm({
             className="w-[80px] rounded-card border-[3px] border-ink bg-porcelain px-[10px] py-[6px] font-mono text-[14px] font-bold tabular-nums text-ink"
           />
         </div>
+      </div>
+
+      {/* ---- priority ---- */}
+      <div className="mt-[22px] max-w-[420px]">
+        <Label htmlFor="priority">How much does it matter?</Label>
+        <div role="radiogroup" aria-label="Priority" className="flex flex-wrap gap-[6px]">
+          {STORY_PRIORITIES.map((p) => {
+            const active = p === priority;
+            return (
+              <button
+                key={p}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => setPriority(p)}
+                className={`flex-1 cursor-pointer rounded-chip border-[3px] border-ink px-[10px] py-[8px] font-mono text-[12.5px] font-bold uppercase tracking-[0.06em] transition-colors ${
+                  active ? "bg-cherry-dk text-cream" : "bg-porcelain text-ink hover:bg-sun"
+                }`}
+              >
+                {PRIORITY_CHIP[p]?.label ?? p}
+              </button>
+            );
+          })}
+        </div>
+        <p className="m-0 mt-[8.8px] font-mono text-[11.5px] uppercase tracking-[0.04em] text-ink-3">
+          {owner} sees the urgent ones first. You can change it later.
+        </p>
       </div>
 
       {/* ---- colour ---- */}

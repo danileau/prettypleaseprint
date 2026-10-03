@@ -44,6 +44,18 @@ export const STATUS_CHIP: Record<
   Declined: { bg: "#e2e6ea", fg: "#6b747c" },
 };
 
+/**
+ * How much a print matters to the person asking. The same three steps a
+ * feature request uses (`FEATURE_PRIORITIES`, below) and drawn with the same
+ * `PRIORITY_CHIP`, but its own list: the two backlogs are parallel, not shared.
+ */
+export const STORY_PRIORITIES = ["low", "medium", "high"] as const;
+export type StoryPriorityName = (typeof STORY_PRIORITIES)[number];
+export const DEFAULT_STORY_PRIORITY: StoryPriorityName = "medium";
+
+/** Loudest first: the order the owner's queue reads in. */
+export const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
 export const QuantitySchema = z.coerce
   .number()
   .int("Whole prints only.")
@@ -65,6 +77,9 @@ export const WishSchema = z.object({
   material: z.string().trim().min(1, "Pick a material.").max(40),
   colorName: z.string().trim().min(1, "Pick a colour.").max(40),
   quantity: QuantitySchema,
+  // Optional on the wire, so a client written before priority existed still
+  // files a request — it comes out `medium`, which is what it would have meant.
+  priority: z.enum(STORY_PRIORITIES, "That is not a priority.").optional().default(DEFAULT_STORY_PRIORITY),
   // The tip is no longer a compile-time enum — it is an owner-managed list.
   // This module is shared with the client bundle and cannot read the database,
   // so it only checks the shape; the upload route validates the value against

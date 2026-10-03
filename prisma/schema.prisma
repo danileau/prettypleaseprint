@@ -266,6 +266,14 @@ enum Material {
   Resin
 }
 
+/// How much a print matters to the person asking. Same three steps as a
+/// feature request's, in its own type — see the story_priority migration.
+enum StoryPriority {
+  low
+  medium
+  high
+}
+
 enum CatalogColorMode {
   solid
   gradient
@@ -282,6 +290,10 @@ model Story {
   uploader   User   @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
 
   quantity  Int      @default(1)
+  /// Set by the requester when filing and changeable while the ticket is still
+  /// on the rail, by them or by the owner. It orders the owner's queue; it
+  /// promises nothing about when the printer is free.
+  priority  StoryPriority @default(medium)
   /// Snapshots the catalog label at submission time. Catalog entries may be
   /// renamed or disabled later without rewriting an old order.
   material  String   @default("PETG")

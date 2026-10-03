@@ -1,5 +1,7 @@
 import type { ComponentProps, ReactNode } from "react";
 
+import { PRIORITY_CHIP } from "@/lib/catalog";
+
 /**
  * The neon logotype. A script wordmark on a lit disc — the sign over the door.
  *
@@ -190,6 +192,32 @@ const CHIP_SKIN: Record<string, string> = {
   InProgress: "bg-sun text-ink",
   Shipped: "bg-cherry text-ink",
 };
+
+/**
+ * A ticket's priority, in the colours a feature request already uses.
+ *
+ * `quiet` leaves `medium` undrawn. On a board card almost everything is
+ * medium, and a chip on every card is a chip nobody reads — there the mark
+ * should mean "this one is not like the others". In a list the owner is
+ * triaging, every row says what it is.
+ */
+export function PriorityChip({
+  priority,
+  quiet = false,
+}: {
+  priority: string;
+  quiet?: boolean;
+}) {
+  if (quiet && priority === "medium") return null;
+  const chip = PRIORITY_CHIP[priority] ?? PRIORITY_CHIP.medium!;
+  return (
+    <span
+      className={`inline-block flex-none rounded-chip border-2 border-ink px-[8px] py-[1px] font-mono text-[10.5px] font-bold uppercase tracking-[0.06em] text-ink ${chip.bg}`}
+    >
+      {chip.label}
+    </span>
+  );
+}
 
 export function StatusChip({
   status,
