@@ -233,7 +233,6 @@ export default async function StoryPage({
               <RequeueStory
                 storyId={story.id}
                 label={storyRef(story.id)}
-                from={`/story/${story.id}`}
               />
             )}
 

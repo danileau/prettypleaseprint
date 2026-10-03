@@ -250,25 +250,38 @@ async function main() {
 
   section("printing it again answers to the shelf");
   await db.story.update({ where: { id: story!.id }, data: { status: "Done" } });
-  let history = await (await client.go(`${APP}/history`)).text();
+  const history = await (await client.go(`${APP}/history`)).text();
   check("history draws the gradient, not a flat dot", history.includes("#f6c945"));
-  const again = () => findForm(history, ['name="storyId"', `value="${story!.id}"`]);
-  await client.submit(`${APP}/history`, history, again(), {});
+  const again = (body: unknown) => client.raw(`${APP}/api/stories/${story!.id}/requeue`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  await again({});
   const copy = await db.story.findFirst({ where: { uploaderId: clientUser.id }, orderBy: { id: "desc" } });
   check("a re-queued ticket is a new one", Boolean(copy) && copy!.id !== story!.id && copy!.status === "Requested");
   check("and it keeps the swatch",
     copy?.colorMode === "gradient" && Boolean(copy.colorStyle?.includes("#f6c945")),
     `mode ${copy?.colorMode}, style ${copy?.colorStyle}`);
 
+  await again({ colorName: "Dealer's choice" });
+  const recoloured = await db.story.findFirst({ where: { uploaderId: clientUser.id }, orderBy: { id: "desc" } });
+  check("a colour changed on the way takes that colour's swatch",
+    recoloured?.colorName === "Dealer's choice" && recoloured.colorMode === "whatever" && recoloured.colorStyle === RAINBOW,
+    `mode ${recoloured?.colorMode}`);
+
   await db.catalogColor.update({ where: { id: colors[1]!.id }, data: { active: false } });
   const before = await db.story.count();
-  history = await (await client.go(`${APP}/history`)).text();
-  const stale = await client.submit(`${APP}/history`, history, again(), {});
-  check("a colour that is off the shelf cannot be re-queued", await db.story.count() === before,
-    `${await db.story.count()} tickets, was ${before}`);
+  const stale = await again({});
+  check("a colour that is off the shelf cannot be re-queued",
+    stale.status === 409 && await db.story.count() === before, `status ${stale.status}`);
   check("and the requester is told why",
-    decodeURIComponent(stale.headers.get("location") ?? "").replace(/\+/g, " ").includes("not on the shelf"),
-    stale.headers.get("location") ?? "no redirect");
+    ((await stale.json()) as { error?: string }).error?.includes("not on the shelf") === true);
+  const againPage = await (await client.go(`${APP}/story/${story!.id}/again`)).text();
+  check("the print-again form says the old colour is gone instead of hiding it",
+    againPage.includes("not on offer any more") && againPage.includes("Sunset"));
+  const switched = await again({ colorName: "Dealer's choice" });
+  check("but picking a colour that is on the shelf goes through", switched.status === 201, `status ${switched.status}`);
 
   await db.catalogColor.delete({ where: { id: colors[1]!.id } });
   const unchanged = await db.story.findUnique({ where: { id: story!.id } });

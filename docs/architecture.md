@@ -322,7 +322,10 @@ side:
   withdraw window widened from `Requested`/`Declined` to include `Accepted`
   (before the bed is committed). `requeueStory` clones an old ticket into a
   fresh `Requested` one, copying the file server-side (`copyModel`) to a new
-  object so the two own independent bytes.
+  object so the two own independent bytes. The wish can be changed on the
+  way: the control leads to `/story/{id}/again`, the request form filled in
+  with the old ticket, and `POST /api/stories/{id}/requeue` takes the changed
+  fields and validates the merged wish exactly as an upload's.
 - **`/history`** is a scoped read of the finished prints (`Delivery`/`Done`/
   `Declined`) through the same `storyScope`, filtered by status/material/date,
   with the re-queue control on each row. `/board` and `/me` are untouched.

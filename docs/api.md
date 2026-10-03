@@ -65,6 +65,7 @@ no header that names a user.
 | `POST` | `/api/stories/{id}/flag` | Flag a model problem, with a reason. *Printer owner.* |
 | `DELETE` | `/api/stories/{id}/flag` | Clear the flag. *Printer owner.* |
 | `GET` `POST` | `/api/stories/{id}/comments` | The conversation on a ticket. |
+| `POST` | `/api/stories/{id}/requeue` | Print your own ticket again from the same file, changing what you like. |
 | `GET` | `/api/notifications` | Your Activity feed. |
 | `POST` | `/api/notifications/read` | Mark one read, or all of them. |
 | `GET` | `/api/catalog` | The materials and colours on offer right now. |

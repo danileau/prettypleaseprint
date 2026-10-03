@@ -171,7 +171,7 @@ export default async function HistoryPage({
                 {/* Only the person who filed it may re-queue it — an admin
                     seeing a ticket is not its owner (the action re-checks). */}
                 {story.uploaderId === user.id && (
-                  <RequeueStory storyId={story.id} label={storyRef(story.id)} from="/history" compact />
+                  <RequeueStory storyId={story.id} label={storyRef(story.id)} compact />
                 )}
               </div>
             ))
