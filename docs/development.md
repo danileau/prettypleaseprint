@@ -75,7 +75,7 @@ as four gates that can be required by name in branch protection:
 | --- | --- |
 | `guard` | typecheck, the secret scanner over every tracked file, and the markdown link check |
 | `models` | the upload validator against hostile fixtures — no server needed |
-| `verify` | raises the real compose stack and runs all eight integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
+| `verify` | raises the real compose stack and runs all nine integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
 | `trivy` | filesystem scan for vulnerabilities, secrets and misconfiguration; HIGH/CRITICAL fail |
 
 `verify` uses docker compose rather than GitHub `services:` so that running the

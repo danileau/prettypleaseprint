@@ -237,7 +237,8 @@ not help against a cookie captured *now*. It is the one control a thief holding
 a copied cookie cannot satisfy.
 
 Withdrawing an unaccepted invitation is not gated — it only ever removes reach
-— and nor is `/admin/benefits`, which grants nobody anything.
+— and nor are `/admin/benefits` and `/admin/catalog`, which decide what the
+request form offers and grant nobody anything.
 
 `/reauth` offers both the passkey and the password on purpose. Every account
 has a password by construction and only some have a passkey, so requiring a

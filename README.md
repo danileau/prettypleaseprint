@@ -41,10 +41,12 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   is Requested, Accepted or Declined, but not once it is Printing. The ticket,
   the conversation and the uploaded file go with it. Plans change; unwanted
   prints waste filament.
-- **Print an old request again** — re-queue any past ticket of yours (a test
-  print that worked, a declined one you have fixed) as a fresh request, without
-  hunting down and re-uploading the file. The model is copied server-side, so
-  the two tickets own independent files.
+- **Print an old request again, differently if you like** — re-queue any past
+  ticket of yours (a test print that worked, a declined one you have fixed) as
+  a fresh request, without hunting down and re-uploading the file. It opens the
+  request form filled in with what you asked for last time, so the material,
+  colour, quantity and print settings can change before it is sent. The model
+  is copied server-side, so the two tickets own independent files.
 - **Note print settings** — an optional free-text field on a request for the
   slicer specifics that come with some files (layer height, infill, supports,
   temperatures). The printer owner sees them on the ticket, so they do not
@@ -400,7 +402,7 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 | **[Development](docs/development.md)** | stack, local setup, the verification suites, CI |
 | **[Security audit](docs/security-audit.md)** | the OWASP Top 10 assessment, findings, and residual risk accepted |
 | **[Security policy](SECURITY.md)** | how to report a vulnerability |
-| **[Contributing](CONTRIBUTING.md)** | the nine suites are the contract; what a good change looks like |
+| **[Contributing](CONTRIBUTING.md)** | the ten suites are the contract; what a good change looks like |
 | **[Changelog](CHANGELOG.md)** | what changed in each release |
 
 ## Security
@@ -431,10 +433,10 @@ something, see [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
-Issues and pull requests are welcome. The nine verification suites in
+Issues and pull requests are welcome. The ten verification suites in
 `scripts/` are the contract — `verify:models`, `verify:auth`, `verify:upload`,
-`verify:queue`, `verify:frr`, `verify:benefits`, `verify:api`, `verify:passkey`
-and `probe:security`. All but `verify:models` run in CI against the built
+`verify:queue`, `verify:frr`, `verify:benefits`, `verify:catalog`, `verify:api`,
+`verify:passkey` and `probe:security`. All but `verify:models` run in CI against the built
 container image rather than a dev server. If a change makes one fail, that is the
 change talking.
 

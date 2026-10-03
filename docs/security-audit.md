@@ -382,8 +382,9 @@ is the one control on the list a copied cookie cannot satisfy: the thief has
 the session, not the passkey and not the password.
 
 `revokeInvite` is deliberately **not** gated — withdrawing an unaccepted invite
-only ever removes reach — and neither is `/admin/benefits`, which decides what
-tips the upload form offers and grants nobody anything.
+only ever removes reach — and neither are `/admin/benefits` and
+`/admin/catalog`, which decide what tips, materials and colours the upload form
+offers and grant nobody anything.
 
 Two implementation notes, both of which look odd on purpose:
 
