@@ -742,6 +742,26 @@ async function main() {
         (await db.user.count({ where: { email: "gatecrasher@nowhere.test" } })) === 0,
         `status ${gatecrash.status}`);
 
+  // And an invitation is redeemed with its link, not with its address. The
+  // endpoint above is open to anyone, so if a pending invitation for the
+  // address were enough, knowing who was invited would be enough.
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  await createInvite({ email: "linkless@office.example", invitedById: admin.id });
+  const linkless = await new Browser().json("/api/auth/sign-up/email", {
+    email: "linkless@office.example",
+    name: "Link Less",
+    username: "linkless",
+    password: TEST_PASSWORD,
+  });
+  probe("A04-invitelink", "an invited address cannot be registered without its invite link",
+        linkless.status === 403 &&
+        (await db.user.count({ where: { email: "linkless@office.example" } })) === 0 &&
+        (await db.invite.findFirst({ where: { email: "linkless@office.example" } }))?.acceptedAt === null,
+        `status ${linkless.status}`);
+  probe("A04-inviteoracle", "the refusal does not reveal whether the address has an invitation",
+        (await linkless.clone().text()) === (await gatecrash.clone().text()),
+        (await linkless.clone().text()).slice(0, 120));
+
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
   let limited = false;
   for (let i = 0; i < 25; i++) {
@@ -1097,22 +1117,23 @@ async function main() {
         (await db.user.count({ where: { email: "integrity@office.example" } })) === 0,
         `status ${privileged.status} ${(await privileged.clone().text()).slice(0, 90)}`);
 
-  // The rest reach the endpoint undeclared, and are overruled server-side.
+  // The undeclared ones are not refused by the schema — they reach the gate,
+  // which turns the request away for having no invite link. Either way the
+  // body cannot write them: the account that a link opens is stamped from the
+  // invite row, which verify:auth asserts on a real registration.
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
-  await new Browser().json("/api/auth/sign-up/email", {
+  const undeclared = await new Browser().json("/api/auth/sign-up/email", {
     email: "integrity@office.example",
     name: "Ines Tegrity",
     username: "integrity",
     password: TEST_PASSWORD,
     emailVerified: false, banned: true, id: "chosen-by-attacker",
   });
-  const created = await db.user.findUnique({ where: { email: "integrity@office.example" } });
   probe("A08-massassign", "privileged fields cannot be set from the request body",
-        created?.role === "client" && created.initials !== "ZZ" &&
-        created.id !== "chosen-by-attacker" && created.invitedById === admin.id &&
-        created.banned !== true,
-        JSON.stringify({ role: created?.role, initials: created?.initials,
-                         id: created?.id, banned: created?.banned }));
+        undeclared.status === 403 &&
+        (await db.user.count({ where: { email: "integrity@office.example" } })) === 0 &&
+        (await db.user.count({ where: { id: "chosen-by-attacker" } })) === 0,
+        `status ${undeclared.status}`);
 
   probe("A08-lockfile", "a dependency lockfile is committed",
         await Bun_exists("package-lock.json"));

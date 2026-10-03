@@ -9,7 +9,12 @@ import { username } from "better-auth/plugins/username";
 import { passkey } from "@better-auth/passkey";
 
 import { db } from "@/lib/db";
-import { normalizeEmail, pendingInviteFor, consumeInvitesFor } from "@/lib/invites";
+import {
+  normalizeEmail,
+  pendingInviteFor,
+  consumeInvitesFor,
+  isClaimingInvite,
+} from "@/lib/invites";
 import { initialsFor } from "@/lib/tokens";
 import { isBuildPhase } from "@/lib/runtime";
 import { record } from "@/lib/audit";
@@ -72,9 +77,10 @@ export const auth = betterAuth({
    * Username and password is how people get in.
    *
    * `requireEmailVerification` stays off: the address was verified by
-   * construction. The only way to reach sign-up at all is through an invite
-   * link that was delivered to that mailbox, and the invite gate below
-   * refuses anything else.
+   * construction. An account is only ever opened by redeeming an invite link
+   * that was delivered to that mailbox — the sign-up endpoint is reachable by
+   * anyone, and the invite gate below refuses every request that is not such
+   * a redemption.
    */
   emailAndPassword: {
     enabled: true,
@@ -233,7 +239,18 @@ export const auth = betterAuth({
      * tomorrow. Better Auth runs it from `internalAdapter.createUser`, which
      * `/sign-up/email` goes through with `{ method: "email-password" }`, so
      * adding passwords did not move this rule or add a second copy of it.
-     * No pending invite, no account.
+     *
+     * Two conditions, and the second is the one that was missing. A pending
+     * invitation for the address is necessary and was once treated as
+     * sufficient — but `/sign-up/email` answers anybody, so an address alone
+     * let whoever knew it register the account without the link. The request
+     * must also be the redemption of that link: `acceptInvite` checks the
+     * token and wraps the sign-up in `claimingInvite`, and nothing a caller
+     * sends can stand in for that. See `claimingInvite` in src/lib/invites.ts.
+     *
+     * Both refusals answer identically. Saying "there is an invitation for
+     * that address, you just lack the link" would turn the endpoint into a way
+     * to ask who has been invited. The trail keeps them apart instead.
      */
     async validateUserInfo({ user, source }) {
       if (source.action !== "create-user") return;
@@ -243,10 +260,16 @@ export const auth = betterAuth({
         return { error: "invalid_request", errorDescription: "No email address." };
       }
 
-      if (!(await pendingInviteFor(email))) {
+      const invited = Boolean(await pendingInviteFor(email));
+      if (!invited || !isClaimingInvite(email)) {
         // Worth a trail entry: repeated rejections for the same address are
-        // the shape of someone probing for a way in.
-        await record({ action: "invite.rejected", subject: email });
+        // the shape of someone probing for a way in — and `no_link` against an
+        // address that *is* invited is the shape of someone who knows who was.
+        await record({
+          action: "invite.rejected",
+          subject: email,
+          detail: { reason: invited ? "no_link" : "no_invitation" },
+        });
         return {
           error: "invite_required",
           errorDescription:

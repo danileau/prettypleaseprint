@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Prisma, type Invite, type Role } from "@prisma/client";
 import { db } from "@/lib/db";
 import { generateToken, hashToken } from "@/lib/tokens";
@@ -200,6 +201,48 @@ export async function purgeStaleInvites(): Promise<number> {
     },
   });
   return count;
+}
+
+// ---------------------------------------------------------------------------
+// Claiming: the link, not the address, is what opens an account
+// ---------------------------------------------------------------------------
+
+/**
+ * "This request is redeeming an invitation link for this address."
+ *
+ * The invite gate in src/lib/auth.ts used to ask one question — is there a
+ * pending invitation for this e-mail address — and Better Auth's sign-up
+ * endpoint is reachable by anyone. Put together, the *address* was the
+ * credential: anybody who knew or guessed an invited address could post it to
+ * `/api/auth/sign-up/email` with a password of their own and be handed the
+ * account and a session, without ever seeing the link. The token in the link,
+ * the thing that proves the mailbox, played no part.
+ *
+ * So the gate now asks a second question, and this is how it is answered. The
+ * only code that may open an account is the code that has just checked a token
+ * (`acceptInvite`), and it says so by running the sign-up inside
+ * `claimingInvite`. The gate reads it back with `isClaimingInvite`. A request
+ * that arrives at the endpoint by itself has no claim around it, and is
+ * refused exactly as an address with no invitation is.
+ *
+ * AsyncLocalStorage rather than a field in the sign-up body, because a body is
+ * the one thing the caller controls: this cannot be set from outside the
+ * process. It hangs off `globalThis` so that two copies of this module — which
+ * a bundler is free to make — still share one store.
+ */
+const CLAIM = Symbol.for("ppp.invite-claim");
+type ClaimStore = AsyncLocalStorage<{ email: string }>;
+const claims: ClaimStore = ((globalThis as Record<symbol, unknown>)[CLAIM] as ClaimStore | undefined) ??
+  ((globalThis as Record<symbol, unknown>)[CLAIM] = new AsyncLocalStorage<{ email: string }>());
+
+/** Run `fn` as the redemption of this invitation. Call it only after the token has been checked. */
+export function claimingInvite<T>(invite: Pick<Invite, "email">, fn: () => Promise<T>): Promise<T> {
+  return claims.run({ email: normalizeEmail(invite.email) }, fn);
+}
+
+/** Is the current request redeeming an invitation for exactly this address? */
+export function isClaimingInvite(email: string): boolean {
+  return claims.getStore()?.email === normalizeEmail(email);
 }
 
 export { mailConfigured };

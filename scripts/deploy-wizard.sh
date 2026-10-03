@@ -84,7 +84,19 @@ command -v docker  >/dev/null || die "docker required"
 command -v curl    >/dev/null || die "curl required"
 command -v python3 >/dev/null || die "python3 required (for reading the registry's JSON)"
 docker compose version >/dev/null 2>&1 || die "the docker compose plugin is required"
-[ -f "$PROJECT_DIR/.env.docker" ] || die "no .env.docker in $PROJECT_DIR — is PPP_DIR right?"
+# The usual way to get here is running the wizard from a source checkout, where
+# it lives in scripts/ and the deployment's files do not. The old message asked
+# "is PPP_DIR right?" of someone who had never set it, so say what the wizard
+# expects and the two ways to give it that.
+if [ ! -f "$PROJECT_DIR/.env.docker" ]; then
+  echo "${RED}✗ no .env.docker in $PROJECT_DIR${R}" >&2
+  echo "  The wizard deploys the stack in the directory that holds" >&2
+  echo "  docker-compose.prod.yml and .env.docker — on the host that runs it," >&2
+  echo "  not in a source checkout. Either copy this script next to those two" >&2
+  echo "  files and run it there, or point it at them:" >&2
+  echo "      PPP_DIR=/path/to/deployment $0" >&2
+  exit 1
+fi
 
 CURRENT="$(sed -n 's/^PPP_TAG="\{0,1\}\([^"]*\)"\{0,1\}.*/\1/p' "$PROJECT_DIR/.env.docker" | head -1)"
 [ -n "$CURRENT" ] || die "PPP_TAG not found in .env.docker (see .env.docker.example)"
