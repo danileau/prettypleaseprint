@@ -103,11 +103,14 @@ model Account {
   id        String @id @default(cuid())
   accountId String
 
-  /// Namespace for `accountId`, so a provider id can never collide with an
-  /// internal method. Better Auth writes `local:credential` for a password
-  /// account; an OAuth provider would get its own issuer. Required by the
-  /// library, and the left half of the uniqueness rule below.
-  issuer     String
+  /// Dead, and kept on purpose. Better Auth 1.7.0–1.7.2 required this column
+  /// and wrote `local:credential` into it; 1.7.3 stopped writing it and went
+  /// back to recognising an account by `providerId` and `accountId`, so a
+  /// required column here made every insert fail. It is nullable rather than
+  /// dropped because the deploy wizard rolls back to the previous image when a
+  /// deploy fails its health check, and that image's client still selects it —
+  /// drop it once no deployment can roll back past this point.
+  issuer     String?
   providerId String
   userId                String
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -123,7 +126,7 @@ model Account {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  @@unique([issuer, accountId])
+  @@unique([providerId, accountId])
   @@index([userId])
   @@map("account")
 }
