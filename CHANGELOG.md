@@ -548,6 +548,47 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Fixed
 
+- **Better Auth 1.7.1 → 1.7.7, and the migration that upgrade needs.** The
+  weekly dependency group had been failing `verify` since 2026-09-27 and looked,
+  from the first failing check, like a broken invite gate: sign-up with no
+  pending invitation answered 500 instead of 403. The gate was fine. Better Auth
+  1.7.0–1.7.2 required an `account.issuer` column, and this app added it as
+  `NOT NULL` when it gained passwords; 1.7.3 withdrew the requirement, stopped
+  writing the column, and went back to recognising an account by
+  `(providerId, accountId)`. Against a required column that makes every insert
+  into `account` fail — nobody can be given a password — and the library now
+  checks for exactly that and refuses each request with *"Prisma schema
+  mismatch"*.
+
+  The migration makes `issuer` nullable and moves the unique index back to
+  `(providerId, accountId)`, where it was before. It does **not** drop the
+  column, and that is deliberate: the deploy wizard rolls back to the previous
+  image when a deploy fails its health check, and that image's client still
+  selects `issuer`. Dropping it would turn a failed deploy into a rollback that
+  cannot read an account.
+
+  That claim was tested rather than reasoned, on one database carried across
+  both images. Accounts made under 1.7.1 sign in under 1.7.7. After rolling back
+  onto the migrated database the old migrator finds nothing to do and does not
+  object to a migration it has never heard of, existing accounts sign in, and
+  new ones can be created. The one thing a rollback does not get for free is
+  written into the migration: a password *first set* under 1.7.7 has a NULL
+  issuer, and 1.7.1 answers that account 401 until
+  `UPDATE "account" SET "issuer" = 'local:' || "providerId" WHERE "issuer" IS NULL`
+  is run — which was also tried, and fixes it.
+
+  1.7.7 rather than the 1.7.6 the group proposed, because `@better-auth/passkey`
+  1.7.6 resolves `@better-auth/core` to 1.7.7 while `better-auth` 1.7.6 pins its
+  own 1.7.6, leaving two copies of the core in one process. 1.7.7 also carries a
+  critical fix (GHSA-965c-763c-88jm) for the Magic Link plugin, which this app
+  does not use.
+
+  The rest of the group rides along, none of it needing a code change: `next`
+  15.5.25 → 15.5.26, `react` and `react-dom` 19.0.8 → 19.3.0, `zod` 4.4.3 →
+  4.6.5, `resend` 6.22.0 → 6.29.0, `three` to 0.186, and the development-only
+  `@aws-sdk/client-s3`, `puppeteer-core`, `swagger-ui-dist`, `tsx` and type
+  packages.
+
 - **Two high advisories in `nodemailer`, found by the daily scan.** 9.1.1 →
   10.0.14, for GHSA-prgh-xp8r-p3m5 and GHSA-v53p-9fqp-m79j: both are quadratic
   time in the address parser, a denial of service by a crafted address. The
