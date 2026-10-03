@@ -548,6 +548,24 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Fixed
 
+- **Two high advisories in `nodemailer`, found by the daily scan.** 9.1.1 →
+  10.0.14, for GHSA-prgh-xp8r-p3m5 and GHSA-v53p-9fqp-m79j: both are quadratic
+  time in the address parser, a denial of service by a crafted address. The
+  scheduled `Security scan` had been red since 2026-09-30, in the repository and
+  in the published `ppp-app` image, and the `trivy` gate would have failed every
+  pull request opened after it.
+
+  The exposure here was small and the bump is not: the only addresses that reach
+  the parser are `MAIL_FROM` and an invitation or reset recipient — typed by the
+  owner, and validated when the invitation was made. But 10 is a major
+  version. It needs Node 20 (the images run 22), and the package was rewritten in
+  TypeScript and now ships from `dist/` with separate ES-module and CommonJS
+  builds — which matters because `nodemailer` is one of the two
+  `serverExternalPackages`, traced into the standalone output rather than
+  bundled. A typecheck cannot see whether that trace still finds the files, so
+  the evidence is `verify:auth` against the built image: an invitation and a
+  reset link both sent through SMTP and read back out of Mailpit.
+
 - **The board and the header at phone width.** A card title long enough to wrap
   overflowed its card on `/board`, and the shared header did not fit a narrow
   viewport. Shipped in August and never written down here — found while checking
