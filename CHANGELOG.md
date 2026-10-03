@@ -580,6 +580,14 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Fixed
 
+- **The deploy wizard says where it expects to run.** Started from a source
+  checkout it answered *"no .env.docker in …/scripts — is PPP_DIR right?"*,
+  which asks about a variable the person never set and reads like a broken
+  script. It is not broken: the wizard deploys the directory holding
+  `docker-compose.prod.yml` and `.env.docker`, on the host that runs the stack,
+  and defaults to looking beside itself. The message now says that, and gives
+  both ways to satisfy it — copy the script there, or set `PPP_DIR`.
+
 - **Better Auth 1.7.1 → 1.7.7, and the migration that upgrade needs.** The
   weekly dependency group had been failing `verify` since 2026-09-27 and looked,
   from the first failing check, like a broken invite gate: sign-up with no
