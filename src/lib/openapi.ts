@@ -620,6 +620,40 @@ export async function buildOpenApiDocument() {
         },
       },
 
+      "/api/stories/{id}/requeue": {
+        post: {
+          tags: ["stories"],
+          summary: "Print one of your tickets again",
+          description:
+            "Opens a fresh `Requested` ticket from the same file — nothing is " +
+            "uploaded. The body is the wish and **every field is optional**: " +
+            "what is left out is carried over from the old ticket, so `{}` " +
+            "repeats it exactly. What is sent is held to the rules an upload " +
+            "is — the material and colour must be in `GET /api/catalog` today, " +
+            "and the tip must be a benefit on offer. The old ticket is not changed.",
+          parameters: [storyIdParam],
+          requestBody: {
+            required: false,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Wish" },
+                example: { quantity: 4, material: "PETG", colorName: "Slate", printSettings: "40% infill" },
+              },
+            },
+          },
+          responses: {
+            "201": storyResponse("The new ticket.", {
+              from: { type: "string", examples: ["PPP-104"] },
+            }),
+            "400": errorResponse("A field did not parse."),
+            "403": errorResponse("Only the person who asked for it can print it again."),
+            "404": errorResponse("No such ticket, or not one you may see."),
+            "409": errorResponse("The material, colour or benefit is not on offer any more."),
+            ...COMMON_ERRORS,
+          },
+        },
+      },
+
       "/api/stories/{id}/comments": {
         get: {
           tags: ["conversation"],

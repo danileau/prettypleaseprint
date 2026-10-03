@@ -368,6 +368,33 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Changed
 
+- **Printing a ticket again opens the request form, so the second go can be
+  different.** "Print again" used to be one click that cloned the old ticket
+  exactly. But a second print is rarely the first one repeated — the test came
+  out too weak, or the wrong colour, or one was not enough — so the requester
+  filed a ticket they already knew was wrong and explained the difference in a
+  comment. It now leads to `/story/{id}/again`: the request form without the
+  dropzone, filled in with the old wish. Title, material, colour, quantity,
+  benefit, note and print settings can all be changed; the file cannot, because
+  a different model is a different request. Nothing is created until the form
+  is sent, and the old ticket is never touched.
+
+  A choice that has left the shelf since — a retired material, colour or
+  benefit — is replaced by the default and **said out loud** above the form,
+  rather than silently swapped or left to fail on submit.
+
+  Behind it is `POST /api/stories/{id}/requeue`, which the API did not have at
+  all before. The body is the wish with every field optional: `{}` repeats the
+  ticket, `{ "quantity": 4 }` asks for four. The merged wish goes through the
+  same schema, the same catalogue lookup and the same benefit check as an
+  upload. The audit row records *which* fields changed, not what they said.
+  The old server action is gone, so there is one implementation.
+
+  What this costs: the old control was a plain form that worked with
+  JavaScript off. The request form never did, and printing again now shares
+  that. `verify:upload` covers the page, the tuned copy, the refusals and both
+  ownership rules.
+
 - **The documentation caught up with the code.** A sweep after the object store
   came out, because several documents were describing a stack that no longer
   exists rather than being wrong in small ways.
@@ -580,13 +607,14 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Fixed
 
-- **The deploy wizard says where it expects to run.** Started from a source
-  checkout it answered *"no .env.docker in …/scripts — is PPP_DIR right?"*,
-  which asks about a variable the person never set and reads like a broken
-  script. It is not broken: the wizard deploys the directory holding
-  `docker-compose.prod.yml` and `.env.docker`, on the host that runs the stack,
-  and defaults to looking beside itself. The message now says that, and gives
-  both ways to satisfy it — copy the script there, or set `PPP_DIR`.
+- **The quantity box could not be cleared.** "Or type a number" coerced every
+  keystroke to a quantity, so emptying it snapped straight back to `1` and
+  typing a 3 gave 13 — the only way to enter a number was to select the digit
+  first. The box now keeps what is being typed apart from the quantity: it can
+  be empty mid-edit, a whole number of one or more takes effect as it is typed,
+  and leaving the box with anything else in it falls back to the last quantity.
+  It mattered little while the box started at 1 on a new request, and more once
+  printing a ticket again opened the form with an old quantity to change.
 
 - **Better Auth 1.7.1 → 1.7.7, and the migration that upgrade needs.** The
   weekly dependency group had been failing `verify` since 2026-09-27 and looked,

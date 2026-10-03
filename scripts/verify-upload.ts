@@ -164,23 +164,6 @@ const unescapeHtml = (s: string) =>
   s.replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'")
     .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 
-/** Replay the server-action form whose markup contains `marker`, JS-off style. */
-async function submitForm(
-  b: Browser, url: string, html: string, marker: string, values: Record<string, string>,
-) {
-  const form = (html.match(/<form\b[\s\S]*?<\/form>/g) ?? []).find((f) => f.includes(marker));
-  if (!form) throw new Error(`no form matching ${JSON.stringify(marker)} on ${url}`);
-  const body = new FormData();
-  for (const tag of form.match(/<input\b[^>]*>/g) ?? []) {
-    if (!tag.includes('type="hidden"')) continue;
-    const n = /name="([^"]*)"/.exec(tag)?.[1];
-    const v = /value="([^"]*)"/.exec(tag)?.[1] ?? "";
-    if (n) body.append(unescapeHtml(n), unescapeHtml(v));
-  }
-  for (const [k, v] of Object.entries(values)) body.set(k, v);
-  return b.raw(url, { method: "POST", body });
-}
-
 async function main() {
   section("setup");
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
@@ -462,14 +445,36 @@ async function main() {
   // `story` is Ayla's real upload from the top of this run — a genuine object
   // in the bucket, which is exactly what re-queue has to copy.
   const beforeKey = (await db.story.findUnique({ where: { id: story!.id } }))!.storageKey;
+  const countBeforeAgain = await db.story.count();
   const rqPage = rendered(await (await aylaB.go(`${APP}/story/${story!.id}`)).text());
-  check("the story page offers Print again", rqPage.includes("no re-upload"));
-  const posted = await submitForm(aylaB, `${APP}/story/${story!.id}`, rqPage, "no re-upload", {
-    storyId: String(story!.id), from: `/story/${story!.id}`,
-  });
-  const newId = Number((posted.headers.get("location") ?? "").match(/\/story\/(\d+)/)?.[1]);
-  check("re-queue redirects to a new ticket",
-        Number.isInteger(newId) && newId !== story!.id, posted.headers.get("location") ?? "");
+  check("the story page offers Print again",
+        rqPage.includes("no re-upload") && rqPage.includes(`/story/${story!.id}/again`));
+
+  // The control leads to the request form, filled in — not straight to a copy.
+  const againPage = await aylaB.go(`${APP}/story/${story!.id}/again`);
+  const againHtml = rendered(await againPage.text());
+  check("it opens the request form rather than cloning on a click",
+        againPage.status === 200 && (await db.story.count()) === countBeforeAgain,
+        `status ${againPage.status}`);
+  check("the form names the file and has no dropzone",
+        againHtml.includes(story!.filename) && !againHtml.includes('type="file"'));
+  check("and starts from the old wish", againHtml.includes(`value="${story!.title}"`));
+  check("somebody else's ticket has no such page",
+        (await jonasB.go(`${APP}/story/${story!.id}/again`)).status === 404);
+  check("nor does the owner's view of a ticket they did not ask for",
+        (await rubenB.go(`${APP}/story/${story!.id}/again`)).status === 404);
+
+  const requeue = (b: Browser, id: number, body: unknown) =>
+    b.raw(`${APP}/api/stories/${id}/requeue`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  const posted = await requeue(aylaB, story!.id, {});
+  const newId = Number(((await posted.json()) as { story?: { id?: number } }).story?.id);
+  check("sending it unchanged opens a new ticket",
+        posted.status === 201 && Number.isInteger(newId) && newId !== story!.id, `status ${posted.status}`);
 
   const copy = await db.story.findUnique({ where: { id: newId } });
   check("the copy is a fresh Requested ticket, owned by the requester",
@@ -514,13 +519,52 @@ async function main() {
   check("the owner sees the print settings on the ticket",
         ownerView.includes("Print settings") && ownerView.includes("gyroid infill"));
 
-  const rqPage2 = rendered(await (await aylaB.go(`${APP}/story/${psStory!.id}`)).text());
-  const posted2 = await submitForm(aylaB, `${APP}/story/${psStory!.id}`, rqPage2, "no re-upload", {
-    storyId: String(psStory!.id), from: `/story/${psStory!.id}`,
-  });
-  const newId2 = Number((posted2.headers.get("location") ?? "").match(/\/story\/(\d+)/)?.[1]);
+  const posted2 = await requeue(aylaB, psStory!.id, {});
+  const newId2 = Number(((await posted2.json()) as { story?: { id?: number } }).story?.id);
   const copy2 = await db.story.findUnique({ where: { id: newId2 } });
   check("re-queue carries the print settings onto the copy", copy2?.printSettings === SETTINGS, copy2?.printSettings);
+
+  section("printing again with the settings tuned");
+
+  const TUNED = "0.12mm layers, 60% infill — the first one snapped";
+  const tuned = await requeue(aylaB, psStory!.id, {
+    quantity: 3, material: "PLA", colorName: "Teal", printSettings: TUNED,
+  });
+  const tunedId = Number(((await tuned.json()) as { story?: { id?: number } }).story?.id);
+  const tunedCopy = await db.story.findUnique({ where: { id: tunedId } });
+  check("what was changed is on the new ticket",
+        tuned.status === 201 && tunedCopy?.quantity === 3 && tunedCopy?.material === "PLA" &&
+        tunedCopy?.colorName === "Teal" && tunedCopy?.printSettings === TUNED,
+        JSON.stringify({ s: tuned.status, q: tunedCopy?.quantity, m: tunedCopy?.material, c: tunedCopy?.colorName }));
+  check("the colour follows the new choice, not the old ticket", tunedCopy?.colorHex === "#12645f", tunedCopy?.colorHex);
+  check("what was left alone is carried over",
+        tunedCopy?.title === psStory!.title && tunedCopy?.tip === psStory!.tip &&
+        tunedCopy?.filename === psStory!.filename && tunedCopy?.dims === psStory!.dims);
+  const stillOld = await db.story.findUnique({ where: { id: psStory!.id } });
+  check("the old ticket is exactly as it was",
+        stillOld?.quantity === psStory!.quantity && stillOld?.material === psStory!.material &&
+        stillOld?.printSettings === SETTINGS);
+  const tunedAudit = await db.auditEvent.findFirst({
+    where: { action: "story.requeued", subject: `PPP-${100 + tunedId}` },
+  });
+  const changedFields = ((tunedAudit?.detail ?? {}) as { changed?: string[] }).changed ?? [];
+  check("the trail says which fields changed, not what they said",
+        ["quantity", "material", "colorName", "printSettings"].every((f) => changedFields.includes(f)) &&
+        !JSON.stringify(tunedAudit?.detail).includes("snapped"),
+        JSON.stringify(tunedAudit?.detail));
+
+  const countBeforeBad = await db.story.count();
+  const offShelf = await requeue(aylaB, psStory!.id, { material: "PETG", colorName: "Unobtainium" });
+  check("a colour that is not on the shelf is refused", offShelf.status === 409, `status ${offShelf.status}`);
+  const tooMany = await requeue(aylaB, psStory!.id, { quantity: 9999 });
+  check("a changed field is held to the upload's rules", tooMany.status === 400, `status ${tooMany.status}`);
+  const badTip = await requeue(aylaB, psStory!.id, { tip: "A yacht" });
+  check("a benefit that is not on offer is refused", badTip.status === 409, `status ${badTip.status}`);
+  check("and none of those opened a ticket", (await db.story.count()) === countBeforeBad);
+  const notYours = await requeue(jonasB, psStory!.id, { quantity: 2 });
+  check("somebody else's ticket cannot be re-queued", notYours.status === 404, `status ${notYours.status}`);
+  const ownerTry = await requeue(rubenB, psStory!.id, { quantity: 2 });
+  check("not even by the owner, who can see it", ownerTry.status === 403, `status ${ownerTry.status}`);
 
   const noPS = await upload(aylaB, "plain.stl", binaryStl(15, 15, 15), { title: "No settings here" });
   check("an upload with no print settings still works", noPS.status < 300, `status ${noPS.status}`);

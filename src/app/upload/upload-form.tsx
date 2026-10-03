@@ -21,6 +21,25 @@ type Benefit = { label: string; preferred: boolean };
 import { Button, Label, Notice } from "@/components/ui";
 import { ColorSwatch } from "@/components/color-swatch";
 
+/**
+ * An old ticket being printed again. When this is given the form has no
+ * dropzone — the file is the old ticket's, copied on the server — and opens
+ * with that ticket's wish filled in, ready to be changed.
+ */
+export type Again = {
+  id: number;
+  ref: string;
+  filename: string;
+  fileSize: number;
+  title: string;
+  material: string;
+  colorName: string;
+  quantity: number;
+  tip: string;
+  note: string;
+  printSettings: string;
+};
+
 type Phase =
   | { kind: "idle" }
   | { kind: "uploading"; percent: number }
@@ -73,10 +92,12 @@ export function UploadForm({
   owner,
   catalog,
   benefits,
+  again,
 }: {
   owner: string;
   catalog: CatalogMaterialChoice[];
   benefits: Benefit[];
+  again?: Again;
 }) {
   // Default to a preferred benefit if the owner has marked one, else the first
   // on the list, else empty (the list is seeded, so empty is only a safety net).
@@ -84,20 +105,42 @@ export function UploadForm({
   const defaultTip = preferredLabels[0] ?? benefits[0]?.label ?? "";
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const initialMaterial = catalog.find((item) => item.name === "PETG") ?? catalog[0]!;
-  const initialColor = initialMaterial.colors.find((item) => item.name === "Slate") ?? initialMaterial.colors[0]!;
+  // Printing again starts from what was asked for last time — where that is
+  // still on the shelf. A material, colour or benefit the owner has since
+  // retired falls back to the usual default, and `gone` says which, because a
+  // choice that quietly changed under someone is one they will not notice
+  // until the print arrives.
+  const wanted = catalog.find((item) => item.name === again?.material);
+  const initialMaterial = wanted ?? catalog.find((item) => item.name === "PETG") ?? catalog[0]!;
+  const wantedColor = wanted?.colors.find((item) => item.name === again?.colorName);
+  const initialColor = wantedColor ?? initialMaterial.colors.find((item) => item.name === "Slate") ?? initialMaterial.colors[0]!;
+  const tipStillOffered = again ? benefits.some((b) => b.label === again.tip) : false;
+  const gone = again
+    ? [
+        !wanted ? again.material : !wantedColor ? `${again.material} in ${again.colorName}` : null,
+        !tipStillOffered && benefits.length > 0 ? `“${again.tip}”` : null,
+      ].filter((x): x is string => x !== null)
+    : [];
 
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
 
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(again?.title ?? "");
   const [material, setMaterial] = useState<string>(initialMaterial.name);
-  const [quantity, setQuantity] = useState<number>(1);
+  const [quantity, setQuantity] = useState<number>(again?.quantity ?? 1);
+  // What is in the "type a number" box while it is being typed in, or null
+  // when it simply shows `quantity`. Kept apart from the number because a box
+  // being edited passes through states that are not quantities — empty, most
+  // obviously. Coercing each keystroke turned an emptied box straight back
+  // into "1", so clearing it to type 3 produced 13.
+  const [quantityDraft, setQuantityDraft] = useState<string | null>(null);
   const [color, setColor] = useState<string>(initialColor.name);
-  const [tip, setTip] = useState<string>(defaultTip);
-  const [note, setNote] = useState("");
-  const [printSettings, setPrintSettings] = useState("");
+  const [tip, setTip] = useState<string>(
+    again && (tipStillOffered || benefits.length === 0) ? again.tip : defaultTip,
+  );
+  const [note, setNote] = useState(again?.note ?? "");
+  const [printSettings, setPrintSettings] = useState(again?.printSettings ?? "");
 
   /**
    * Client-side checks are for fast feedback only — the server re-runs all of
@@ -131,9 +174,38 @@ export function UploadForm({
     accept(e.dataTransfer.files?.[0] ?? null);
   }
 
+  /**
+   * Printing again sends the wish and nothing else — there are no bytes to
+   * move, so no progress to watch and no reason for XHR.
+   */
+  async function sendAgain(source: Again) {
+    setPhase({ kind: "uploading", percent: 100 });
+    try {
+      const res = await fetch(`/api/stories/${source.id}/requeue`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title, material, colorName: color, quantity, tip, note, printSettings }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return setPhase({ kind: "error", message: body.error ?? "That did not go through. Try again." });
+      }
+      const id: number | null = body.story?.id ?? null;
+      router.push(id === null ? "/board" : `/story/${id}?sent=1`);
+      router.refresh();
+    } catch {
+      setPhase({ kind: "error", message: "The connection dropped. Try again." });
+    }
+  }
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!file || phase.kind === "uploading") return;
+    if (phase.kind === "uploading") return;
+    // Enter in the quantity box submits without blurring it; show what is
+    // actually being sent rather than a half-typed draft.
+    setQuantityDraft(null);
+    if (again) return void sendAgain(again);
+    if (!file) return;
 
     const body = new FormData();
     body.set("file", file);
@@ -198,8 +270,28 @@ export function UploadForm({
 
   return (
     <form onSubmit={submit} className="max-w-[780px]">
+      {again && (
+        <div className="rounded-panel border-[3px] border-ink bg-porcelain px-[22px] py-[17.6px] shadow-stamp">
+          <p className="m-0 font-mono text-[11.5px] font-bold uppercase tracking-[0.08em] text-ink-3">
+            Same file as {again.ref} — no re-upload
+          </p>
+          <p className="m-0 mt-[4px] break-words font-display text-[19px] text-ink">{again.filename}</p>
+          <p className="m-0 mt-[3px] font-mono text-[12px] uppercase tracking-[0.04em] text-ink-3">
+            {formatBytes(again.fileSize)} · change anything below, or send it as it was
+          </p>
+        </div>
+      )}
+      {gone.length > 0 && (
+        <div className="mt-[13.2px]">
+          <Notice tone="warn">
+            {gone.join(" and ")} {gone.length === 1 ? "is" : "are"} not on offer any more, so
+            that has been set to something that is. Check it before you send.
+          </Notice>
+        </div>
+      )}
+
       {/* ---- dropzone ---- */}
-      <label
+      {!again && <label
         onDragOver={(e) => {
           e.preventDefault();
           setDragging(true);
@@ -263,7 +355,7 @@ export function UploadForm({
             />
           </span>
         )}
-      </label>
+      </label>}
 
       {phase.kind === "error" && (
         <div className="mt-[13.2px]">
@@ -303,7 +395,10 @@ export function UploadForm({
           mono
           options={QUANTITY_PRESETS}
           value={QUANTITY_PRESETS.includes(quantity as never) ? quantity : 0}
-          onChange={setQuantity}
+          onChange={(n) => {
+            setQuantityDraft(null);
+            setQuantity(n);
+          }}
         />
         <div className="mt-[8.8px] flex items-center gap-[8.8px]">
           <label htmlFor="quantity-other" className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-ink-3">
@@ -314,8 +409,17 @@ export function UploadForm({
             type="number"
             min={1}
             max={24}
-            value={quantity}
-            onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
+            value={quantityDraft ?? quantity}
+            onChange={(e) => {
+              setQuantityDraft(e.target.value);
+              // Only a whole number of at least one becomes the quantity. The
+              // upper limit is left to the server, whose refusal says who to ask.
+              const n = Number(e.target.value);
+              if (Number.isInteger(n) && n >= 1) setQuantity(n);
+            }}
+            // Leaving the box settles it: whatever is not a quantity gives way
+            // to the last one that was.
+            onBlur={() => setQuantityDraft(null)}
             className="w-[80px] rounded-card border-[3px] border-ink bg-porcelain px-[10px] py-[6px] font-mono text-[14px] font-bold tabular-nums text-ink"
           />
         </div>
@@ -444,13 +548,19 @@ export function UploadForm({
 
       {/* ---- actions ---- */}
       <div className="mt-[26.4px] flex flex-wrap items-center gap-[13.2px]">
-        <Button type="submit" disabled={!file || busy} className="px-[30px]">
-          {busy ? `Sending… ${phase.percent}%` : `Send it to ${owner}`}
+        <Button type="submit" disabled={(!file && !again) || busy} className="px-[30px]">
+          {busy
+            ? again ? "Sending…" : `Sending… ${phase.percent}%`
+            : again ? `Send it to ${owner} again` : `Send it to ${owner}`}
         </Button>
-        <Button type="button" variant="ghost" onClick={() => router.push("/board")}>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => router.push(again ? `/story/${again.id}` : "/board")}
+        >
           Cancel
         </Button>
-        {!file && (
+        {!file && !again && (
           <span className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-ink-3">Pick a file to continue.</span>
         )}
       </div>
