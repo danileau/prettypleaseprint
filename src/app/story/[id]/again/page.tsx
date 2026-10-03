@@ -74,6 +74,7 @@ export default async function PrintAgainPage({
               material: story.material,
               colorName: story.colorName,
               quantity: story.quantity,
+              priority: story.priority,
               tip: story.tip,
               note: story.note,
               printSettings: story.printSettings,

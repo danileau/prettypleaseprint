@@ -175,6 +175,7 @@ export function storyResource(story: StoryRow) {
     flagged: story.flagged,
     flagReason: story.flagReason,
     quantity: story.quantity,
+    priority: story.priority,
     material: story.material,
     color: {
       name: story.colorName,

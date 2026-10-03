@@ -47,6 +47,10 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   request form filled in with what you asked for last time, so the material,
   colour, quantity and print settings can change before it is sent. The model
   is copied server-side, so the two tickets own independent files.
+- **Say how much it matters** — a request carries a priority (low, medium,
+  high). The printer owner's queue lists the urgent ones first, and the
+  requester or the owner can change it on the ticket while it is still on the
+  rail. It orders the queue; it does not book the printer.
 - **Note print settings** — an optional free-text field on a request for the
   slicer specifics that come with some files (layer height, infill, supports,
   temperatures). The printer owner sees them on the ticket, so they do not

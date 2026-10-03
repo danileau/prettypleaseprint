@@ -38,6 +38,7 @@ export type AuditAction =
   | "story.declined"
   | "story.withdrawn"
   | "story.requeued"
+  | "story.priority_changed"
   | "story.flagged"
   | "story.flag_cleared"
   | "comment.added"

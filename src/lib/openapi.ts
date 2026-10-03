@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
-import { COLOR_MODES, TIPS, WishSchema } from "@/lib/catalog";
+import { COLOR_MODES, STORY_PRIORITIES, TIPS, WishSchema } from "@/lib/catalog";
 import { ACCEPTED_EXTENSIONS, MAX_BYTES, formatBytes } from "@/lib/models";
 import { FLOW } from "@/lib/scope";
 import { BodySchema, LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX, ReasonSchema } from "@/lib/stories";
@@ -93,6 +93,11 @@ const STORY_SCHEMA = {
     flagged: { type: "boolean" },
     flagReason: { type: ["string", "null"] },
     quantity: { type: "integer", minimum: 1 },
+    priority: {
+      type: "string",
+      enum: [...STORY_PRIORITIES],
+      description: "How much it matters to the requester. Orders the owner's queue; promises nothing else.",
+    },
     material: {
       type: "string",
       description: "The owner-managed material label, snapshotted when the request was made.",
@@ -615,6 +620,47 @@ export async function buildOpenApiDocument() {
             "403": errorResponse("Only the printer owner clears a flag."),
             "404": errorResponse("No such ticket."),
             "409": errorResponse("That ticket is not flagged."),
+            ...COMMON_ERRORS,
+          },
+        },
+      },
+
+      "/api/stories/{id}/priority": {
+        post: {
+          tags: ["stories"],
+          summary: "Set a ticket's priority",
+          description:
+            "The requester on their own ticket, or the printer owner on any. " +
+            "Unlike the status, priority is set rather than derived: there is no " +
+            "order to skip a step of. Refused once the ticket is Done or Declined.",
+          parameters: [storyIdParam],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["priority"],
+                  properties: { priority: { type: "string", enum: [...STORY_PRIORITIES] } },
+                },
+                example: { priority: "high" },
+              },
+            },
+          },
+          responses: {
+            "200": storyResponse("The ticket, with its priority as it now stands.", {
+              changed: {
+                type: "object",
+                properties: {
+                  from: { type: "string" },
+                  to: { type: "string" },
+                  unchanged: { type: "boolean" },
+                },
+              },
+            }),
+            "400": errorResponse("Not one of low, medium, high."),
+            "404": errorResponse("No such ticket, or not one you may see."),
+            "409": errorResponse("The ticket is Done or Declined."),
             ...COMMON_ERRORS,
           },
         },

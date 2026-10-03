@@ -214,7 +214,7 @@ async function main() {
     "/api/health", "/api/stories", "/api/stories/{id}",
     "/api/stories/{id}/advance", "/api/stories/{id}/decline",
     "/api/stories/{id}/flag", "/api/stories/{id}/comments",
-    "/api/stories/{id}/requeue",
+    "/api/stories/{id}/requeue", "/api/stories/{id}/priority",
     "/api/notifications", "/api/notifications/read",
     "/api/catalog", "/api/upload", "/api/models/{id}",
   ]) {
@@ -391,6 +391,61 @@ async function main() {
     `${APP}/api/stories/${toFlag.id}/flag`, { method: "DELETE" });
   check("clearing a flag that is not there is 409, not a silent success",
         again.status === 409, `status ${again.status} ${again.body.error}`);
+
+  // ------------------------------------------------------------------
+  section("priority: the requester's and the owner's, while it is on the rail");
+
+  const urgent = await makeStory(ayla.id, "Bracket holding up the build");
+  const setPriority = (b: Client, id: number, priority: unknown) =>
+    b.json<{ story?: { priority?: string }; changed?: { from?: string; to?: string; unchanged?: boolean }; error?: string }>(
+      `${APP}/api/stories/${id}/priority`, { method: "POST", body: JSON.stringify({ priority }) });
+
+  const starting = await client.json<{ priority?: string }>(`${APP}/api/stories/${urgent.id}`);
+  check("a ticket starts at medium", starting.body.priority === "medium", `${starting.body.priority}`);
+
+  await db.notification.deleteMany({ where: { storyId: urgent.id } });
+  const raised = await setPriority(client, urgent.id, "high");
+  check("the requester raises their own ticket",
+        raised.status === 200 && raised.body.story?.priority === "high" &&
+        raised.body.changed?.from === "medium" && raised.body.changed?.to === "high",
+        `status ${raised.status} ${JSON.stringify(raised.body.changed)}`);
+  check("the printer owner is told, because it changes what they do next",
+        (await db.notification.count({ where: { recipientId: admin.id, storyId: urgent.id } })) === 1);
+  check("and it is in the trail with where it came from",
+        (await db.auditEvent.count({
+          where: { action: "story.priority_changed", subject: `PPP-${100 + urgent.id}`, actorId: ayla.id },
+        })) === 1);
+
+  const same = await setPriority(client, urgent.id, "high");
+  check("setting it to what it already is changes nothing and tells nobody",
+        same.status === 200 && same.body.changed?.unchanged === true &&
+        (await db.notification.count({ where: { recipientId: admin.id, storyId: urgent.id } })) === 1 &&
+        (await db.auditEvent.count({ where: { action: "story.priority_changed", subject: `PPP-${100 + urgent.id}` } })) === 1,
+        `status ${same.status}`);
+
+  const lowered = await setPriority(ruben, urgent.id, "low");
+  check("the printer owner can set anybody's",
+        lowered.status === 200 && lowered.body.story?.priority === "low", `status ${lowered.status}`);
+  check("and then it is the requester who is told",
+        (await db.notification.count({ where: { recipientId: ayla.id, storyId: urgent.id } })) === 1);
+
+  const nonsense = await setPriority(client, urgent.id, "yesterday");
+  check("a priority that is not one is refused", nonsense.status === 400, `status ${nonsense.status}`);
+  const noPriority = await setPriority(client, urgent.id, undefined);
+  check("and so is none at all", noPriority.status === 400, `status ${noPriority.status}`);
+  const notTheirs = await setPriority(other, urgent.id, "high");
+  check("another client's attempt finds no such ticket",
+        notTheirs.status === 404 &&
+        (await db.story.findUnique({ where: { id: urgent.id } }))?.priority === "low",
+        `status ${notTheirs.status}`);
+
+  await db.story.update({ where: { id: urgent.id }, data: { status: "Done" } });
+  const finished = await setPriority(client, urgent.id, "high");
+  check("a finished ticket's priority is not rewritten", finished.status === 409, `status ${finished.status}`);
+  await db.story.update({ where: { id: urgent.id }, data: { status: "Declined" } });
+  check("nor a declined one's, even by the owner",
+        (await setPriority(ruben, urgent.id, "high")).status === 409);
+  await db.story.delete({ where: { id: urgent.id } });
 
   // ------------------------------------------------------------------
   section("withdrawing is the requester's, and only while nobody has acted");

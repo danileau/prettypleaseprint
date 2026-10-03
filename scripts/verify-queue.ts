@@ -192,6 +192,46 @@ async function main() {
         paramOf(accepted.headers.get("location"), "toast"));
 
   // ------------------------------------------------------------------
+  section("priority orders the queue, and is changed on the ticket");
+  const routine = await makeStory(ayla.id, "Routine drawer organiser");
+  const rush = await makeStory(ayla.id, "Rush job for Friday");
+  await db.story.update({ where: { id: rush.id }, data: { priority: "high" } });
+  const someday = await makeStory(ayla.id, "Someday desk toy");
+  await db.story.update({ where: { id: someday.id }, data: { priority: "low" } });
+
+  const ordered = rendered(await (await ruben.go(`${APP}/queue`)).text());
+  const at = (title: string) => ordered.indexOf(title);
+  check("the urgent one is first in Waiting on you, though it was filed later",
+        at("Rush job for Friday") > 0 && at("Rush job for Friday") < at("Routine drawer organiser") &&
+        at("Routine drawer organiser") < at("Someday desk toy"),
+        `${at("Rush job for Friday")} / ${at("Routine drawer organiser")} / ${at("Someday desk toy")}`);
+
+  const ticket = await (await client.go(`${APP}/story/${routine.id}`)).text();
+  const prioForm = (ticket.match(/<form\b[\s\S]*?<\/form>/g) ?? [])
+    .findIndex((f) => f.includes('name="priority"'));
+  check("the requester's ticket offers a priority control", prioForm >= 0);
+  const set = await client.submit(`${APP}/story/${routine.id}`, ticket, prioForm, { priority: "high" });
+  check("submitting it is accepted", set.status >= 300 && set.status < 400, `status ${set.status}`);
+  check("and the ticket's priority changed",
+        (await db.story.findUnique({ where: { id: routine.id } }))?.priority === "high");
+  const board = rendered(await (await client.go(`${APP}/board`)).text());
+  const cardOf = (title: string) => {
+    const i = board.indexOf(title);
+    return i < 0 ? "" : board.slice(Math.max(0, i - 900), i);
+  };
+  check("a high ticket's card says so", />High</.test(cardOf("Routine drawer organiser")));
+  await db.story.update({ where: { id: routine.id }, data: { priority: "medium" } });
+  const boardAfter = rendered(await (await client.go(`${APP}/board`)).text());
+  const j = boardAfter.indexOf("Routine drawer organiser");
+  check("a medium one's does not",
+        j > 0 && !/>(High|Medium|Low)</.test(boardAfter.slice(Math.max(0, j - 900), j)));
+
+  await db.story.update({ where: { id: routine.id }, data: { status: "Done" } });
+  const done = await (await client.go(`${APP}/story/${routine.id}`)).text();
+  check("a finished ticket no longer offers the control", !done.includes('name="priority"'));
+  await db.story.deleteMany({ where: { id: { in: [routine.id, rush.id, someday.id] } } });
+
+  // ------------------------------------------------------------------
   section("the flow only moves forward, one step at a time");
   for (const expected of ["Printing", "Delivery", "Done"]) {
     page = await (await ruben.go(`${APP}/queue`)).text();
@@ -293,8 +333,17 @@ async function main() {
     check(`posting the ${label} action as a client changes nothing`,
           after?.status === before, `status became ${after?.status}`);
   }
-  check("the client never appears as an actor in the trail",
-        (await db.auditEvent.count({ where: { actorId: ayla.id, action: { startsWith: "story." } } })) === 0);
+  // The verbs those owner actions write, named — not every `story.*`. A client
+  // is a legitimate actor on some of them now (changing the priority of their
+  // own ticket, above), and "no story verb at all" would have this check fail
+  // for a reason that has nothing to do with what it is guarding.
+  check("the client never appears as the actor of an owner's action",
+        (await db.auditEvent.count({
+          where: {
+            actorId: ayla.id,
+            action: { in: ["story.status_changed", "story.declined", "story.flagged", "story.flag_cleared"] },
+          },
+        })) === 0);
 
   // ------------------------------------------------------------------
   section("the conversation");

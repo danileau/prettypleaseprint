@@ -10,6 +10,7 @@ import {
   clearFlag as clear,
   declineStory as decline,
   flagStory as flag,
+  changeStoryPriority as reprioritise,
   storyIdOr400,
   withdrawStory as withdraw,
 } from "@/lib/stories";
@@ -122,3 +123,21 @@ export async function withdrawStory(formData: FormData): Promise<void> {
   }
 }
 
+/**
+ * Change a ticket's priority. The requester's on their own ticket and the
+ * owner's on any — which is why this takes `requireUser`, like withdraw; who
+ * may is the service's decision. Lands back on the ticket.
+ */
+export async function changeStoryPriority(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = storyIdOr400(formData.get("storyId"));
+  try {
+    const done = await reprioritise(user, id, formData.get("priority") ?? "");
+    back(`/story/${id}`, {
+      toast: done.unchanged ? `Already ${done.to} priority.` : `Priority → ${done.to}.`,
+    });
+  } catch (error) {
+    if (error instanceof StoryProblem) back(`/story/${id}`, { toast: error.message });
+    throw error;
+  }
+}

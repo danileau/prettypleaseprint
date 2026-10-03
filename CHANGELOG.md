@@ -7,6 +7,26 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Added
 
+- **A print request has a priority.** Feature requests have carried one since
+  FRR-104; print requests, which are what the printer owner actually queues,
+  did not. A request is now low, medium or high — chosen on the request form,
+  medium if nothing is said — and the owner's *Waiting on you* lists high
+  first, oldest first within a priority. The requester can change it on their
+  own ticket and the owner on any, the other is told, and the trail records
+  where it moved from.
+
+  Two things are different from the feature-request side, on purpose. It can
+  only be changed while the ticket is still on the rail: a finished print has
+  nothing left to order, and editing it afterwards would rewrite what the
+  history says was asked for. And the board card marks priority only when it is
+  not medium — a chip on every card is a chip nobody reads.
+
+  Over the API it is `priority` on a ticket, an optional `priority` field on
+  `POST /api/upload` and on a re-queue, and `POST /api/stories/{id}/priority`.
+  Optional on upload so a client written before this still files a request.
+  The column is additive with a default, so the previous image runs against the
+  migrated database unchanged.
+
 - **Materials and colours are owner-managed.** `/admin/catalog` replaces the
   fixed compile-time list with an ordered catalogue. The owner can add, rename,
   temporarily hide, remove, and reorder materials and their colours. Swatches

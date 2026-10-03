@@ -45,7 +45,7 @@ const LENSES: Array<{ key: Lens; label: string; actions?: string[] }> = [
     label: "Models",
     actions: [
       "story.created", "upload.rejected", "story.status_changed",
-      "story.declined", "story.flagged", "file.downloaded",
+      "story.declined", "story.flagged", "story.priority_changed", "file.downloaded",
     ],
   },
 ];
