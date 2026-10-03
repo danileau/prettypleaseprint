@@ -203,6 +203,37 @@ async function main() {
   check("an invite row exists", (await db.invite.count({ where: { email: AYLA } })) === 1);
 
   // ------------------------------------------------------------------------
+  section("2b. an invited address is not the invitation");
+  // The sign-up endpoint answers anybody. Before this was closed, posting an
+  // invited address here with a password of your own choosing opened the
+  // account and signed you in — no link, no mailbox. Knowing who had been
+  // invited was enough.
+  const thief = new Browser();
+  const noLink = await signUp(thief, {
+    email: AYLA,
+    name: "Not Ayla",
+    username: "notayla",
+    password: TEST_PASSWORD,
+  });
+  check("signing up with an invited address but no link is refused", noLink.status === 403,
+        `status ${noLink.status}`);
+  check("no account was opened for it",
+        (await db.user.count({ where: { email: AYLA } })) === 0);
+  check("and no session came back", !signedIn(thief));
+  check("the answer is the same one a stranger gets, so it does not say who is invited",
+        (await noLink.clone().text()) === (await uninvited.clone().text()),
+        (await noLink.clone().text()).slice(0, 120));
+  check("the invitation is still there for the person it was sent to",
+        (await db.invite.findFirst({ where: { email: AYLA } }))?.acceptedAt === null);
+  const noLinkTrail = await db.auditEvent.findFirst({
+    where: { action: "invite.rejected", subject: AYLA },
+    orderBy: { at: "desc" },
+  });
+  check("the trail records it as an attempt without the link",
+        (noLinkTrail?.detail as { reason?: string } | null)?.reason === "no_link",
+        JSON.stringify(noLinkTrail?.detail));
+
+  // ------------------------------------------------------------------------
   section("3. the invitation link registers the account");
   const claimUrl = await mailLink(AYLA, CLAIM_LINK);
   check("an invitation email with a claim link arrived", claimUrl !== null, `${claimUrl}`);
@@ -316,11 +347,19 @@ async function main() {
 
   // The same invite still works with a password that is not in the corpus,
   // which is what makes the refusal a refusal rather than a broken flow.
+  // Through the link, because that is the only way an account opens: the two
+  // refusals above are the endpoint's own validation and fire before the gate,
+  // but a sign-up that would succeed has to be the redemption of an invite.
   const survivor = new Browser();
-  const ok = await signUp(survivor, {
-    email: DUP, name: "Dup Licate", username: "duplicate", password: TEST_PASSWORD,
+  const dupLink = await mailLink(DUP, CLAIM_LINK);
+  if (!dupLink) throw new Error("no claim link for the duplicate invite");
+  const dupPage = await (await survivor.go(dupLink)).text();
+  const ok = await survivor.submit(dupLink, dupPage, {
+    name: "Dup Licate", username: "duplicate", password: TEST_PASSWORD,
   });
-  check("a password that is not breached goes straight through", ok.status === 200,
+  check("a password that is not breached goes straight through",
+        ok.status >= 300 && ok.status < 400 && signedIn(survivor) &&
+        (await db.user.count({ where: { email: DUP } })) === 1,
         `status ${ok.status}`);
   await db.user.deleteMany({ where: { email: DUP } });
 
@@ -370,29 +409,23 @@ async function main() {
   check("and none of those attempts left an account behind",
         (await db.user.count({ where: { email: BOB } })) === 0);
 
-  // A clean sign-up: every one of those fields is written server-side, from
-  // the invite row rather than the request.
+  // The undeclared ones — `id`, `emailVerified` — used to reach the endpoint
+  // and be overruled, and this check registered Bob to prove it. That it could
+  // register him at all, with an invitation and no link, was the hole. The
+  // stamping itself is asserted in section 3, on the account the link opened.
   await clearRateLimit();
-  await signUp(new Browser(), {
+  const bare = await signUp(new Browser(), {
     email: BOB,
     name: "Bob Ross",
     username: "bob",
     password: TEST_PASSWORD,
-    // Neither of these is declared at all, so they reach the endpoint and are
-    // simply overruled. That is the other half of the same guarantee.
     id: "chosen-by-attacker",
     emailVerified: false,
   });
-  const bobRow = await db.user.findUnique({ where: { email: BOB } });
-  check("role, initials and invitedById are stamped from the invite",
-        bobRow?.role === "client" &&
-        bobRow.initials === "BO" &&
-        bobRow.invitedById === admin.id,
-        JSON.stringify({ role: bobRow?.role, initials: bobRow?.initials,
-                         invitedById: bobRow?.invitedById }));
-  check("a chosen id and a posted emailVerified are overruled",
-        bobRow?.id !== "chosen-by-attacker" && bobRow?.emailVerified === true,
-        JSON.stringify({ id: bobRow?.id, emailVerified: bobRow?.emailVerified }));
+  check("a sign-up with no privileged fields, and no link, is refused too", bare.status === 403,
+        `status ${bare.status}`);
+  check("so Bob has no account until he uses his link",
+        (await db.user.count({ where: { email: BOB } })) === 0);
 
   // ------------------------------------------------------------------------
   section("11. the admin can reset a forgotten password");

@@ -607,6 +607,26 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Fixed
 
+- **An invited address could be registered without its invite link.** The
+  invite gate checked that a pending invitation existed for the address, and
+  Better Auth's sign-up endpoint answers anybody — so while an invitation was
+  open, whoever knew the address could post it with their own password and be
+  given the account and a session, without the link. It now takes both: a
+  pending invitation, and a request that is redeeming that invitation's link.
+  `acceptInvite` checks the token and marks the sign-up as a redemption; the
+  gate refuses everything else, with the same answer an uninvited address gets.
+
+  Two suites had been proving the hole worked. `verify:auth` and
+  `probe:security` each registered an invited address by posting it straight to
+  the endpoint, as a convenient way to test something else, and passed. Those
+  checks now assert the refusal, and `A04-invitelink` / `A04-inviteoracle` are
+  new. Written up as finding 10 in [the security audit](docs/security-audit.md).
+
+  **If you run a deployment:** an account opened this way is indistinguishable
+  afterwards from one opened with the link. If an invitee ever reported that
+  their link said "already accepted" before they had used it, look at that
+  account.
+
 - **The quantity box could not be cleared.** "Or type a number" coerced every
   keystroke to a quantity, so emptying it snapped straight back to `1` and
   typing a 3 gave 13 — the only way to enter a number was to select the digit

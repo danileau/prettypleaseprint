@@ -14,7 +14,7 @@ import {
   USERNAME_PATTERN,
   USERNAME_RULE,
 } from "@/lib/auth-rules";
-import { checkInviteToken } from "@/lib/invites";
+import { checkInviteToken, claimingInvite } from "@/lib/invites";
 
 const ClaimSchema = z.object({
   token: z.string().min(1),
@@ -104,15 +104,20 @@ export async function acceptInvite(
   });
 
   try {
-    await auth.api.signUpEmail({
-      body: {
-        email: check.invite.email,
-        name: parsed.data.name,
-        username: parsed.data.username,
-        password: parsed.data.password,
-      },
-      headers: await headers(),
-    });
+    // Inside `claimingInvite`, because the token was checked a few lines up
+    // and that — not the address — is what the gate in src/lib/auth.ts admits.
+    const requestHeaders = await headers();
+    await claimingInvite(check.invite, () =>
+      auth.api.signUpEmail({
+        body: {
+          email: check.invite.email,
+          name: parsed.data.name,
+          username: parsed.data.username,
+          password: parsed.data.password,
+        },
+        headers: requestHeaders,
+      }),
+    );
   } catch (error) {
     const e = error as { body?: { code?: string; message?: string }; message?: string };
     const code = e.body?.code;

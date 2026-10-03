@@ -127,17 +127,31 @@ address. That decision lives in a single hook, `user.validateUserInfo` in
 ```ts
 async validateUserInfo({ user, source }) {
   if (source.action !== "create-user") return;
-  if (!(await pendingInviteFor(user.email)))
+  const invited = Boolean(await pendingInviteFor(user.email));
+  if (!invited || !isClaimingInvite(user.email))
     return { error: "invite_required", ... };
 }
 ```
+
+Two conditions. A pending invitation for the address is necessary, and for a
+while it was treated as sufficient — which, because Better Auth's
+`/sign-up/email` answers anybody, made the *address* the credential: whoever
+knew an invited address could post it with their own password and be given the
+account. So the request must also be the redemption of that invitation's link.
+`acceptInvite` checks the token and runs the sign-up inside `claimingInvite`
+(`src/lib/invites.ts`), an `AsyncLocalStorage` scope the gate reads back. It
+cannot be set from a request body, and a request that arrives at the endpoint
+by itself is refused exactly as an address with no invitation is — same status,
+same words, so the endpoint cannot be used to ask who has been invited. The
+audit trail tells the two apart (`reason: "no_link"` / `"no_invitation"`).
 
 Better Auth calls it before provisioning an identity **by any method**, from
 `internalAdapter.createUser`. Password sign-up goes through that path with
 `{ method: "email-password" }` exactly as passkey enrolment does, so adding
 passwords neither moved this rule nor added a second copy of it in a route
-handler to drift out of sync. `verify:auth` asserts it directly: registering an
-address with no pending invite is answered 403 and leaves no row.
+handler to drift out of sync. `verify:auth` asserts both halves directly:
+registering an address with no pending invite is answered 403 and leaves no
+row, and so is registering an invited address without its link.
 
 ### The invitation link
 
@@ -148,8 +162,9 @@ address with no pending invite is answered 403 and leaves no row.
 3. The invitee opens `/invite/<token>`, sees who invited them and which
    address the invite is bound to, and picks a display name, a **username** and
    a **password**.
-4. Submitting calls Better Auth's sign-up, which runs the invite gate and the
-   stamping hook, creates the account and returns a session. They land on
+4. Submitting checks the token again and calls Better Auth's sign-up as the
+   redemption of that invite, which runs the invite gate and the stamping
+   hook, creates the account and returns a session. They land on
    `/welcome`, which offers a passkey.
 5. `databaseHooks.user.create.after` burns every open invite for that address,
    so the link cannot mint a second account.

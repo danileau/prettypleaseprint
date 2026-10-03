@@ -209,6 +209,43 @@ here asserted 401/403 for a client only, and had to be changed by this fix, whic
 is the honest signal that behaviour changed rather than an assertion being
 widened to fit.
 
+### 10. An invited address could be registered without its link — *high, fixed*
+
+The invite gate asked one question: is there a pending invitation for this
+address. Better Auth's `POST /api/auth/sign-up/email` is reachable by anyone,
+and the invite page was only ever one caller of it. So for the seven days an
+invitation was open, anybody who knew or guessed the invited address could post
+it to that endpoint with a password of their own and receive the account and a
+session. The token in the link — the only thing that proves the mailbox —
+took no part. `emailVerified` was then stamped true "by construction".
+
+What it gave: a client account under somebody else's address, and the real
+invitee locked out of an invitation already marked accepted. Not the admin
+role; invitations are client-role and the single-admin index holds regardless.
+
+Found by reading the gate while planning single sign-on, which would have
+leaned on the same address-only rule, and confirmed against a running instance
+before anything was changed: a control address with no invitation got 403, an
+invited one got a session.
+
+It survived because the suites encoded it. `verify:auth` registered "Bob" by
+posting his invited address straight to the endpoint to prove that privileged
+fields are stamped from the invite, and `probe:security` did the same for
+`A08-massassign`. Both passed, and both were demonstrations of the hole. The
+only gate probe, `A04-invitegate`, used an address with no invitation at all.
+
+Fixed in the gate rather than by hiding the route. An account is opened only
+by a request that is redeeming a checked invite link: `acceptInvite` verifies
+the token and runs the sign-up inside `claimingInvite`, and the gate refuses
+anything outside it. Closing the route in middleware would also have worked,
+and would have lost two things — the refusal in the audit trail, which is how
+somebody trying invited addresses becomes visible, and the rule living in the
+one hook every method goes through. Both refusals answer identically, so the
+endpoint is not a way to ask who has been invited.
+
+Probed as `A04-invitelink` and `A04-inviteoracle`, and in `verify:auth`
+section 2b.
+
 ## Findings correctly dismissed
 
 - **Semgrep "Facebook OAuth detected"** in `tsconfig.tsbuildinfo` — a regex
@@ -229,7 +266,7 @@ widened to fit.
 | **A01** | Broken Access Control | **Pass.** Client refused on the admin page (404, not 403 — a 403 confirms existence) and on all six admin-plugin endpoints (`list-users`, `set-role`, `create-user`, `impersonate-user`, `remove-user`, `list-user-sessions`). Role unchanged after escalation attempts; no back-door account. `storyScope` hides another client's story. A forged session cookie reaches nothing. The JSON API is probed as a second front door onto the same operations: a client is refused `advance`, `decline`, `flag` and `clear-flag` (403, and the ticket does not move); another client's ticket, thread and model are each 404 rather than 403; and the printer owner — the widest scope in the app — still cannot withdraw somebody else's request. The feature-request track ('frr') is the same authorisation model on its own tables: `featureScope` hides another client's request (404, not 403), `/frr/queue` is owner-only, and the owner cannot withdraw a request that is not theirs — all exercised by `verify:frr`. The later filter bars on `/frr` and the `/history` view of finished prints are scoped the same way: the filters are ANDed onto `featureScope`/`storyScope`, so they can only narrow a caller's own set, never widen it. |
 | **A02** | Cryptographic Failures | **Pass.** Session cookie `HttpOnly`, `SameSite=Lax`, `Secure`, `__Secure-` prefixed. Invite tokens stored as SHA-256 only; set-password tokens hashed at rest (`verification.storeIdentifier: "hashed"`) — both verified against the live database. Passwords are stored as Better Auth's scrypt digest, asserted against the live `account` row rather than assumed. |
 | **A03** | Injection | **Pass.** SQL metacharacters in the username field handled (Prisma parameterises); no 5xx, table intact. Stored XSS via display name escaped in both DOM and flight payload. Reflected XSS via `?error=` and via the invite-token path segment both escaped. CRLF in the email field does not reach the mailer. Uploads are validated against their bytes, not their filename — a PDF, an ELF binary and an HTML page renamed `.stl` are all refused, as is an STL that lies about its triangle count. |
-| **A04** | Insecure Design | **Pass.** No public registration route: `/signup` and `/register` do not exist, and the sign-up endpoint that *does* exist — the one an invitation link posts to — answers 403 to anybody without a pending invite, leaving no row. Invite-only enforced in one hook across every auth method. Invites single-use, expiring, revocable, rotated on resend. Password guessing rate-limited and confirmed firing. |
+| **A04** | Insecure Design | **Pass.** No public registration route: `/signup` and `/register` do not exist, and the sign-up endpoint that *does* exist — the one an invitation link posts to — answers 403 to anybody without a pending invite, and to anybody with one who is not redeeming its link (finding 10), leaving no row. Invite-only enforced in one hook across every auth method. Invites single-use, expiring, revocable, rotated on resend. Password guessing rate-limited and confirmed firing. |
 | **A05** | Security Misconfiguration | **Pass, after fixes 2 and 3.** Full header set; `X-Powered-By` suppressed; `.env`, `.git/config`, `package.json` and the Prisma schema all unreachable; malformed input returns no stack trace. A write to the API carrying a foreign `Origin` is refused. Neither `/api/openapi.json` nor the console at `/docs` is served to a stranger, and the console loads no subresource from another origin — Swagger UI is vendored into `public/` at build time rather than pulled from a CDN, so the CSP needed no relaxation. |
 | **A06** | Vulnerable Components | **Pass, after fixes 4 and 5.** Zero across three independent scanners. |
 | **A07** | Auth Failures | **Pass, after fix 1.** Passwords: ≥10 characters, breach-checked against HIBP by k-anonymity, guessing capped at 10/min per IP. No user enumeration — a wrong password and an invented username give byte-identical responses, and an unknown username still pays for a hash so the wall clock does not answer either. Set-password links single-use, 30-minute TTL, hashed at rest, and they establish **no session**. Setting a password revokes the sessions the old one opened. Off-site redirect targets refused, both via `?next=` and via the API's `callbackURL` — decided by resolving the target against a sentinel origin rather than by matching its prefix, because `/\evil.example` passes “starts with / and not //” and then resolves off-site. That is fix 8 below. Sign-out kills the session server-side. A bearer token is the session token rather than a separate credential: an invented one grants nothing, and sign-out revokes the token at the same instant it revokes the cookie — probed, because a token that outlived sign-out would be a way back into an account whose owner believes they have left. See the section below. |
