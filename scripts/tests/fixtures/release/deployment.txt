@@ -1,0 +1,10 @@
+# Deployment
+
+Check that the image is there before pinning it:
+
+```bash
+docker manifest inspect \
+  ghcr.io/octo/ppp-app:v0.1.0
+```
+
+Deployments that started on v0.1.0 kept their models in an object store.

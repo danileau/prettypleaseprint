@@ -1,0 +1,25 @@
+# Changelog
+
+Notable changes. Every entry names a released version.
+
+## Unreleased
+
+A fixture release: one thing added and one fixed. See [the guide](docs/x.md#a),
+[an absolute link](https://example.org/y) and [an anchor](#v010).
+
+### Added
+
+- **A thing.** With `code`, and detail that is
+  wrapped over two lines.
+
+### Fixed
+
+- A bug, described in [the audit](./docs/audit.md).
+
+## v0.1.0
+
+2026-08-01. The first release.
+
+### Added
+
+- Everything.

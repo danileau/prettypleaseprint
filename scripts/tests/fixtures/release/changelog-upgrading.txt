@@ -1,0 +1,39 @@
+# Changelog
+
+Notable changes. Every entry names a released version.
+
+## Unreleased
+
+A fixture release: one thing added and one fixed. See [the guide](docs/x.md#a),
+[an absolute link](https://example.org/y) and [an anchor](#v010).
+
+### Upgrading from v0.1.0
+
+- **Move the files first.** The commands are in
+  [the deployment guide](docs/deployment.md#moving-the-files).
+
+```bash
+# Upgrading by hand is a comment in a code block, not a heading
+docker compose up -d
+```
+
+#### If it goes wrong
+
+- Restore the snapshot.
+
+### Added
+
+- **A thing.** With `code`, and detail that is
+  wrapped over two lines.
+
+### Fixed
+
+- A bug, described in [the audit](./docs/audit.md).
+
+## v0.1.0
+
+2026-08-01. The first release.
+
+### Added
+
+- Everything.
