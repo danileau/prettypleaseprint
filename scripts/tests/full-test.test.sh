@@ -54,8 +54,9 @@ case "${1:-}" in
     for a in "$@"; do case "$a" in up|down|logs) verb="$a" ;; esac; done
     # What compose would see: the caller's environment, and the env file as it
     # is at this moment.
-    printf 'SEEN %s DB_PASSWORD=%s PPP_TAG=%s DATA_ROOT=%s last-line=%s\n' "$verb" \
-      "${DB_PASSWORD-unset}" "${PPP_TAG-unset}" "${DATA_ROOT-unset}" "$(tail -1 .env.docker 2>/dev/null)" >>"$STUB/log"
+    printf 'SEEN %s DB_PASSWORD=%s PPP_TAG=%s DATA_ROOT=%s COMPOSE_PROJECT_NAME=%s last-line=%s\n' "$verb" \
+      "${DB_PASSWORD-unset}" "${PPP_TAG-unset}" "${DATA_ROOT-unset}" "${COMPOSE_PROJECT_NAME-unset}" \
+      "$(tail -1 .env.docker 2>/dev/null)" >>"$STUB/log"
     case "$verb" in
       up) [ ! -e "$S/up-fail" ] || exit 1; mkdir -p "$DATA_ROOT/db"; exit 0 ;;
       logs) echo "container logs"; exit 0 ;;
@@ -137,7 +138,11 @@ STUB
 printf '#!/usr/bin/env bash\nprintf "trivy %%s\\n" "$*" >>"$STUB/log"\n[ "$1" = "fs" ] || { printf "UNEXPECTED trivy %%s\\n" "$*" >>"$STUB/log"; exit 99; }\nexit 0\n' >"$BASE/stubs/trivy"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$BASE/stubs/sleep"
 chmod +x "$BASE"/stubs/*
-mkdir "$BASE/stubs-notrivy"
+mkdir "$BASE/stubs-notrivy" "$BASE/stubs-cpfail"
+cp -p "$BASE"/stubs/* "$BASE/stubs-cpfail/"
+# A cp that runs out of disk halfway through saving .env.docker.
+printf '#!/usr/bin/env bash\nfor a in "$@"; do last="$a"; done\ncase "$last" in\n  */ppp-full-test-saved/.env.docker*) echo "half a fi" >"$last"; [ ! -e "$STUB/state/kill-during-save" ] || kill -KILL "$PPID"; echo "cp: write error: No space left on device" >&2; exit 1 ;;\nesac\nexec %q "$@"\n' "$BASE/bin/cp" >"$BASE/stubs-cpfail/cp"
+chmod +x "$BASE/stubs-cpfail/cp"
 cp -p "$BASE"/stubs/* "$BASE/stubs-notrivy/"; rm "$BASE/stubs-notrivy/trivy"
 
 # A port nothing listens on, and one something does.
@@ -287,6 +292,7 @@ nok "the data directory is still there" test -e "$LOGS/data"
 
 t "41 the caller's DB_PASSWORD, PPP_TAG, DATA_ROOT and project name do not reach compose"
 logged '^SEEN up DB_PASSWORD=unset PPP_TAG=unset '; not_logged 'leak'; not_logged '/somewhere/else'
+logged '^SEEN up .* COMPOSE_PROJECT_NAME=unset '; logged '^SEEN down .* COMPOSE_PROJECT_NAME=unset '
 logged '^SEEN up .* last-line=PPP_TAG=full-test-local$'
 
 t "the secret scan runs before any env file is replaced"
@@ -306,6 +312,48 @@ rc 0; restored; nok ".env.backup appeared" test -e "$T/repo/.env.backup"
 new_sandbox; rm "$T/repo/.env" "$T/repo/.env.backup" "$T/repo/.env.docker"; ENV0="$(envsum)"
 ft
 rc 0; restored; nok ".env appeared" test -e "$T/repo/.env"; nok ".env.docker appeared" test -e "$T/repo/.env.docker"
+
+t "8 read-only env files are put back as they were, mode included"
+new_sandbox; chmod 400 "$T/repo/.env" "$T/repo/.env.backup" "$T/repo/.env.docker"; ENV0="$(envsum)"
+ft
+rc 0; restored; eq "the mode of .env" "$(stat -c %a "$T/repo/.env")" "400"
+
+t "8 --restore works onto a read-only env file"
+new_sandbox
+mkdir "$SAVED"; printf 'MINE=the-real-one\n' >"$SAVED/.env"; chmod 400 "$SAVED/.env"
+printf 'GENERATED\n' >"$T/repo/.env"; chmod 400 "$T/repo/.env"
+ft --restore
+rc 0; eq ".env" "$(cat "$T/repo/.env")" "MINE=the-real-one"; nok "the saved copies are still there" test -e "$SAVED"
+
+t "9 a log directory that still holds last run's data is refused, with the command that removes it"
+new_sandbox; mkdir -p "$LOGS/data/db"
+ft
+rc 1; out "$LOGS/data already exists — the test needs a fresh data directory"
+out "docker run --rm -v \"$LOGS:/o\" postgres:17-alpine rm -rf /o/data"
+not_logged '^docker compose .* up'; not_logged '^npm '; eq "the three env files" "$(envsum)" "$ENV0"
+
+t "10 a save that fails halfway changes nothing, and does not claim to have restored anything"
+new_sandbox; STUBS="$BASE/stubs-cpfail"
+ft
+rc 1; out "could not save the env files — nothing was changed and no stack was raised"
+no_out "restored .env"; no_out "stack down"
+eq "the three env files" "$(envsum)" "$ENV0"; nok "half-made copies were left" test -e "$SAVED"
+not_logged '^docker compose .* (up|down)'
+
+t "10 a run killed outright in the middle of saving leaves nothing --restore could put a half file back from"
+new_sandbox; STUBS="$BASE/stubs-cpfail"; touch "$T/stub/state/kill-during-save"
+ft
+rc 137; STUBS="$BASE/stubs"
+ft --restore
+rc 0; eq "the three env files" "$(envsum)" "$ENV0"; nok "the saved copies are still there" test -e "$SAVED"
+
+t "12 the health timeout has to be a number, and --only has to name something"
+new_sandbox; EXTRA=(PPP_FULLTEST_HEALTH_TIMEOUT=soon)
+ft; rc 1; out "PPP_FULLTEST_HEALTH_TIMEOUT must be a whole number of seconds"; not_logged '.'
+EXTRA=()
+ft --only ""; rc 1; out "--only needs at least one suite"
+ft --only "  "; rc 1; out "--only needs at least one suite"
+ft --only; rc 1; out "--only needs a quoted list of suites"; not_logged '.'
 
 # ============================================================================
 # 34–36, F2. failures
@@ -427,8 +475,10 @@ rc 0; logged '^docker compose .* up -d$'; not_logged ' --build'; out "PARTIAL RU
 t "43 the suites are exactly the ones CI's verify job runs, in its order"
 new_sandbox
 ft
-ci="$(awk '/^  verify:$/ { on = 1; next } /^  [a-z]+:$/ { on = 0 } on' "$REPO_ROOT/.github/workflows/ci.yml" \
-  | sed -n 's/^ *run: npm run \(\(verify\|probe\):[a-z]*\) *$/\1/p' | tr '\n' ' ')"
+# Wherever in the job it appears — `run: npm run x` or inside a `run: |`
+# block — but not in a comment.
+ci="$(awk '/^  verify:$/ { on = 1; next } /^  [a-z]+:$/ { on = 0 } on && $1 !~ /^#/' "$REPO_ROOT/.github/workflows/ci.yml" \
+  | grep -o 'npm run \(verify\|probe\):[a-z]*' | awk '{ print $3 }' | tr '\n' ' ')"
 ok "ci.yml's verify job lists suites at all" test -n "$ci"
 eq "the suites" "$(suites_run)" "$ci"
 

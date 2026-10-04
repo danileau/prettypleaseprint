@@ -130,10 +130,17 @@ scripts/full-test.sh --restore                    # undo what a killed run left 
 ```
 
 It runs the three cheap gates, a `trivy` filesystem scan if `trivy` is
-installed, and `verify:models`; then raises the stack exactly as CI's `verify`
-job does, waits for `/api/health`, runs the nine integration suites in CI's
-order — all of them, even after one fails — and the two image pins CI keeps
-(no npm in the runtime images; the migrator still runs without it).
+installed, and `verify:models`; then raises the stack, waits for
+`/api/health`, runs the nine integration suites — all of them, even after one
+fails — and the two image pins CI keeps (no npm in the runtime images; the
+migrator still runs without it).
+
+It is CI's `verify` job in what matters: the same three compose files, the
+same `mailcatcher` profile, the same suites in the same order. It differs
+where a developer's machine has to be protected: the compose project is
+`ppp-fulltest` rather than the default, the images are tagged
+`full-test-local` rather than `latest`, `DATA_ROOT` is a throwaway directory
+outside the checkout, and the health wait is 120 seconds rather than 90.
 
 - **It refuses to start if a ppp stack exists on the machine**, running or
   stopped. The compose file pins the container names, so only one stack can
@@ -150,8 +157,13 @@ order — all of them, even after one fails — and the two image pins CI keeps
   those files describe the test stack. If the run is killed outright, the
   originals wait in the git directory and the next run says so: `--restore`
   puts them back and removes the leftover containers.
-- **Ctrl-C takes effect when the current step ends**, not in the middle of a
-  suite, and the teardown then runs in full.
+- **Interrupting it always ends in the teardown.** Ctrl-C in a terminal goes
+  to the suite that is running as well as to the script, so the suite usually
+  stops at once; a signal sent to the script alone (`kill <pid>`) is acted on
+  when the current step returns. Either way the stack then comes down and the
+  env files go back, and a second Ctrl-C during that is ignored. It also
+  refuses a `PPP_FULLTEST_OUT` that still holds a `data` directory from an
+  earlier run, because the data directory has to be fresh.
 - **Logs** go to a fresh directory under `$TMPDIR` (or `PPP_FULLTEST_OUT`),
   one file per step, with `summary.txt` and the containers' own output in
   `compose.log`. The path is printed first and last.

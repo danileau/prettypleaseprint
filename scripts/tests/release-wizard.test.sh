@@ -153,6 +153,10 @@ cat >"$BASE/stubs/leave-stray" <<'STUB'
 #!/usr/bin/env bash
 echo "edited during the test" >>docs/other.txt
 STUB
+cat >"$BASE/stubs/leave-stray-space" <<'STUB'
+#!/usr/bin/env bash
+echo "edited during the test" >>"docs/other file.txt"
+STUB
 cat >"$BASE/stubs/leave-untracked" <<'STUB'
 #!/usr/bin/env bash
 echo "scratch" >scratch.txt
@@ -174,6 +178,7 @@ git init -q -b main "$TPL/work"
   cp "$FIX/readme.txt" README.md
   cp "$FIX/deployment.txt" docs/deployment.md
   echo "another tracked file" >docs/other.txt
+  echo "a tracked file with a space in its name" >"docs/other file.txt"
   echo "CREATE TABLE t (id int);" >prisma/migrations/20260801000000_init/migration.sql
   cp "$REPO_ROOT/.github/workflows/release-images.yml" .github/workflows/release-images.yml
   cp "$WIZARD" scripts/release-wizard.sh
@@ -181,10 +186,15 @@ git init -q -b main "$TPL/work"
   cat >scripts/full-test.sh <<'FT'
 #!/usr/bin/env bash
 printf 'full-test %s\n' "$*" >>"$STUB/log"
-if [ "${1:-}" = "--preflight" ] && [ -e "$STUB/state/preflight-fail" ]; then
-  echo "✗ a ppp stack already exists on this machine:" >&2; exit 1
-fi
-exit 0
+case "$*" in
+  "") exit 0 ;;
+  "--preflight")
+    [ ! -e "$STUB/state/preflight-fail" ] || { echo "✗ a ppp stack already exists on this machine:" >&2; exit 1; }
+    exit 0 ;;
+esac
+echo "unexpected: full-test $*" >&2
+printf 'UNEXPECTED full-test %s\n' "$*" >>"$STUB/log"
+exit 99
 FT
   chmod +x scripts/release-wizard.sh scripts/full-test.sh
   printf '{\n  "name": "fixture",\n  "version": "0.1.0",\n  "private": true\n}\n' >package.json
@@ -225,7 +235,11 @@ on_sleep() {
   printf '#!/usr/bin/env bash\nHELPERS=%q\n%s\nexit 0\n' "$BASE/helpers" "$1" >"$T/stub/on-sleep"
   chmod +x "$T/stub/on-sleep"
 }
-merge_now() { ( export STUB="$T/stub"; "$BASE/helpers/merge-pr" "$@" ); touch "$T/stub/merged"; }
+# Emptying the log mid-case must not lose an UNEXPECTED line: what is there
+# goes to the collected log first, which the last case reads.
+clear_log() { cat "$T/stub/log" >>"$BASE/all-logs"; : >"$T/stub/log"; }
+# Go back to an earlier sandbox, keeping the log of the one being left.
+use_sandbox() { cat "$T/stub/log" >>"$BASE/all-logs" 2>/dev/null; T="$1"; STUBS="$BASE/stubs"; SEAM="true"; EXTRA=(); }
 
 # wiz '<stdin>' [args…] — run the wizard; the transcript lands in $OUT, the
 # exit status in $RC. SEAM is PPP_FULL_TEST_CMD ("" leaves it unset), EXTRA
@@ -362,6 +376,25 @@ wiz '\nn\n'; rc 0; out "Prepare release-0.2.0 from main"
 t "06 a typed 1.2 is not a version"
 new_sandbox
 wiz '1.2\n'; rc 1; out "not a version: 1.2"; out "pre-releases are cut by hand"
+
+t "06 a version with a leading zero is not a version"
+new_sandbox; before="$(snap)"
+wiz "$HAPPY" 0.03.0; rc 1; out "not a version: 0.03.0"; eq "refs and files" "$(snap)" "$before"
+wiz '' --continue 0.2.00; rc 1; out "not a version: 0.2.00"
+
+t "the three timings have to be whole numbers"
+new_sandbox; EXTRA=(PPP_PR_TIMEOUT=soon)
+wiz "$HAPPY" 0.2.0; rc 1; out "PPP_PR_TIMEOUT must be a whole number of seconds, not 'soon'"
+EXTRA=(PPP_IMAGES_TIMEOUT=-5); wiz "$HAPPY" 0.2.0; rc 1; out "PPP_IMAGES_TIMEOUT must be a whole number"
+EXTRA=(PPP_POLL_INTERVAL=1.5); wiz "$HAPPY" 0.2.0; rc 1; out "PPP_POLL_INTERVAL must be a whole number"
+eq "calls made" "$(wc -l <"$T/stub/log" | tr -d ' ')" "0"
+
+t "R2 a changelog section on main with no bump is for a person, not for --continue"
+new_sandbox
+( cd "$T/work" && cp "$FIX/changelog-golden.txt" CHANGELOG.md && sed -i 's/^Nothing yet\.$/Something new./' CHANGELOG.md && git add -A )
+commit_main "A section ahead of its release (#9)"
+wiz "$HAPPY" 0.2.0
+rc 1; out "CHANGELOG.md on main already has a ## v0.2.0 section"; out "sort it out by hand"; no_out "resume with"
 
 t "06 a version at or below the last is refused"
 new_sandbox
@@ -514,6 +547,13 @@ rc 0
 eq "files in the commit" "$(git -C "$T/remote.git" diff --name-only "$MAIN0" release-0.2.0 | LC_ALL=C sort | tr '\n' ' ')" \
   "CHANGELOG.md README.md docs/deployment.md docs/other.txt package-lock.json package.json "
 
+t "14 a stray file with a space in its name can be taken along"
+new_sandbox; SEAM="leave-stray-space"
+wiz 'y\nn\ny\ny\ny\nn\ny\n' 0.2.0
+rc 0; out "    docs/other file.txt"
+eq "files in the commit" "$(git -C "$T/remote.git" -c core.quotePath=false diff --name-only "$MAIN0" release-0.2.0 | LC_ALL=C sort | tr '\n' '|')" \
+  "CHANGELOG.md|README.md|docs/deployment.md|docs/other file.txt|package-lock.json|package.json|"
+
 t "14 an untracked file is never swept into a release commit"
 new_sandbox; SEAM="leave-untracked"
 wiz "$HAPPY" 0.2.0
@@ -567,6 +607,29 @@ on_sleep 'sed -i "s/\"OPEN\"/\"MERGED\"/" "$STUB/state/pr-list.json"'
 wiz "$HAPPY" 0.2.0
 rc 1; out "gave no merge commit — refusing to guess one"; nok "a tag on the remote" remote_has refs/tags/v0.2.0
 
+t "19 a pull request merged into another branch is not tagged"
+new_sandbox
+on_sleep 'if [ ! -e "$STUB/merged" ]; then touch "$STUB/merged"; "$HELPERS/merge-pr"; sed -i "s/\"baseRefName\":\"main\"/\"baseRefName\":\"develop\"/" "$STUB/state/pr-list.json"; fi'
+wiz "$HAPPY" 0.2.0
+rc 1; out "#7 was merged into develop, not main — refusing to tag it"
+nok "a tag on the remote" remote_has refs/tags/v0.2.0; nok "a tag in the clone" work_has refs/tags/v0.2.0
+
+t "20 a tag that is not where it was pushed, straight after the push, stops everything"
+new_sandbox
+mkdir -p "$T/remote.git/hooks"
+printf '#!/usr/bin/env bash\nwhile read -r old new ref; do\n  if [ "$ref" = "refs/tags/v0.2.0" ]; then git update-ref refs/tags/v0.2.0 %s; fi\ndone\nexit 0\n' "$MAIN0" >"$T/remote.git/hooks/post-receive"
+chmod +x "$T/remote.git/hooks/post-receive"
+wiz "$HAPPY" 0.2.0
+rc 1; out "after the push, v0.2.0 on origin is not"; not_logged 'release create'; not_logged 'run list .*release-images'
+
+t "20 a lightweight local tag at the merge commit is refused, not pushed"
+new_sandbox
+wiz 'y\nn\ny\nn\n' 0.2.0
+git -C "$T/work" tag v0.2.0 "$(merge_oid)"
+wiz 'y\nn\ny\n' --continue 0.2.0
+rc 1; out "the local tag v0.2.0 is a lightweight tag — delete it (git tag -d v0.2.0)"
+nok "a tag on the remote" remote_has refs/tags/v0.2.0; not_logged 'release create'
+
 t "20 a remote tag already at another commit is not moved"
 new_sandbox
 on_sleep 'if [ ! -e "$STUB/merged" ]; then touch "$STUB/merged"; "$HELPERS/merge-pr"; git --git-dir="$STUB/../remote.git" tag v0.2.0 '"$MAIN0"'; fi'
@@ -619,6 +682,13 @@ echo '[{"status":"completed","conclusion":"failure","url":"https://github.invali
 wiz "$HAPPY" 0.2.0
 rc 1; out "CI failed on"; out "https://github.invalid/runs/9 — refusing to tag"
 nok "a tag on the remote" remote_has refs/tags/v0.2.0; nok "a tag in the clone" work_has refs/tags/v0.2.0
+
+t "R4 a cancelled CI run is called cancelled, not failed, and still does not tag"
+new_sandbox
+echo '[{"status":"completed","conclusion":"cancelled","url":"https://github.invalid/runs/9","createdAt":"2026-11-01T10:00:00Z"}]' >"$T/stub/state/runs-ci.yml.json"
+wiz "$HAPPY" 0.2.0
+rc 1; out "CI was cancelled on"; out "re-run it, then: scripts/release-wizard.sh --continue 0.2.0"; no_out "CI failed"
+nok "a tag on the remote" remote_has refs/tags/v0.2.0
 
 t "R4 CI still running is waited for, then the tag goes on"
 new_sandbox
@@ -723,7 +793,7 @@ rc 1; out "nothing to continue for 0.3.0"; eq "refs and files" "$(snap)" "$befor
 t "25 --continue from a prepared, uncommitted branch tests, commits, pushes and releases"
 new_sandbox; SEAM=""
 wiz 'y\nn\nn\n' 0.2.0
-rc 0; out "aborted."; : >"$T/stub/log"
+rc 0; out "aborted."; clear_log
 git -C "$T/work" stash -q; git -C "$T/work" switch -q main; git -C "$T/work" switch -q release-0.2.0; git -C "$T/work" stash pop -q
 wiz 'y\ny\nn\ny\n' --continue 0.2.0
 rc 0; logged '^full-test $'; not_logged '^full-test .*--(no-build|only)'
@@ -755,7 +825,7 @@ rc 0; eq "the branch checked out" "$(git -C "$T/work" symbolic-ref --short HEAD)
 t "25 --continue with the pull request open waits for the merge"
 new_sandbox; on_sleep ':'; EXTRA=(PPP_PR_TIMEOUT=1)
 wiz "$HAPPY" 0.2.0
-rc 1; EXTRA=(); : >"$T/stub/log"
+rc 1; EXTRA=(); clear_log
 on_sleep 'if [ ! -e "$STUB/merged" ]; then touch "$STUB/merged"; "$HELPERS/merge-pr"; fi'
 git -C "$T/work" switch -q main
 wiz 'y\nn\ny\n' --continue 0.2.0
@@ -764,7 +834,7 @@ rc 0; out "waiting for #7 to be merged"; logged 'release create v0\.2\.0'; not_l
 t "25 --continue with the pull request merged tags it"
 new_sandbox
 wiz 'y\nn\ny\nn\n' 0.2.0
-rc 0; : >"$T/stub/log"
+rc 0; clear_log
 wiz 'y\nn\ny\n' --continue 0.2.0
 rc 0; eq "the tagged commit" "$(git -C "$T/remote.git" rev-parse -q --verify 'refs/tags/v0.2.0^{commit}' 2>/dev/null)" "$(merge_oid)"
 logged 'release create v0\.2\.0'; not_logged 'pr create'
@@ -796,7 +866,7 @@ t "25 --continue with the tag pushed and no release waits for the images and pub
 new_sandbox; : >"$T/stub/state/images"; EXTRA=(PPP_IMAGES_TIMEOUT=1)
 wiz "$HAPPY" 0.2.0
 rc 1; ok "the tag on the remote" remote_has refs/tags/v0.2.0
-tag0="$(git -C "$T/remote.git" rev-parse refs/tags/v0.2.0)"; EXTRA=(); : >"$T/stub/log"
+tag0="$(git -C "$T/remote.git" rev-parse refs/tags/v0.2.0)"; EXTRA=(); clear_log
 printf '%s\n' ghcr.io/octo/ppp-app:v0.2.0 ghcr.io/octo/ppp-migrate:v0.2.0 ghcr.io/octo/ppp-storage-migrate:v0.2.0 >"$T/stub/state/images"
 git -C "$T/work" switch -q main
 wiz 'n\ny\n' --continue 0.2.0
@@ -810,6 +880,30 @@ git -C "$T/remote.git" tag v0.2.0 "$MAIN0"
 wiz 'n\ny\n' --continue 0.2.0
 rc 1; out "the tag is not on the release commit"; not_logged 'release create'
 
+t "25 --continue never publishes for a tag that is not on main"
+new_sandbox; on_sleep ':'; EXTRA=(PPP_PR_TIMEOUT=1)
+wiz "$HAPPY" 0.2.0
+rc 1; EXTRA=(); git -C "$T/remote.git" tag v0.2.0 release-0.2.0
+wiz 'n\ny\n' --continue 0.2.0
+rc 1; out "is not on origin/main — refusing to publish"; not_logged 'release create'
+sed -i 's/"OPEN"/"MERGED"/' "$T/stub/state/pr-list.json"
+wiz 'n\ny\n' --continue 0.2.0
+rc 1; out "gave no merge commit"; not_logged 'release create'
+
+t "25 --continue never publishes for a tag on a commit without the bump"
+new_sandbox; git -C "$T/remote.git" tag v0.2.0 main
+wiz 'n\ny\n' --continue 0.2.0
+rc 1; out "does not contain the v0.2.0 bump — refusing to publish it"; not_logged 'release create'
+
+t "25 --continue from another branch with work in progress leaves both alone"
+new_sandbox; touch "$T/stub/state/pr-create-fail"
+wiz "$HAPPY" 0.2.0
+git -C "$T/work" switch -q main; echo "work in progress" >>"$T/work/docs/other.txt"; clear_log
+wiz 'y\ny\ny\nn\ny\n' --continue 0.2.0
+rc 1; out "with uncommitted changes"
+eq "the branch checked out" "$(git -C "$T/work" symbolic-ref --short HEAD)" "main"
+ok "the work in progress" grep -q 'work in progress' "$T/work/docs/other.txt"; not_logged 'pr create'
+
 t "R3 --continue treats a draft release as not released, and does not overwrite it"
 new_sandbox
 wiz 'y\nn\ny\ny\nn\nn\n' 0.2.0
@@ -818,7 +912,7 @@ wiz 'n\ny\n' --continue 0.2.0
 rc 1; no_out "already released"; out "a draft release v0.2.0 already exists"; not_logged 'release create'
 
 t "25 --continue on a finished release changes nothing"
-T="$HAPPY_T"; before="$(snap)"; : >"$T/stub/log"
+use_sandbox "$HAPPY_T"; clear_log; before="$(snap)"
 wiz '' --continue 0.2.0
 rc 0; out "already released."; out "./deploy-wizard.sh          # choose v0.2.0"
 eq "refs and files" "$(snap)" "$before"; not_logged 'create'
@@ -862,6 +956,26 @@ new_sandbox
 wiz 'y\nn\ny\ny\nn\n' 0.2.0
 rc 1; out "aborted (no input)."; not_logged 'release create'
 
+t "A1 a bare enter at the first gate is a no"
+new_sandbox; before="$(snap)"
+wiz '\n' 0.2.0
+rc 0; out "aborted."; eq "refs and files" "$(snap)" "$before"
+
+t "A1 a bare enter at the second gate is a no"
+new_sandbox
+wiz 'y\nn\n\n' 0.2.0
+rc 0; out "aborted."; nok "the branch was pushed" remote_has refs/heads/release-0.2.0; not_logged 'pr create'
+
+t "A1 a bare enter at the third gate is a no"
+new_sandbox
+wiz 'y\nn\ny\n\n' 0.2.0
+rc 0; out "aborted."; nok "a tag on the remote" remote_has refs/tags/v0.2.0; nok "a tag in the clone" work_has refs/tags/v0.2.0
+
+t "A1 a bare enter at the fourth gate is a no"
+new_sandbox
+wiz 'y\nn\ny\ny\nn\n\n' 0.2.0
+rc 0; out "aborted."; ok "the tag on the remote" remote_has refs/tags/v0.2.0; not_logged 'release create'
+
 t "A1 a last answer with no newline still counts"
 new_sandbox
 wiz 'y\nn\ny\ny\nn\ny' 0.2.0
@@ -887,6 +1001,18 @@ out "has entries (CHANGELOG.md on main)"
 out "ppp-app:v0.1.0 published"; out "ppp-migrate:v0.1.0 not published"; out "ppp-storage-migrate:v0.1.0 not published"
 out "v0.1.0 — First[31m light"; no_out $'\e[31m'
 out "#7 release-0.2.0"; out "scripts/release-wizard.sh --continue 0.2.0"; no_out "9.9.9"; no_out "#9"
+
+t "27 --status does not fetch: a commit and a tag that are only on the remote stay there"
+new_sandbox
+git clone -q "$T/remote.git" "$T/other"
+( cd "$T/other" && git config user.name O && git config user.email o@example.test \
+  && echo x >>docs/other.txt && git commit -q -am "Somebody else (#5)" && git tag -a v0.3.0 -m v0.3.0 \
+  && git push -q origin main v0.3.0 )
+before="$(git -C "$T/work" for-each-ref)"
+wiz '' --status
+rc 0; out "v0.3.0 at $(git -C "$T/remote.git" rev-parse --short=7 'v0.3.0^{commit}')"
+eq "every ref in the clone" "$(git -C "$T/work" for-each-ref)" "$before"
+nok "the remote's tag arrived in the clone" work_has refs/tags/v0.3.0
 
 t "28 --dry-run changes nothing anywhere and prints every mutation it would make"
 new_sandbox; before="$(snap)"

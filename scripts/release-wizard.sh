@@ -103,6 +103,14 @@ done
 [ "$DRY_RUN" -eq 1 ] && [ "$MODE" != "start" ] \
   && die "--dry-run is for a fresh start only; --status shows where a release stands"
 VERSION="${VERSION#v}"
+# A typo here would otherwise surface as an arithmetic error an hour into a
+# wait, or as a loop that never sleeps.
+for pair in "PPP_POLL_INTERVAL=$POLL" "PPP_PR_TIMEOUT=$PR_TIMEOUT" "PPP_IMAGES_TIMEOUT=$IMAGES_TIMEOUT"; do
+  [[ "${pair#*=}" =~ ^[0-9]+$ ]] || die "${pair%%=*} must be a whole number of seconds, not '${pair#*=}'"
+done
+# No leading zeros: npm would normalise 0.03.0 to 0.3.0, and the branch, the
+# tag and the changelog heading would then disagree with package.json for good.
+SEMVER='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 
 # ----- the four primitives ---------------------------------------------------
 # Everything that changes anything goes through run() or write_file(), so a
@@ -620,8 +628,8 @@ step_version() {
     esac
   fi
 
-  [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
-    || die "not a version: $VERSION (want X.Y.Z; pre-releases are cut by hand)"
+  [[ "$VERSION" =~ $SEMVER ]] \
+    || die "not a version: $VERSION (want X.Y.Z, no leading zeros; pre-releases are cut by hand)"
   TAG="v$VERSION"; BRANCH="release-$VERSION"
   local again="resume with: release-wizard.sh --continue $VERSION"
   ver_gt "$TAG" "$LAST" || die "$TAG is not above the last release ($LAST)"
@@ -636,7 +644,7 @@ step_version() {
   [ "$PR_STATE" = "NONE" ] \
     || die "pull request #$PR_NUMBER ($PR_STATE) already has the head $BRANCH — $again"
   if git show "HEAD:CHANGELOG.md" | awk -v h="## $TAG" '$0 == h { found = 1 } END { exit !found }'; then
-    die "CHANGELOG.md on main already has a ## $TAG section — $again"
+    die "CHANGELOG.md on main already has a ## $TAG section, but package.json there is at $main_pkg and nothing else of $TAG exists. There is nothing for --continue to resume: sort it out by hand — check whether that section was merged by mistake (git log -S'## $TAG' -- CHANGELOG.md), and either move its entries back under ## Unreleased or finish that release as docs/development.md describes"
   fi
   ver_gt "$TAG" "v$main_pkg" || die "package.json on main is already at $main_pkg — $again"
   [ "$(release_state "$TAG")" = "none" ] || die "a GitHub release $TAG already exists — $again"
@@ -721,17 +729,20 @@ step_test() {
 
 # ----- 5. commit, push, pull request --------------------------------------------
 step_commit_pr() {
-  local status untracked strays f files=() body remote_head
+  local untracked strays f files=() body remote_head
   confirm "Commit, push $BRANCH and open the pull request? [y/N]"
 
   if [ "$DRY_RUN" -eq 0 ]; then
     grep -q 'TODO(release)' CHANGELOG.md && die "the Upgrading stub in CHANGELOG.md is still a TODO"
-    status="$(git status --porcelain)"
-    untracked="$(printf '%s\n' "$status" | awk '/^\?\? /')"
+    # Not `git status --porcelain`: it quotes a path with a space in it and
+    # writes a rename as "old -> new", and neither is something `git add` can
+    # be handed. quotePath off gives the names as they are; --no-renames gives
+    # a rename as the two paths it is.
+    untracked="$(git -c core.quotePath=false ls-files --others --exclude-standard)"
     [ -z "$untracked" ] || die "untracked files — a release commit takes nothing it was not shown:"$'\n'"$untracked"
-    strays="$(printf '%s\n' "$status" | awk -v keep="$RELEASE_FILES" '
+    strays="$(git -c core.quotePath=false diff --name-only --no-renames HEAD | awk -v keep="$RELEASE_FILES" '
       BEGIN { n = split(keep, a, " "); for (i = 1; i <= n; i++) ok[a[i]] = 1 }
-      NF { p = substr($0, 4); if (!(p in ok)) print p }')"
+      NF && !($0 in ok)')"
     if [ -n "$strays" ]; then
       warn "changed besides the release files:"
       printf '%s\n' "$strays" | sed 's/^/    /'
@@ -803,6 +814,21 @@ wait_for_merge() {
   done
 }
 
+# release_commit_ok <what to call it> <what is being refused>
+# The three things that make a commit the release: it is here, it is on the
+# remote's main, and it carries the bump. Asked before tagging, and asked again
+# before publishing a tag somebody else pushed — a tag can be put on anything.
+release_commit_ok() {
+  git fetch -q "$REMOTE" "+refs/heads/main:refs/remotes/$REMOTE/main" || die "git fetch from $REMOTE failed"
+  git cat-file -e "$SHA^{commit}" 2>/dev/null || die "$1 $SHA is not on $REMOTE/main — refusing to $2"
+  git merge-base --is-ancestor "$SHA" "refs/remotes/$REMOTE/main" \
+    || die "$1 $SHA is not on $REMOTE/main — refusing to $2"
+  if [ "$(git show "$SHA:package.json" | py pkg-version)" != "$VERSION" ] \
+    || ! git show "$SHA:CHANGELOG.md" | awk -v h="## $TAG" '$0 == h { found = 1 } END { exit !found }'; then
+    die "$SHA does not contain the $TAG bump — refusing to $2 it"
+  fi
+}
+
 # ----- 6. tag, by SHA -----------------------------------------------------------
 step_tag() {
   local local_tag remote_tag line status conclusion url deadline said=0
@@ -810,14 +836,7 @@ step_tag() {
   [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || die "GitHub reports #$PR_NUMBER as merged but gave no merge commit — refusing to guess one"
   [ "$PR_BASE" = "main" ] || die "#$PR_NUMBER was merged into $PR_BASE, not main — refusing to tag it"
 
-  run git fetch -q "$REMOTE" "+refs/heads/main:refs/remotes/$REMOTE/main" || die "git fetch from $REMOTE failed"
-  git cat-file -e "$SHA^{commit}" 2>/dev/null || die "merge commit $SHA is not on $REMOTE/main — refusing to tag"
-  git merge-base --is-ancestor "$SHA" "refs/remotes/$REMOTE/main" \
-    || die "merge commit $SHA is not on $REMOTE/main — refusing to tag"
-  if [ "$(git show "$SHA:package.json" | py pkg-version)" != "$VERSION" ] \
-    || ! git show "$SHA:CHANGELOG.md" | awk -v h="## $TAG" '$0 == h { found = 1 } END { exit !found }'; then
-    die "$SHA does not contain the $TAG bump — refusing to tag it"
-  fi
+  release_commit_ok "merge commit" "tag"
 
   remote_tag="$(remote_tag_commit "$TAG")"
   if [ -n "$remote_tag" ]; then
@@ -828,6 +847,12 @@ step_tag() {
   local_tag="$(git rev-parse -q --verify "refs/tags/$TAG^{commit}" || true)"
   [ -z "$local_tag" ] || [ "$local_tag" = "$SHA" ] \
     || die "a local tag $TAG exists at $(short "$local_tag"), not at the merge commit $(short "$SHA") — delete it (git tag -d $TAG) and resume"
+  # Releases are annotated tags: they carry who and when, and `git describe`
+  # ignores the other kind. One made by hand without -a would be pushed as it
+  # is, so it is refused instead.
+  if [ -n "$local_tag" ] && [ "$(git cat-file -t "refs/tags/$TAG")" != "tag" ]; then
+    die "the local tag $TAG is a lightweight tag — delete it (git tag -d $TAG) and resume; the wizard makes an annotated one"
+  fi
 
   # What was tested is the release branch; what is tagged is the merge. They
   # are the same tree unless something else was merged in between. The branch
@@ -855,7 +880,14 @@ step_tag() {
       said_yes || abort
       break
     elif [ "$status" = "completed" ]; then
-      [ "$conclusion" = "success" ] || die "CI failed on $(short "$SHA"): $url — refusing to tag"
+      # ci.yml cancels a run when a newer push to the same ref arrives, so a
+      # cancelled run says nothing about the commit. Only a failure is called one.
+      case "$conclusion" in
+        success) ;;
+        cancelled) die "CI was cancelled on $(short "$SHA"): $url — re-run it, then: $RESUME" ;;
+        failure) die "CI failed on $(short "$SHA"): $url — refusing to tag" ;;
+        *) die "CI ended as '$conclusion' on $(short "$SHA"): $url — refusing to tag; re-run it, then: $RESUME" ;;
+      esac
       echo "${GRN}✓${R} CI passed on $(short "$SHA")"
       break
     fi
@@ -963,7 +995,7 @@ step_publish() {
 # neither a clean tree nor a particular branch.
 do_continue() {
   local remote_tag here
-  [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "not a version: $VERSION (want X.Y.Z)"
+  [[ "$VERSION" =~ $SEMVER ]] || die "not a version: $VERSION (want X.Y.Z, no leading zeros)"
   TAG="v$VERSION"; BRANCH="release-$VERSION"
   RESUME="scripts/release-wizard.sh --continue $VERSION"
 
@@ -982,9 +1014,15 @@ do_continue() {
       || die "could not fetch $TAG from $REMOTE (a different local tag of that name?)"
     SHA="$remote_tag"
     pr_lookup
-    if [ "$PR_STATE" = "MERGED" ] && [ -n "$PR_MERGE" ] && [ "$PR_MERGE" != "$SHA" ]; then
-      die "$TAG is at $(short "$SHA") but #$PR_NUMBER was merged as $(short "$PR_MERGE") — the tag is not on the release commit; stop and look"
+    if [ "$PR_STATE" = "MERGED" ]; then
+      [ -n "$PR_MERGE" ] || die "GitHub reports #$PR_NUMBER as merged but gave no merge commit — cannot tell whether $TAG is on it; stop and look"
+      [ "$PR_MERGE" = "$SHA" ] \
+        || die "$TAG is at $(short "$SHA") but #$PR_NUMBER was merged as $(short "$PR_MERGE") — the tag is not on the release commit; stop and look"
     fi
+    # Whatever the pull request says, or if there is none: the tag was not
+    # necessarily pushed by this tool, and a release is only published for a
+    # commit that is on main and carries the version.
+    release_commit_ok "the commit $TAG names," "publish"
     step_wait_images
     step_publish
     return 0

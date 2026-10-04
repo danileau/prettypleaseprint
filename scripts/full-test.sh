@@ -28,10 +28,18 @@
 #     not `ppp`, so `down` cannot reach yours; and before the first suite it
 #     checks that the app container answering on :3000 belongs to this run.
 #     The suites wipe users and tickets.
-#   - It does not interrupt a suite that is running. Bash delivers a signal
-#     only once the child has returned, so Ctrl-C takes effect when the current
-#     step ends; the cleanup then runs in full, and a second Ctrl-C during it
+#   - It does not itself interrupt a suite that is running. A signal sent to
+#     this script alone (`kill <pid>`) is acted on once the current step has
+#     returned. Ctrl-C in a terminal is different: it goes to the whole
+#     foreground group, so the suite gets it too and usually ends at once.
+#     Either way the cleanup then runs in full, and a second Ctrl-C during it
 #     is ignored so the env files are always put back.
+#
+# It is CI's `verify` job in what matters — the same three compose files, the
+# same profile, the same suites in the same order — and differs where a
+# developer's machine has to be protected: the project is `ppp-fulltest`, the
+# images are tagged `full-test-local`, DATA_ROOT is a throwaway directory, and
+# the health wait is longer (120 s against CI's 90).
 #
 # What it leaves behind: the images it built, tagged `:full-test-local` (so a
 # pulled `:latest` is never overwritten), and the logs.
@@ -64,14 +72,14 @@ fi
 die() { echo "${RED}✗ $*${R}" >&2; exit 1; }
 
 # ----- args -----------------------------------------------------------------
-BUILD=1; ONLY=""; MODE="run"
+BUILD=1; ONLY=""; ONLY_GIVEN=0; MODE="run"
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-build) BUILD=0; shift ;;
-    --only) ONLY="${2:?--only needs a quoted list of suites}"; shift 2 ;;
+    --only) [ $# -ge 2 ] || die "--only needs a quoted list of suites"; ONLY="$2"; ONLY_GIVEN=1; shift 2 ;;
     --restore) MODE="restore"; shift ;;
     --preflight) MODE="preflight"; shift ;;
-    -h|--help) sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,61p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown arg: $1" ;;
   esac
 done
@@ -116,14 +124,32 @@ ENV_FILES=".env .env.backup .env.docker"
 SAVED="$(git rev-parse --absolute-git-dir)/ppp-full-test-saved"
 
 HEALTH_TIMEOUT="${PPP_FULLTEST_HEALTH_TIMEOUT:-120}"
+[[ "$HEALTH_TIMEOUT" =~ ^[0-9]+$ ]] \
+  || die "PPP_FULLTEST_HEALTH_TIMEOUT must be a whole number of seconds, not '$HEALTH_TIMEOUT'"
+# An empty list would otherwise run no suite at all and report that as a pass.
+if [ "$ONLY_GIVEN" -eq 1 ]; then
+  # shellcheck disable=SC2086
+  set -- $ONLY
+  [ $# -gt 0 ] || die "--only needs at least one suite: $SUITES"
+  for s in "$@"; do
+    case " $SUITES " in *" $s "*) ;; *) die "--only: $s is not one of: $SUITES" ;; esac
+  done
+fi
 LOCAL_TAG="full-test-local"
 
 # ----- env files: save and restore ------------------------------------------
+# Each copy is written under a temporary name and renamed into place, so a
+# copy that fails halfway (a full disk) can never leave a truncated file under
+# the name restore_env trusts.
 save_env() {
   local f
-  mkdir "$SAVED"
+  mkdir "$SAVED" || return 1
   for f in $ENV_FILES; do
-    if [ -e "$f" ]; then cp -p "$f" "$SAVED/$f"; else touch "$SAVED/$f.absent"; fi
+    if [ -e "$f" ]; then
+      cp -p "$f" "$SAVED/$f.part" && mv "$SAVED/$f.part" "$SAVED/$f" || return 1
+    else
+      touch "$SAVED/$f.absent" || return 1
+    fi
   done
 }
 
@@ -136,7 +162,11 @@ restore_env() {
   [ -d "$SAVED" ] || return 0
   for f in $ENV_FILES; do
     if [ -e "$SAVED/$f" ]; then
-      cp -p "$SAVED/$f" "$f" || bad=1
+      # -f: a developer's env file may be read-only (0400 is a sensible mode
+      # for a file of credentials), and cp cannot open that for writing; with
+      # -f it removes the target and writes a new one, which the directory
+      # permits. Without it the restore would fail the same way for ever.
+      cp -pf "$SAVED/$f" "$f" || bad=1
     elif [ -e "$SAVED/$f.absent" ]; then
       rm -f "$f" || bad=1
     fi
@@ -223,6 +253,15 @@ preflight() {
     exit 1
   fi
 
+  # A data directory left in a reused PPP_FULLTEST_OUT is last run's database,
+  # and "fresh" is the whole point of the run.
+  if [ -n "${PPP_FULLTEST_OUT:-}" ] && [ -e "$PPP_FULLTEST_OUT/data" ]; then
+    echo "${RED}✗ $PPP_FULLTEST_OUT/data already exists — the test needs a fresh data directory.${R}" >&2
+    echo "  It is owned by container uids; remove it with:" >&2
+    echo "      docker run --rm -v \"$PPP_FULLTEST_OUT:/o\" postgres:17-alpine rm -rf /o/data" >&2
+    exit 1
+  fi
+
   [ -z "${PPP_FULLTEST_PORTS:-}" ] \
     || echo "${YLW}⚠ port check replaced by PPP_FULLTEST_PORTS=$PPP_FULLTEST_PORTS${R}"
   for p in $PORTS; do
@@ -236,12 +275,6 @@ preflight
 if [ "$MODE" = "preflight" ]; then
   echo "${GRN}✓ nothing in the way of a full test${R}"
   exit 0
-fi
-
-if [ -n "$ONLY" ]; then
-  for s in $ONLY; do
-    case " $SUITES " in *" $s "*) ;; *) die "--only: $s is not one of: $SUITES" ;; esac
-  done
 fi
 
 # ----- a clean environment --------------------------------------------------
@@ -265,7 +298,7 @@ OUT="$(cd "$OUT" && pwd)"
 
 FAILED=0
 STACK_RAISED=0
-ENV_SAVED=0
+ENV_SAVED="no"
 
 # step <name> <command…> — one line of verdict, the output in a log.
 step() {
@@ -308,17 +341,23 @@ cleanup() {
       fi
     fi
   fi
-  if [ "$ENV_SAVED" -eq 1 ]; then
-    if restore_env; then
-      if [ "$ok" -eq 1 ]; then
-        echo "restored .env, .env.backup, .env.docker; stack down; logs in $OUT"
+  case "$ENV_SAVED" in
+    saving)
+      # The save itself did not finish, so no env file was touched and no
+      # stack was raised. The half-made copies are of no use to anyone.
+      rm -rf "$SAVED"
+      echo "${RED}✗ could not save the env files — nothing was changed and no stack was raised.${R}" >&2 ;;
+    saved)
+      if restore_env; then
+        if [ "$STACK_RAISED" -eq 1 ] && [ "$ok" -eq 1 ]; then
+          echo "restored .env, .env.backup, .env.docker; stack down; logs in $OUT"
+        else
+          echo "restored .env, .env.backup, .env.docker; logs in $OUT"
+        fi
       else
-        echo "restored .env, .env.backup, .env.docker; logs in $OUT"
-      fi
-    else
-      FAILED=1
-    fi
-  fi
+        FAILED=1
+      fi ;;
+  esac
   set -e
 }
 
@@ -340,15 +379,22 @@ step verify-models npm run -s verify:models || true
 # ----- the stack ------------------------------------------------------------
 # The trap goes in before the first copy, so there is no moment at which a
 # file has been moved aside and nothing is registered to bring it back.
-ENV_SAVED=1
+ENV_SAVED="saving"
 trap cleanup EXIT
 trap 'exit 130' INT TERM
-save_env
+save_env || exit 1
+ENV_SAVED="saved"
+
+# The originals are safe, so take them out of the way rather than write over
+# them: a read-only .env would refuse the redirect below, and would refuse
+# `npm run env:container` later, after the stack is already up.
+# shellcheck disable=SC2086
+rm -f $ENV_FILES
 
 # As CI does it (the "Compose environment" step), minus S3_SECRET_KEY, which
 # nothing has read since the object store went.
-cp .env.docker.example .env.docker
 {
+  cat .env.docker.example
   echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)"
   echo "DB_PASSWORD=$(openssl rand -hex 24)"
   echo "ADMIN_EMAIL=ci-admin@example.test"
@@ -357,7 +403,7 @@ cp .env.docker.example .env.docker
   # Left at `latest`, a local build would overwrite the image this developer
   # pulled, and the next `docker compose up` of their own stack would run it.
   echo "PPP_TAG=$LOCAL_TAG"
-} >>.env.docker
+} >.env.docker
 export DATA_ROOT="$OUT/data"
 
 STACK_RAISED=1
@@ -443,7 +489,7 @@ if [ "$FAILED" -ne 0 ]; then
   echo "${RED}Failed:${R}"
   awk '/FAIL/ { print "  " $0 }' "$OUT/summary.txt"
 fi
-if [ "$BUILD" -eq 0 ] || [ -n "$ONLY" ]; then
+if [ "$BUILD" -eq 0 ] || [ "$ONLY_GIVEN" -eq 1 ]; then
   echo "${YLW}PARTIAL RUN — not a release gate${R}" | tee -a "$OUT/summary.txt"
 fi
 echo "DONE failed=$FAILED" | tee -a "$OUT/summary.txt"
