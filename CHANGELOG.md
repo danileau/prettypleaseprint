@@ -45,6 +45,41 @@ Notable changes. Every entry names a released version; deployments pin
   scripts were broken thirty-two ways, and each break that went unnoticed got a
   case that fails on it.
 
+- **The deploy wizard shows what an upgrade needs before it swaps anything.**
+  v0.2.0 could not be deployed over v0.1.0 without moving the models first, and
+  the only place that said so was a changelog the NAS does not have. The wizard
+  now reads the GitHub release of every version between the one running and the
+  one chosen, prints each one's *Upgrading* section, and asks for an explicit
+  yes before the existing deploy prompt. A rollback shows them too, under a
+  header that says it is going back.
+
+  A commit SHA is placed among the releases by ancestry, through GitHub's
+  compare API, not by date. When the wizard cannot work out what lies in
+  between — the running tag is `latest`, a version has no published release,
+  history has diverged, the API is rate-limited, or a release's notes mention
+  upgrading in a shape it cannot parse — it says so, says the notes were not
+  shown, and asks. It never concludes "nothing to read" from a failure.
+
+  Two smaller things with it. Releases are **marked in the menu** with their
+  title, so `v0.2.0` reads as more than a tag. And a version whose images are
+  **not all published yet** is refused before anything is pulled: a tag exists a
+  few minutes before its images do, which is how a deploy fails halfway.
+
+  A deploy from one commit to another with no release in between asks nothing
+  new: that path is pinned by a transcript captured from the wizard before this
+  change. `scripts/tests/deploy-wizard.test.sh` runs the script in a sandbox
+  with stubbed `docker`, `curl` and `cosign` — 66 cases, in CI's `guard` job —
+  and was itself tested by breaking the wizard thirty-six ways and adding a
+  case for each break that went unnoticed.
+
+### Fixed
+
+- **Choosing a number past the end of the wizard's menu crashed it** with an
+  unbound-variable error where it should have said *invalid selection*.
+- **End of input at a wizard prompt exited silently.** It now says
+  `aborted (no input).` and exits 1; at the token prompt it means "no token",
+  so `./deploy-wizard.sh --status </dev/null` prints the table.
+
 ## v0.2.0
 
 2026-10-04. Six weeks of the app being used: what people asked for, what broke,

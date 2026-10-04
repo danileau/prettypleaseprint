@@ -1,0 +1,9 @@
+compose version
+ps --filter name=ppp- --format {{.Names}} ({{.Status}})
+login ghcr.io -u danileau --password-stdin
+compose --env-file .env.docker -f docker-compose.prod.yml pull
+  pull saw PPP_TAG="c0ffee1"
+compose --env-file .env.docker -f docker-compose.prod.yml up -d
+  up saw PPP_TAG="c0ffee1"
+compose --env-file .env.docker -f docker-compose.prod.yml ps
+logout ghcr.io
