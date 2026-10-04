@@ -185,9 +185,12 @@ It answers what a bare `sed PPP_TAG && docker compose up -d` does not:
    the releases by git ancestry (which releases that commit contains, asked of
    GitHub's compare API), not by date. When the wizard cannot tell what lies
    in between — `PPP_TAG` is `latest`, the version has no published release,
-   GitHub does not answer — it says so, says the notes were *not* shown, and
-   still asks. A deploy from one SHA build to the next with no release in
-   between shows nothing and asks nothing extra.
+   GitHub does not answer, the commit is on a branch that left the line the
+   releases are on, the notes mention upgrading in a form it cannot parse —
+   it says so, says the notes were *not* shown, and still asks. When releases
+   are crossed and none of them has upgrade notes, it prints one line saying
+   so and does not ask. A deploy from one SHA build to the next with no
+   release in between shows nothing and asks nothing extra.
 4. **Is it intact?** It `cosign verify`s both images against the identity of
    this repo's `release-images` workflow before anything is swapped. If cosign
    is missing it says so and asks, rather than skipping quietly.
@@ -198,12 +201,17 @@ It answers what a bare `sed PPP_TAG && docker compose up -d` does not:
 
 For the wizard to find them, a release's notes must keep a heading that starts
 with "Upgrading" (any level, as in `## Upgrading from v0.1.0`); everything up
-to the next heading of the same level is shown. Only the newest hundred
-releases are read.
+to the next heading of the same or a higher level is shown, cut at 200 lines
+with a pointer to the release. Only the newest hundred releases are read. A
+version older than those is treated as having no published release, so the
+wizard says it cannot tell and asks; a SHA build older than all of them is
+shown the notes of the hundred it can see and not of the ones before.
 
 Answers can be piped in. A "no" stops the wizard with exit 0; stdin ending
 before a question is answered stops it with `aborted (no input).` and exit 1,
-so a script cannot mistake one for the other.
+so a script cannot mistake one for the other. The token prompt is the
+exception: no input there means "no token", not an abort, so
+`./deploy-wizard.sh --status </dev/null` still prints the release list.
 
 The registry token is borrowed and returned: read from a hidden prompt, used
 for the pull, then `docker logout` on exit including on failure. Nothing

@@ -112,17 +112,21 @@ ask() {
 # without. The token was given for the registry; one scoped to packages only,
 # or expired, is refused by the repository API — and must not hide a public
 # repository that would have answered a stranger.
+#
+# `tr -d '\000'` because a shell variable cannot hold a NUL: bash drops it and
+# prints a warning about it, in the middle of the wizard's own output. pipefail
+# keeps curl's exit status through the pipe.
 API_BODY=""; API_CODE=""
 api_get() {
   local url="https://api.github.com/repos/${REPO}/$1" out
   API_BODY=""; API_CODE="000"
   if [ -n "${TOKEN:-}" ] && out="$(curl -fsSL --max-time 30 -w '\n%{http_code}' \
       -H "Authorization: Bearer $TOKEN" \
-      -H "Accept: application/vnd.github+json" "$url" 2>/dev/null)"; then
+      -H "Accept: application/vnd.github+json" "$url" 2>/dev/null | tr -d '\000')"; then
     API_BODY="${out%$'\n'*}"; API_CODE="200"; return 0
   fi
   if out="$(curl -fsSL --max-time 30 -w '\n%{http_code}' \
-      -H "Accept: application/vnd.github+json" "$url" 2>/dev/null)"; then
+      -H "Accept: application/vnd.github+json" "$url" 2>/dev/null | tr -d '\000')"; then
     API_BODY="${out%$'\n'*}"; API_CODE="200"; return 0
   fi
   API_CODE="${out##*$'\n'}"
@@ -142,7 +146,8 @@ VERSION_RE='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
 # edit a release could otherwise send escape sequences — retitle the window,
 # hide a line, rewrite what the upgrade notes appear to say — so control
 # characters are removed before anything is shown: C0 and C1 controls, DEL, and
-# the bidirectional overrides that reorder text on screen. A body keeps its
+# the bidirectional marks and overrides that reorder text on screen, and the
+# Unicode line separators that would break a row in two. A body keeps its
 # newlines and tabs; a title keeps neither, because it is one field on one row.
 #
 # (Double quotes only in here and in the programs that use it, because they sit
@@ -150,11 +155,16 @@ VERSION_RE='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
 # the bar, so the source does not depend on the locale python starts in.)
 PY_GITHUB='
 import json, re, sys
-VERSION = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.]+))?$")
-CONTROLS = "\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069"
+# \Z, not $: $ also matches before a trailing newline, and a tag that ends in
+# one is not a version.
+VERSION = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.]+))?\Z")
+CONTROLS = "\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069"
 
 def clean_body(text):
-    return re.sub("[" + CONTROLS + "]", "", text if isinstance(text, str) else "")
+    # Line endings first: a body saved with bare CRs would otherwise lose them
+    # as control characters and become one long line with no headings in it.
+    text = re.sub("\r\n?", "\n", text if isinstance(text, str) else "")
+    return re.sub("[" + CONTROLS + "]", "", text)
 
 def clean_title(text):
     return re.sub("[\t\n" + CONTROLS + "]", "", text if isinstance(text, str) else "")
@@ -203,7 +213,10 @@ def read_stdin():
     return sys.stdin.buffer.read().decode("utf-8", "replace")
 
 def emit(lines):
-    sys.stdout.buffer.write(("\n".join(lines) + "\n").encode("utf-8"))
+    # "replace": JSON can carry half a surrogate pair, which is a valid string
+    # and not valid UTF-8. One such character in one title must cost a "?", not
+    # the whole menu.
+    sys.stdout.buffer.write(("\n".join(lines) + "\n").encode("utf-8", "replace"))
 '
 
 # ----- args -----------------------------------------------------------------
@@ -350,7 +363,7 @@ if [ -n "$TOKEN" ]; then
   VERSIONS="$(curl -sSL --max-time 20 \
     -H "Authorization: Bearer $TOKEN" \
     -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/user/packages/container/ppp-app/versions?per_page=100" 2>/dev/null || true)"
+    "https://api.github.com/user/packages/container/ppp-app/versions?per_page=100" 2>/dev/null | tr -d '\000' || true)"
   # The release list is wanted here too, for the titles in the menu and the
   # upgrade notes later. Losing it costs those, not the menu.
   if api_get "releases?per_page=100"; then
@@ -364,12 +377,16 @@ else
   SOURCE_LABEL="releases only (no token given)"
   # One request serves as both the menu and the release list.
   api_get "releases?per_page=100" || true
+  LIST_CODE="$API_CODE"
   RELEASES="$API_BODY"
   VERSIONS="$RELEASES"
 fi
 # The newest hundred releases, one page: the list is not paginated. Past a
-# hundred, older ones lose their title and a deploy that reaches back that far
-# is told the wizard could not place it, rather than shown a partial answer.
+# hundred, the older ones do not exist as far as the wizard can see. An old
+# VERSION among them loses its title and, as either end of a deploy, is told it
+# has no published release and asked. An old SHA is not caught: it is placed
+# before the oldest release listed, so it is shown the notes of the hundred
+# that are listed and not of the ones before them.
 
 # Two things this filtering has to get right, both learned the hard way:
 #   - release-images publishes cosign signatures and SBOM attestations to the
@@ -393,7 +410,7 @@ CANDIDATES="$(printf '%s\n\x1e\n%s' "$VERSIONS" "$RELEASES" | python3 -c "$PY_GI
 # A 7-char commit SHA, or a release like v0.1.0 / v1.2.3-rc1. Everything else
 # in this package is machinery: cosign publishes `sha256-<digest>.sig` and the
 # SBOM publishes `.att`, and neither is a runnable image.
-DEPLOYABLE = re.compile(r"^([0-9a-f]{7}|v\d+\.\d+\.\d+[0-9A-Za-z.\-]*)$")
+DEPLOYABLE = re.compile(r"^([0-9a-f]{7}|v\d+\.\d+\.\d+[0-9A-Za-z.\-]*)\Z")
 versions, _, release_list = read_stdin().partition("\x1e")
 try:
     data = json.loads(versions)
@@ -410,7 +427,7 @@ for v in data:
         if v.get("draft"):
             continue
         tag = v["tag_name"]
-        if DEPLOYABLE.match(tag):
+        if isinstance(tag, str) and DEPLOYABLE.match(tag):
             rows.append((v.get("published_at") or v.get("created_at") or "", tag, False))
         continue
     tags = (v.get("metadata") or {}).get("container", {}).get("tags", []) or []
@@ -440,6 +457,15 @@ emit(out)
 ' 2>/dev/null || true)"
 
 if [ -z "$CANDIDATES" ]; then
+  # Without a token the usual reason is not the token. Sixty requests an hour
+  # per address is easy to use up behind a shared one, and sending someone to
+  # check a scope on a token they never gave is the wrong errand.
+  case "${TOKEN:+token}:${LIST_CODE:-}" in
+    :403|:429)
+      echo "${YLW}⚠ could not read the list: GitHub rate limit reached (60 requests an hour without a token).${R}"
+      echo "  ${DIM}Try again within the hour, or give a token at the prompt: requests made with one are counted separately.${R}"
+      exit 1 ;;
+  esac
   echo "${YLW}⚠ could not read the list.${R}"
   echo "  ${DIM}With a token, the most likely cause is that it lacks read:packages or expired."
   echo "  Verify with:  curl -sSI -H \"Authorization: Bearer \$TOKEN\" https://api.github.com/user | grep -i x-oauth-scopes${R}"
@@ -512,8 +538,13 @@ if [ -z "$choice" ]; then
   choice="$DEFAULT"
 fi
 case "$choice" in q|Q) echo "aborted."; exit 0 ;; esac
-[[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$i" ] \
-  || die "invalid selection: $choice"
+# Asked of the rows that were printed, not of the counter: with `-n 2` the loop
+# above stops at i=3, and "3" then passed the range check and died on an unset
+# array element. Nine digits at most, read as decimal, so neither a huge number
+# nor a leading zero reaches the arithmetic.
+[[ "$choice" =~ ^[0-9]{1,9}$ ]] || die "invalid selection: $choice"
+[ -n "${IDX_SHA[$((10#$choice))]:-}" ] || die "invalid selection: $choice"
+choice=$((10#$choice))
 
 TARGET="${IDX_SHA[$choice]}"
 [ "$TARGET" = "$CURRENT" ] && echo "${YLW}note: ${TARGET} is already live — this is a redeploy.${R}"
@@ -534,17 +565,18 @@ TARGET="${IDX_SHA[$choice]}"
 if [[ "$TARGET" =~ $VERSION_RE ]]; then
   missing=""; unknown=""
   for img in $IMAGES; do
-    if out="$(docker manifest inspect "ghcr.io/${REGISTRY_OWNER}/${img}:${TARGET}" 2>&1)"; then
+    if out="$(docker manifest inspect "ghcr.io/${REGISTRY_OWNER}/${img}:${TARGET}" 2>&1 | tr -d '\000')"; then
       continue
     fi
     case "$(printf '%s' "$out" | tr 'A-Z' 'a-z')" in
       *"manifest unknown"*|*"not found"*|*"no such manifest"*)
         missing="${missing}${missing:+, }${img}:${TARGET}" ;;
       *)
-        # The first line only, and without control characters: it is the
-        # registry's text.
-        why="$(printf '%s' "${out%%$'\n'*}" | tr -d '\000-\037\177')"
-        unknown="${unknown}${DIM}could not check whether ${img}:${TARGET} is published (${why:0:160}) — the pull will tell.${R}"$'\n' ;;
+        # The first line only, and cleaned by the same rule as a release
+        # title: it is the registry's text, or a proxy's in front of it.
+        why="$(printf '%s' "$out" | python3 -c "$PY_GITHUB"'
+emit([clean_title(read_stdin().split("\n")[0])[:160]])' 2>/dev/null || true)"
+        unknown="${unknown}${DIM}could not check whether ${img}:${TARGET} is published (${why}) — the pull will tell.${R}"$'\n' ;;
     esac
   done
   if [ -n "$missing" ]; then
@@ -575,7 +607,8 @@ fi
 # The rule that matters most: "could not find out" is never "nothing to
 # read". Every way of not knowing — no release list, a tag that is neither a
 # version nor a SHA, a version GitHub has no release for, a compare call that
-# fails — says so, says the notes were NOT shown, and asks.
+# fails, history that is not one line, notes that mention upgrading in a form
+# the wizard cannot parse — says so, says the notes were NOT shown, and asks.
 PY_NOTES='
 releases = published(read_stdin())
 if releases is None:
@@ -585,41 +618,83 @@ if sys.argv[1] == "list":
     emit(ordered)
     sys.exit(0)
 
-HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
-UPGRADING = re.compile(r"^upgrading\b", re.I)
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*))?$")
+MENTION = re.compile(r"^(?:[\W_]|<[^>]*>)*upgrading", re.I)
+LIMIT = 200
+
+def fenced_lines(lines):
+    # The indices of the lines inside fenced code blocks, fences included, by
+    # the rules markdown itself uses and not by "starts with three backticks":
+    #   - a fence closes only on a line of the SAME character, at least as
+    #     long, with nothing after it. `~~~` inside a backtick block is text.
+    #   - a backtick fence has no backtick later on its line; "```pull``` is
+    #     all you need" is a sentence with inline code.
+    #   - four spaces of indentation make it code, not a fence.
+    #   - a fence that never closes is not a fence. Markdown would run it to
+    #     the end of the document; here that would hide every heading after it,
+    #     so the line is read as text and the search goes on from the next one.
+    # Every one of these, read the simple way, once hid a real Upgrading
+    # section behind a code block that was not there.
+    fenced, dead, i = set(), {}, 0
+    while i < len(lines):
+        m = FENCE.match(lines[i])
+        if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+            char, size = m.group(1)[0], len(m.group(1))
+            # Once a fence of some length found no closing line, no later
+            # fence of that length or longer can: skip the search for those.
+            if size < dead.get(char, 1 << 30):
+                close = re.compile("^ {0,3}" + re.escape(char) + "{" + str(size) + ",}[ \t]*$")
+                end = next((j for j in range(i + 1, len(lines)) if close.match(lines[j])), None)
+                if end is not None:
+                    fenced.update(range(i, end + 1))
+                    i = end + 1
+                    continue
+                dead[char] = size
+        i += 1
+    return fenced
 
 def upgrading(body):
     # Every section whose heading starts with "Upgrading", at any level (the
     # changelog writes it as ###, the hand-written v0.2.0 notes as ##), up to
-    # the next heading of the same or a higher level. Fenced blocks are
-    # tracked so that a `# comment` in a shell example is not taken for a
-    # heading, which would end the section early or start one in the middle
-    # of a code block.
-    out, level, fenced = [], 0, False
-    for line in clean_body(body).split("\n"):
-        if line.lstrip().startswith(("```", "~~~")):
-            fenced = not fenced
-        elif not fenced:
-            m = HEADING.match(line)
-            if m and level and len(m.group(1)) <= level:
+    # the next heading of the same or a higher level. Emphasis, a link bracket
+    # or a warning sign in front of the word do not stop it being that heading.
+    # Lines inside a code block are never headings, so a `# comment` in a shell
+    # example neither ends the section nor starts one.
+    #
+    # Returns None when it found no section but the body does have a line that
+    # begins with the word: a heading written some way this does not parse (an
+    # underlined one, an HTML one). That is "could not read", and the caller
+    # must not turn it into "nothing to read".
+    lines = clean_body(body).split("\n")
+    fenced = fenced_lines(lines)
+    out, level = [], 0
+    for i, line in enumerate(lines):
+        m = None if i in fenced else HEADING.match(line)
+        if m:
+            depth = len(m.group(1))
+            text = re.sub(r"[ \t]+#+$", "", (m.group(2) or "").strip())
+            if level and depth <= level:
                 level = 0
-            if m and not level and UPGRADING.match(m.group(2)):
-                level = len(m.group(1))
+            if not level and re.match(r"upgrading\b", re.sub(r"^[\W_]+", "", text), re.I):
+                level = depth
                 while out and not out[-1]:
                     out.pop()
                 if out:
                     out.append("")
-                out.append(m.group(2).rstrip("# ").strip())
+                out.append(text)
                 continue
         if level:
             out.append(line.rstrip())
     while out and not out[-1]:
         out.pop()
+    if not out and any(MENTION.match(line) for line in lines):
+        return None
     return out
 
 # argv: "notes", then the first and last index into `ordered` of the releases
-# crossed. The first line out is how many of them have notes; the rest is what
-# to show.
+# crossed. The first line out is how many of them have notes, or "?" and the
+# tag of one whose notes could not be read; the rest is what to show.
 lines, with_notes = [], 0
 for tag in ordered[int(sys.argv[2]):int(sys.argv[3]) + 1]:
     release = releases[tag]
@@ -627,7 +702,16 @@ for tag in ordered[int(sys.argv[2]):int(sys.argv[3]) + 1]:
     date = clean_title(release.get("published_at") or release.get("created_at"))[:10]
     lines.append("  " + tag + (" \u2014 " + title if title else "") + ("  (" + date + ")" if date else ""))
     notes = upgrading(release.get("body"))
+    if notes is None:
+        emit(["?" + tag])
+        sys.exit(0)
     with_notes += 1 if notes else 0
+    if len(notes) > LIMIT:
+        # A section can be the size of a changelog. Past a few screens nobody
+        # reads it in a terminal, and the prompt it pushes away is the point.
+        url = clean_title(release.get("html_url"))
+        where = url if url.startswith("https://") else "the release on GitHub"
+        notes = notes[:LIMIT] + ["\u2026 " + str(len(notes) - LIMIT) + " more lines \u2014 see " + where]
     for note in notes or ["(no upgrade notes)"]:
         lines.append(("    \u2502 " + note).rstrip())
     lines.append("")
@@ -657,7 +741,11 @@ base_of() {
   # Binary search. main is linear and every release is a commit on it, so "this
   # commit contains release r" is true up to some release and false after it —
   # two or three questions for a dozen releases instead of a dozen, which
-  # matters at 60 unauthenticated requests an hour. `?per_page=1&page=2` asks
+  # matters at 60 unauthenticated requests an hour. That holds only while
+  # history IS one line. A `diverged` answer says it is not (a hotfix tagged on
+  # a side branch, a build of a branch), and then one answer no longer rules
+  # out half the list: the search once skipped a release that way and asked
+  # nothing. So `diverged` ends it, as "could not tell". `?per_page=1&page=2` asks
   # for the verdict without the megabyte of commits and diffs that comes with
   # it by default; `status` is the same either way.
   lo=0; hi=$((n - 1))
@@ -680,8 +768,9 @@ except Exception:
     case "$status" in
       # The commit is the release, or has it in its history.
       ahead|identical) BASE="$mid"; lo=$((mid + 1)) ;;
-      # The release is newer than the commit, or on a line it never joined.
-      behind|diverged) hi=$((mid - 1)) ;;
+      # The release is newer than the commit.
+      behind) hi=$((mid - 1)) ;;
+      diverged) WHY_NOT="$x is not on the same line of history as ${RLIST[$mid]}"; return 1 ;;
       *) WHY_NOT="GitHub could not place $x relative to ${RLIST[$mid]}"; return 1 ;;
     esac
   done
@@ -710,6 +799,10 @@ if [ "$TARGET" != "$CURRENT" ]; then
         if [ "$crossed" -gt 0 ]; then
           NOTES="$(printf '%s' "$RELEASES" | python3 -c "$PY_GITHUB$PY_NOTES" notes "$first" "$last" 2>/dev/null)" \
             || WHY_NOT="could not read the release notes GitHub returned"
+          case "$NOTES" in
+            \?*) NOTES="${NOTES%%$'\n'*}"
+                 WHY_NOT="${NOTES#\?}'s notes mention upgrading but could not be read reliably" ;;
+          esac
         fi
       fi
     fi
