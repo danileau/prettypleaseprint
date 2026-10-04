@@ -63,6 +63,19 @@ jobs:
       # once renaming a directory out from under references into it.
       - name: Documentation links
         run: npm run check:links
+      # The wizards are shell, and nothing else in this job executes shell.
+      # Each test file runs its script in a sandbox: a temp directory, stub
+      # executables for docker, gh and curl, and a PATH that holds only those
+      # stubs and a short allow-list — so a test cannot reach the runner's real,
+      # authenticated gh or docker even by mistake. A glob rather than a list,
+      # so a new test file is run the day it is added.
+      - name: Wizard tests
+        run: |
+          for t in scripts/tests/*.test.sh; do
+            echo "::group::$t"
+            bash "$t"
+            echo "::endgroup::"
+          done
 
   models:
     runs-on: ubuntu-latest

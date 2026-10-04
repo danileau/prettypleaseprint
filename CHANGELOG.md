@@ -5,7 +5,45 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- **`scripts/release-wizard.sh` — a release, walked end to end.** v0.2.0 was cut
+  by hand from a list of steps, and the tag went onto the wrong commit: the
+  command named `origin/main`, and the local copy of it was one merge behind.
+  The wizard does the steps and stops for a yes before each one that cannot be
+  taken back — prepare the branch, open the pull request, push the tag, publish
+  the release.
+
+  It prepares `release-X.Y.Z` (the changelog section, the version, the example
+  image tags, and an *Upgrading* stub to fill in when a migration was added),
+  runs the full local test, opens the pull request and **waits**. Merging stays
+  the owner's; the script contains no merge. Then it tags the pull request's
+  merge commit **by its SHA**, read from GitHub and never from a branch name,
+  after checking that commit is on `main`, carries the version bump, and passed
+  CI. It waits for the tag's image build to succeed and for every image to
+  exist at the version, and only then publishes the GitHub release — short
+  notes, with the *Upgrading* section kept, because the deploy wizard reads it.
+
+  There is no state file. `--continue X.Y.Z` works out where a release got to
+  from git and GitHub, so an interrupted run resumes from any machine.
+  `--status` and `--dry-run` change nothing.
+
+- **`scripts/full-test.sh` — the full local run, as one command.** The whole
+  stack raised from source on a throwaway data directory and every suite run
+  against it, which until now was a paragraph of instructions and a script that
+  lived in nobody's checkout. It restores `.env`, `.env.backup` and
+  `.env.docker` exactly — after a failure, after Ctrl-C, after Ctrl-C during the
+  teardown — and `--restore` puts them back after a run that was killed
+  outright. It **refuses to start** if a ppp stack exists on the machine, or if
+  the ports are taken, rather than take somebody's instance down; and it will
+  not run the suites, which wipe users and tickets, against anything it did not
+  raise itself.
+
+  Both are tested in sandboxes — a local bare repository standing in for
+  GitHub, stub `gh`, `docker` and `npm`, and a `PATH` that cannot reach the real
+  ones — with 145 cases in CI's `guard` job. The tests were then tested: the
+  scripts were broken thirty-two ways, and each break that went unnoticed got a
+  case that fails on it.
 
 ## v0.2.0
 
