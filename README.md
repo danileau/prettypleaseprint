@@ -220,9 +220,16 @@ That token is optional, is never stored, and is only needed because GitHub
 gates the package *listing* API even for public packages.
 
 `scripts/deploy-wizard.sh` is the way to move between versions: it lists what is
-published, cosign-verifies before swapping, health-checks after, and rolls back
-on its own if the new image does not come good. See
-**[docs/deployment.md](docs/deployment.md)**.
+published, shows the upgrade notes of every release you are about to cross and
+asks whether you have read them, cosign-verifies before swapping, health-checks
+after, and rolls back on its own if the new image does not come good. It is a
+single file you copy onto the host — copy it again when you upgrade, since it
+does not update itself. See **[docs/deployment.md](docs/deployment.md)**.
+
+Releases themselves are cut with `scripts/release-wizard.sh`, from a checkout:
+changelog, version, full local test, pull request, tag, images, GitHub release,
+with a question before each step that cannot be undone. See
+**[Cutting a release](docs/development.md#cutting-a-release)**.
 
 ## Backup and restore
 
@@ -403,10 +410,11 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 | **[Authentication](docs/authentication.md)** | invite-only registration, passwords, passkeys, resets, and why each decision went the way it did |
 | **[Architecture](docs/architecture.md)** | the viewer, upload validation, decisions taken against the design handoff, and the file layout |
 | **[Deployment](docs/deployment.md)** | containers, reverse proxies, the deploy wizard, TLS, first run |
+| **[Materials and colours](docs/material-catalog.md)** | the owner-managed catalogue behind the request form |
 | **[Feature requests](docs/feature-requests.md)** | the `/frr` track — file a request, triage it exactly like the print backlog |
 | **[The API](docs/api.md)** | the JSON surface, bearer tokens, the OpenAPI document and the console at `/docs` |
 | **[Open in PrusaSlicer](docs/prusaslicer.md)** | the one-click "send to the slicer" bridge, the helper, and why the deep link cannot be used |
-| **[Development](docs/development.md)** | stack, local setup, the verification suites, CI |
+| **[Development](docs/development.md)** | stack, local setup, the verification suites, the full local run, CI, cutting a release |
 | **[Security audit](docs/security-audit.md)** | the OWASP Top 10 assessment, findings, and residual risk accepted |
 | **[Security policy](SECURITY.md)** | how to report a vulnerability |
 | **[Contributing](CONTRIBUTING.md)** | the ten suites are the contract; what a good change looks like |

@@ -16,10 +16,12 @@ import { FRESH_AUTH_SECONDS } from "@/lib/auth-rules";
  * So those ask for the passkey or the password again, which is the one control
  * on the list a thief cannot satisfy with a copied cookie.
  *
- * **Freshness is the age of the session itself.** Better Auth 1.7.1 has no
- * "prove it is you" primitive — `/passkey/verify-authentication` and
+ * **Freshness is the age of the session itself.** Better Auth has no way to
+ * mark the session you hold as re-proven (true at 1.7.1 when this was built,
+ * and still at 1.7.7) — `/passkey/verify-authentication` and
  * `/sign-in/username` both mint a *new* session rather than annotating the one
- * you hold — so re-authenticating means signing in again, and a session that
+ * you hold, and the server-side `verifyPassword` only answers yes or no, with
+ * no passkey counterpart — so re-authenticating means signing in again, and a session that
  * was created moments ago is exactly the evidence we are looking for. It also
  * means a normal sign-in is fresh for its first five minutes, which is right:
  * somebody who just typed their password should not be asked for it twice.

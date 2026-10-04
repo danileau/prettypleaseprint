@@ -9,7 +9,9 @@
      say what it would have caught. -->
 
 - [ ] `npm run typecheck`
-- [ ] the suites this touches (`verify:auth` / `verify:upload` / `verify:queue` / `verify:catalog` / `verify:models` / `verify:passkey` / `probe:security`)
+- [ ] the suites this touches (`verify:models` / `verify:auth` / `verify:upload` / `verify:queue` / `verify:frr` / `verify:benefits` / `verify:catalog` / `verify:api` / `verify:passkey` / `probe:security`) — or all of it at once with `scripts/full-test.sh`
+- [ ] `for t in scripts/tests/*.test.sh; do bash "$t"; done` if a script under `scripts/*.sh` changed
+- [ ] if there is a migration: the previous image still works against the migrated database
 - [ ] `npm run check:links` if any documentation moved
 
 ## Anything a reviewer should push back on

@@ -50,8 +50,11 @@ npm run probe:security        # 122 OWASP-mapped security probes
 server-action forms the way a browser with JavaScript disabled does — and reads
 delivered mail out of Mailpit. Nothing is stubbed. It checks that:
 
-1. An uninvited address gets an identical response, a link, and **no account**.
-2. The admin can invite through the UI and the mail arrives.
+1. An uninvited address is refused, with **no account** and a row in the
+   audit trail.
+2. The admin can invite through the UI and the mail arrives — and posting the
+   invited address at the sign-up endpoint **without the link** is refused with
+   the same answer a stranger gets.
 3. The invitee registers through the link, lands signed in, and the account is
    stamped from the invite (role, initials, inviter) rather than the request.
 4. The link is single-use.
@@ -61,10 +64,10 @@ delivered mail out of Mailpit. Nothing is stubbed. It checks that:
 
 It is destructive — point it at a development database only.
 
-**Not covered**: the WebAuthn ceremonies themselves, which need a real
-authenticator. The endpoints are live and return correct options (right rpID,
-rpName and `userVerification`), but registering and signing in with a passkey
-has only been exercised at the protocol boundary, not with a device.
+The WebAuthn ceremonies are `verify:passkey`'s: a headless Chrome with a
+virtual authenticator attached over the DevTools protocol registers a passkey
+and signs in with it, so the browser half is real. **Not covered** is a
+physical authenticator — a phone, a security key, a platform's own prompt.
 
 ## Continuous integration
 
@@ -73,7 +76,7 @@ as four gates that can be required by name in branch protection:
 
 | Gate | What it does |
 | --- | --- |
-| `guard` | typecheck, the secret scanner over every tracked file, and the markdown link check |
+| `guard` | typecheck, the secret scanner over every tracked file, the markdown link check, and the wizards' own tests (`scripts/tests/*.test.sh`, each in a sandbox with stubbed `docker`, `gh` and `curl`) |
 | `models` | the upload validator against hostile fixtures — no server needed |
 | `verify` | raises the real compose stack and runs all nine integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
 | `trivy` | filesystem scan for vulnerabilities, secrets and misconfiguration; HIGH/CRITICAL fail |
@@ -99,14 +102,19 @@ Two more workflows:
 
 ## The cheap gates
 
-Three checks that need no server and run in seconds, all of them in CI's
-`guard` job:
+Checks that need no server, all of them in CI's `guard` job:
 
 ```bash
 npm run typecheck                  # tsc --noEmit
 npm run check:secrets -- --all     # credential shapes across every tracked file
 npm run check:links                # internal markdown links and heading anchors
+for t in scripts/tests/*.test.sh; do bash "$t"; done   # the three shell tools, sandboxed
 ```
+
+The last line is the tests for `deploy-wizard.sh`, `release-wizard.sh` and
+`full-test.sh`. Each runs its script in a temp directory against stub
+executables and a local bare repository, with a `PATH` that holds only those
+stubs and an allow-list, so it cannot reach your real `gh` or `docker`.
 
 `check:links` exists because documentation links rot silently — no test, build
 or typecheck notices — and this repo has proved it twice: once when the
