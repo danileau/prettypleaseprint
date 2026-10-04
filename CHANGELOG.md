@@ -5,6 +5,49 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.2.0
+
+2026-10-04. Six weeks of the app being used: what people asked for, what broke,
+and one piece of infrastructure removed. It is a bigger step than the number
+suggests, and it is **not** a drop-in upgrade from v0.1.0 — read the next
+section before changing `PPP_TAG`.
+
+### Upgrading from v0.1.0
+
+- **The object store is gone, and the models have to be moved first.** v0.1.0
+  kept model files in MinIO; this release keeps them as plain files in
+  `$DATA_ROOT/uploads` and has no storage service at all. Starting v0.2.0
+  against a v0.1.0 data directory gives you every ticket and no geometry. Stop
+  the stack, run the one-shot `ppp-storage-migrate` container, read its
+  verification, then deploy — the exact commands, and why copying MinIO's
+  directory by hand loses most of the files, are in
+  [Moving the models onto the filesystem](docs/deployment.md#moving-the-models-onto-the-filesystem).
+  Take a snapshot first.
+- **Eleven database migrations run by themselves**, in the `migrate`
+  container, as before.
+- **There is no rolling back to v0.1.0 afterwards, except from a snapshot.**
+  That image expects the object store and the old order of the status flow,
+  and nothing here was tested against it. The deploy wizard's automatic
+  rollback will still try if the health check fails, so the snapshot from the
+  step above is the real way back. (Each of the last three migrations *was*
+  tested against the image immediately before it, which is what matters if you
+  follow `main` by commit. One caveat from that is recorded in the
+  `account_issuer_optional` migration.)
+- **Sessions are twenty idle minutes**, not a renewing month, and handing out
+  access asks for the password or passkey again. People will notice.
+- **A security fix you should deploy for.** An invited address could be
+  registered without its invite link (finding 10 in the
+  [security audit](docs/security-audit.md)). If an invitee ever found their
+  link already used, look at that account.
+- **Behind Cloudflare:** Rocket Loader must be off or nobody can sign in, and
+  the edge caps uploads at 100 MB whatever the app allows.
+- **Platform:** the images are `linux/amd64`. v0.1.0's documentation offered a
+  Raspberry Pi 5 that never worked.
+- **Environment:** the `S3_*` variables are no longer read and can be removed
+  from `.env.docker`. Nothing new is required.
+
 ### Added
 
 - **A print request has a priority.** Feature requests have carried one since

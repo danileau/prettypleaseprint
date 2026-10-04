@@ -41,7 +41,7 @@ npm run verify:benefits       # the owner-managed benefits (tip) catalogue
 npm run verify:catalog        # the owner-managed material/colour catalogue
 npm run verify:api            # the JSON API, the OpenAPI document and the console
 npm run verify:passkey        # WebAuthn ceremonies in a real browser
-npm run probe:security        # 120 OWASP-mapped security probes
+npm run probe:security        # 122 OWASP-mapped security probes
 ```
 
 ## Verifying it
@@ -115,6 +115,36 @@ once when a directory was renamed out from under references pointing into it.
 It resolves anchors with GitHub's own slug rules rather than an approximation,
 and deliberately does not fetch external URLs: a gate that depends on somebody
 else's uptime fails for reasons unrelated to the change and gets ignored.
+
+## Cutting a release
+
+A release is a name for a commit that is already on `main`. Every merge
+publishes signed images under the commit SHA; a `v*` tag republishes the same
+commit under a version a person can say out loud, and deliberately does not
+move `latest`.
+
+1. **A release pull request.** In `CHANGELOG.md`, the `## Unreleased` section
+   becomes `## vX.Y.Z` with the date and — if anything about deploying it
+   differs from the last release — an *Upgrading from* section, and a fresh
+   empty `## Unreleased` goes above it. `package.json` and the lockfile take the
+   version (`npm version X.Y.Z --no-git-tag-version`). The image tag used as an
+   example in the README and the deployment guide moves to the new version.
+2. **Merge it** like any other change, with the full local run.
+3. **Tag that merge commit and publish the release:**
+
+   ```bash
+   git tag -a vX.Y.Z -m "vX.Y.Z" <merge commit> && git push origin vX.Y.Z
+   gh release create vX.Y.Z --verify-tag --title "vX.Y.Z — …" --notes-file notes.md
+   ```
+
+   The tag push runs `release-images.yml`, which publishes `ppp-app`,
+   `ppp-migrate` and `ppp-storage-migrate` as `:vX.Y.Z`. Wait for it before
+   telling anyone to pin `PPP_TAG` to the version — the tag exists a few
+   minutes before the images do.
+
+The version is `0.y.z` while a release can still need hands on the host, as
+v0.2.0's storage migration did. A minor bump is "read the upgrade notes"; a
+patch bump is "change `PPP_TAG`".
 
 ## Traffic
 
