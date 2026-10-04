@@ -133,7 +133,7 @@ Verify by hand if you want to see it work:
 ./bin/cosign verify \
   --certificate-identity-regexp '^https://github\.com/danileau/(prettypleaseprint|ppp)/\.github/workflows/release-images\.yml@refs/(heads/main|tags/v[0-9][0-9A-Za-z.\-]*)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/danileau/ppp-app:v0.2.0
+  ghcr.io/danileau/ppp-app:v0.3.0
 ```
 
 Two things that alternation is carrying, both found by verifying a real

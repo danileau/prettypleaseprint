@@ -5,6 +5,12 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.3.0
+
+2026-10-04.
+
 ### Added
 
 - **Prints by person.** The owner's views answered what is waiting, where
