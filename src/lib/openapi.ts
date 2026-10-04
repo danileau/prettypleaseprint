@@ -433,6 +433,17 @@ export async function buildOpenApiDocument() {
               schema: { type: "boolean" },
             },
             {
+              name: "uploader",
+              in: "query",
+              description:
+                "Only tickets uploaded by these people, by user id (the `uploader.id` " +
+                "of a ticket). Repeat the parameter, or separate with commas. For the " +
+                "printer owner this is how to list what particular people have sent. " +
+                "For a client it can only return their own tickets or nothing.",
+              schema: { type: "array", items: { type: "string" }, maxItems: 50 },
+              explode: true,
+            },
+            {
               name: "limit",
               in: "query",
               schema: {

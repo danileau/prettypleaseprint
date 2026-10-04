@@ -57,7 +57,7 @@ no header that names a user.
 | | | |
 | --- | --- | --- |
 | `GET` | `/api/health` | Can the app serve? The only endpoint with no session. |
-| `GET` | `/api/stories` | Your tickets. The printer owner's is everyone's. |
+| `GET` | `/api/stories` | Your tickets. The printer owner's is everyone's, and `?uploader=<id>,<id>` narrows it to particular people. |
 | `GET` | `/api/stories/{id}` | One ticket. |
 | `DELETE` | `/api/stories/{id}` | Withdraw your own request. |
 | `POST` | `/api/stories/{id}/advance` | Move it one step along. *Printer owner.* |

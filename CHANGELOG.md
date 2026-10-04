@@ -7,6 +7,19 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Added
 
+- **Prints by person.** The owner's views answered what is waiting, where
+  everything is and what has finished, and none answered "what has Ayla sent
+  me". `/admin/prints` lists everybody who can upload, with a count each; pick
+  one person or several and it shows everything they have uploaded, in any
+  state, newest first. Each person is a link that adds or removes themselves,
+  so a selection can be bookmarked, and every member on the guest list now
+  links straight to theirs — the thing to look at before resetting or
+  suspending somebody.
+
+  Over the API it is `GET /api/stories?uploader=<id>,<id>`. Like every filter
+  there it can only narrow: a client naming a colleague gets nothing, and the
+  roster with its counts is refused to anyone but the owner.
+
 - **`scripts/release-wizard.sh` — a release, walked end to end.** v0.2.0 was cut
   by hand from a list of steps, and the tag went onto the wrong commit: the
   command named `origin/main`, and the local copy of it was one merge behind.

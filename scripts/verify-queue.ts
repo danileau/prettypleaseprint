@@ -232,6 +232,53 @@ async function main() {
   await db.story.deleteMany({ where: { id: { in: [routine.id, rush.id, someday.id] } } });
 
   // ------------------------------------------------------------------
+  section("prints by person — the owner picks people and sees what they sent");
+  const bea = await db.user.create({
+    data: { email: "bea@office.example", name: "Bea Quist", initials: "BQ", role: "client",
+            emailVerified: true, invitedById: admin.id },
+  });
+  const aylaPart = await makeStory(ayla.id, "Ayla's cable clip");
+  const beaPart = await makeStory(bea.id, "Bea's phone stand", "Done");
+  const beaOther = await makeStory(bea.id, "Bea's declined thing", "Declined");
+
+  const hidden = await client.go(`${APP}/admin/prints`);
+  check("a client gets 404 for the page", hidden.status === 404, `status ${hidden.status}`);
+  check("and for a selection naming a colleague",
+        (await client.go(`${APP}/admin/prints?who=${bea.id}`)).status === 404);
+
+  const nobody = rendered(await (await ruben.go(`${APP}/admin/prints`)).text());
+  check("with nobody picked it lists the people, each with their count, and no tickets",
+        nobody.includes("Bea Quist") && nobody.includes(ayla.name) &&
+        nobody.includes("Nobody picked yet") && !nobody.includes("Bea's phone stand"));
+
+  const justBea = rendered(await (await ruben.go(`${APP}/admin/prints?who=${bea.id}`)).text());
+  check("picking one person shows everything they uploaded, in any state",
+        justBea.includes("Bea's phone stand") && justBea.includes("Bea's declined thing") &&
+        justBea.includes("2 tickets from Bea Quist"));
+  check("and nobody else's", !justBea.includes("Ayla's cable clip"));
+
+  const both = rendered(await (await ruben.go(`${APP}/admin/prints?who=${bea.id}&who=${ayla.id}`)).text());
+  check("picking several shows all of theirs",
+        both.includes("Bea's phone stand") && both.includes("Ayla's cable clip"));
+  check("a picked person's link takes them back out",
+        both.includes(`href="/admin/prints?who=${ayla.id}"`) || both.includes(`href="/admin/prints?who=${bea.id}"`));
+
+  const junk = rendered(await (await ruben.go(`${APP}/admin/prints?who=nobody-real&who=${bea.id}`)).text());
+  // Asserted on the links the page draws, not on the whole document: Next
+  // copies the raw query string into its own payload, so the junk id is in the
+  // HTML either way and "it appears nowhere" would fail for a correct page.
+  check("an id that names nobody is dropped — it is in none of the links the page builds",
+        junk.includes("Bea's phone stand") && !/href="[^"]*nobody-real/.test(junk) &&
+        junk.includes("2 tickets from Bea Quist"));
+
+  const guestRows = await (await ruben.go(`${APP}/admin/invites`)).text();
+  check("the guest list links each member to their prints",
+        guestRows.includes(`/admin/prints?who=${bea.id}`));
+
+  await db.story.deleteMany({ where: { id: { in: [aylaPart.id, beaPart.id, beaOther.id] } } });
+  await db.user.delete({ where: { id: bea.id } });
+
+  // ------------------------------------------------------------------
   section("the flow only moves forward, one step at a time");
   for (const expected of ["Printing", "Delivery", "Done"]) {
     page = await (await ruben.go(`${APP}/queue`)).text();
