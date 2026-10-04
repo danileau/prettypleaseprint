@@ -33,9 +33,11 @@ There is no bug bounty; there is gratitude and an acknowledgement.
 
 ## Supported versions
 
-The `main` branch is the only supported version. Deployments pin a commit SHA
-(`PPP_TAG`), so "upgrade" means moving that pin forward — see
-[docs/deployment.md](docs/deployment.md).
+The latest release and the `main` branch are supported; a fix lands on `main`
+and goes out in the next release. There are no maintenance branches for older
+releases. Deployments pin `PPP_TAG` to a release or a commit SHA, so "upgrade"
+means moving that pin forward — see [docs/deployment.md](docs/deployment.md).
+The daily scan covers `main` and the images published from it.
 
 ## Scope
 

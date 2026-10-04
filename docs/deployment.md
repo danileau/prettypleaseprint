@@ -157,6 +157,11 @@ the NAS is a consumer of images and should stay one.
 ./deploy-wizard.sh --status   # read-only: what is live, and what is newer
 ```
 
+The wizard is not part of any image and does not update itself. The copy on
+the host is whatever you put there, so take the new one when you upgrade:
+`https://raw.githubusercontent.com/danileau/prettypleaseprint/<tag>/scripts/deploy-wizard.sh`.
+A copy from before v0.3.0 still deploys, but shows no upgrade notes.
+
 It answers what a bare `sed PPP_TAG && docker compose up -d` does not:
 
 1. **Which image?** It lists what can be deployed, newest first, with dates and

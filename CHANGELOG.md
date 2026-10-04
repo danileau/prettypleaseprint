@@ -5,7 +5,22 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- **The documentation caught up with v0.3.0.** A sweep of every guide against
+  the code as released. The architecture guide's file layout had drifted
+  furthest — half of `src/lib` sat under an `src/app/` heading and a dozen
+  files were missing — and is rewritten from the tree. The development guide
+  said passkeys were "not covered" by any suite, which stopped being true when
+  `verify:passkey` arrived; it now says what is and is not (a real browser
+  with a virtual authenticator is; a physical device is not), lists the sign-up
+  check that came with the invite-link fix, and counts the wizard tests among
+  the cheap gates. `SECURITY.md` said `main` was the only supported version,
+  from before there were releases. The README mentions the release wizard and
+  that the deploy wizard reads upgrade notes, and the deployment guide says the
+  thing that is easy to miss: the wizard on the host is a copy, and has to be
+  copied again to get a newer one. The pull-request template lists all ten
+  suites, the wizard tests and the rollback check for a migration.
 
 ## v0.3.0
 

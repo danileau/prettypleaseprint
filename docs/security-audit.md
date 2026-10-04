@@ -426,9 +426,11 @@ offers and grant nobody anything.
 Two implementation notes, both of which look odd on purpose:
 
 - **Freshness is the age of the session itself**, not a separate marker. Better
-  Auth 1.7.1 has no "prove it is you" primitive: `/passkey/verify-authentication`
-  and `/sign-in/username` both mint a *new* session rather than annotating the
-  one you hold. So re-authenticating means signing in again, and a session
+  Auth has no way to mark the session you hold as re-proven (true at 1.7.1 when
+  this was built, and still at 1.7.7): `/passkey/verify-authentication` and
+  `/sign-in/username` both mint a *new* session rather than annotating the one
+  you hold. A server-side `verifyPassword` exists, but it only answers yes or
+  no, has no passkey counterpart, and leaves nothing on the session. So re-authenticating means signing in again, and a session
   created moments ago is the evidence. A normal sign-in is therefore fresh for
   its first five minutes, which is correct — somebody who just typed their
   password should not be asked for it twice.

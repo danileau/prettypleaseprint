@@ -381,63 +381,91 @@ side:
 ```
 prisma/
   schema.prisma          auth tables (Better Auth's shapes) + domain models
+  migrations/            one directory per change; each must leave the previous image working
   seed.ts                bootstraps the single admin, prints its setup link
   reset-token.ts         set-password token format, shared with the app
 src/lib/
   auth.ts                Better Auth config — the invite gate lives here
   auth-client.ts         browser client (username, passkey, admin)
   auth-rules.ts          username and password rules, shared with the forms
+  authz.ts               requireUser/requireAdmin, notify, the printer owner
+  scope.ts               pure authorisation rules: scopes, the two status flows
+  reauth.ts              "sign in again" before handing out access
+  invites.ts             invite lifecycle, and the claim an account is opened under
   password-reset.ts      minting, reading and restoring set-password links
-  authz.ts               requireUser/requireAdmin/storyScope + status flow
-  invites.ts             invite lifecycle: mint, resend, revoke, consume
-  email.ts               Resend → SMTP → console, plus templates
   tokens.ts              CSPRNG tokens, digests, initials
-src/app/
-  signin/                passkey button over a username/password form
-  invite/[token]/        the registration page and its server action
-  set-password/          where a reset link lands; sets no session
-  welcome/               passkey enrolment after registration
-  admin/invites/         the guest list (admin only)
-  scope.ts               pure authorisation predicates (no server-only)
-  csp.ts                 Content-Security-Policy builder + nonce
+  email.ts               Resend → SMTP → nothing, plus the templates
   audit.ts               the append-only trail
+  dashboard.ts           the three panels above the audit log
+  stories.ts             every operation on a print ticket — the rules, once
+  features.ts            every operation on a feature request — the 'frr' track
+  benefits.ts            the owner-managed benefits (tip) catalogue
+  catalog.ts             request schemas, priorities and catalogue types, shared with the browser
+  catalog-data.ts        live material/colour reads and the authoritative lookup
   models.ts              upload validation + mesh measurement
+  upload-limits.ts       the three size limits, in one place
   storage.ts             model files on disk: atomic writes, generated keys
   storage-layout.ts      file and directory modes, shared with the migration
-  catalog.ts             shared request schemas and catalogue wire types
-  catalog-data.ts        live material/colour reads and authoritative lookup
-  stories.ts             every operation on a ticket — the rules, once
+  slicer-token.ts        the short-lived credential in an "Open in PrusaSlicer" link
   notifications.ts       the Activity feed, scoped by recipient
   api.ts                 the JSON boundary: 401/403, Origin, wire format
   openapi.ts             the OpenAPI 3.1 document, app half + Better Auth half
-  features.ts            every operation on a feature request — the 'frr' track
-  benefits.ts            the owner-managed benefits (tip) catalogue
+  csp.ts                 Content-Security-Policy builder + nonce
+  safe-redirect.ts       redirect targets, decided by a URL parser
+  client-ip.ts           whose address the audit trail believes
+  db.ts, runtime.ts      the Prisma client; build-phase detection
 src/app/
-  board/                 the kanban backlog, scoped per role
-  upload/                dropzone, wish form, XHR progress
-  story/[id]/            story detail (read half)
-  api/upload/            validation, storage, story creation
-  api/stories/           the tickets, the flow, the conversation
-  api/notifications/     the Activity feed
-  api/openapi.json/      the document
-  docs/                  the Swagger console (a route, not a page)
+  signin/  reauth/       sign-in; the re-authentication prompt
+  invite/[token]/        the registration page and its server action
+  set-password/          where a reset link lands; sets no session
+  welcome/               passkey enrolment after registration
+  board/                 the rail: tickets still moving, scoped per role
+  queue/                 the printer owner's queue, urgent first
+  upload/                the request form: dropzone, wish, XHR progress
+  story/[id]/            a ticket: viewer, facts, priority, conversation
+  story/[id]/again/      the request form again, filled in from an old ticket
+  history/               finished prints, filterable, with "Print again"
+  me/                    your own tickets and the profile card
   frr/                   the feature-request track: board, new, queue, [id]
-  history/               finished prints, filterable, with re-queue
+  docs/                  the Swagger console (a route, not a page)
+  actions/               server actions — thin adapters over src/lib
+src/app/admin/           the printer owner's pages; 404 for anyone else
+  invites/               the guest list: invite, reset, suspend
+  prints/                prints by person
+  catalog/               materials and colours on the shelf
+  benefits/              the benefits catalogue
+  audit/                 the dashboard and the log
+src/app/api/
+  auth/[...all]/         every Better Auth endpoint
+  upload/                validation, storage, ticket creation
+  stories/               list, read, withdraw
+  stories/[id]/…         advance, decline, flag, comments, priority, requeue
+  catalog/               what can be asked for right now
+  models/[id]/           the model's bytes, scoped like the ticket
+  notifications/         the Activity feed
+  openapi.json/          the document
+  health/                the only endpoint with no session
+src/components/          shared pieces: cards, chips, the viewer, the pickers
 scripts/
-  deploy-wizard.sh       pick an image, verify it, deploy, auto-rollback
-  vendor-swagger.ts      copies Swagger UI into public/docs at build time
+  deploy-wizard.sh       on the host: pick an image, read the upgrade notes, verify, deploy, roll back
+  release-wizard.sh      in a checkout: a release from the changelog to the published images
+  full-test.sh           the whole local run: gates, a fresh stack, every suite
+  tests/                 the three shell scripts above, tested in sandboxes
   verify-models.ts       validator vs. hostile fixtures
   verify-auth.ts         registration, sign-in and password reset
-  verify-upload.ts       upload -> board -> story
-  verify-passkey.ts      WebAuthn in a real browser
-  verify-api.ts          the JSON API, the document and the console
+  verify-upload.ts       upload -> board -> ticket, and printing again
+  verify-queue.ts        the queue, the flow, priority, prints by person
   verify-frr.ts          the feature-request track, filed and triaged
   verify-benefits.ts     the owner-managed benefits catalogue
   verify-catalog.ts      the owner-managed material/colour catalogue
+  verify-api.ts          the JSON API, the document and the console
+  verify-passkey.ts      WebAuthn in a real browser
   security-probe.ts      OWASP-mapped security probes
-src/app/admin/
-  invites/               the guest list
-  benefits/              the benefits catalogue (admin only)
-  catalog/               the material/colour catalogue (admin only)
-  audit/                 the audit log, admin only
+  check-secrets.ts       credential shapes in tracked files; also the pre-commit hook
+  check-links.ts         internal markdown links and anchors
+  use-container-env.ts   points the host-side suites at the running stack
+  vendor-swagger.ts      copies Swagger UI into public/docs at build time
+  export-storage.ts      the one-shot copy of models out of the old object store
+  install-slicer-handler.sh, prusa-open.sh   the "Open in PrusaSlicer" helper
+  screenshot.ts          the main screens to PNG
 ```
