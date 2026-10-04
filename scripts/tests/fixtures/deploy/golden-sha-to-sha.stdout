@@ -1,0 +1,36 @@
+ppp deploy wizard  · <SANDBOX>/deploy
+────────────────────────────────────────────────────────────────
+Currently deployed: abc1234
+Compose files:      -f docker-compose.prod.yml  (from PPP_COMPOSE_FILES)
+Live health:        healthy (200)  https://print.example.test/api/health
+Containers:         ppp-app ok, ppp-db ok
+────────────────────────────────────────────────────────────────
+ghcr.io token for the full image list, or press enter for releases only: 
+→ asking ghcr.io what is published…
+
+Deployable — every published image, newest first:
+
+   #   tag        published          moving   state
+ » 1   c0ffee1    2026-12-03 09:00   latest   -
+   2   beefed2    2026-12-02 09:00            -
+   3   abc1234    2026-12-01 09:00            LIVE
+
+» = recommended (newest published image, not yet live)
+────────────────────────────────────────────────────────────────
+Choose an action:
+   <number>  deploy that image
+   <enter>   deploy the recommended image (c0ffee1)
+   q         quit
+> 
+Deploy c0ffee1 (replacing abc1234)? [y/N] → verifying signatures with <SANDBOX>/stub/cosign…
+  ✓ ppp-app:c0ffee1 signed by release-images on danileau/prettypleaseprint
+  ✓ ppp-migrate:c0ffee1 signed by release-images on danileau/prettypleaseprint
+→ authenticating to ghcr.io…
+→ pulling c0ffee1…
+stub: pulled
+→ starting…
+stub: started
+→ waiting for health (polling https://print.example.test/api/health, up to 0 min)…
+  ✓ https://print.example.test/api/health → 200 (stable)
+✓ c0ffee1 is live and healthy.
+stub: ppp-app running
