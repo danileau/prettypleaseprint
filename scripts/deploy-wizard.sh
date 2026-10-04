@@ -12,12 +12,29 @@
 #   1. WHICH image?   → lists what is actually published to ghcr.io, newest
 #      first, with publish dates and the live one marked, showing a release
 #      version where one exists and the commit SHA otherwise. You pick from a
-#      menu instead of copying a tag out of a CI log.
-#   2. IS IT INTACT?  → cosign-verifies the image against the identity of the
+#      menu instead of copying a tag out of a CI log. A version that is a
+#      GitHub release carries its title, so "which one was that?" is answered
+#      in the menu.
+#   2. IS IT PUBLISHED YET? → a version tag exists a few minutes before its
+#      images do. A version is refused until every image exists at that tag,
+#      instead of failing halfway through the pull.
+#   3. WHAT DOES UPGRADING NEED? → shows the "Upgrading" notes of every
+#      release between what is running and what was chosen, and asks. They
+#      come from the GitHub release bodies because there is no checkout here
+#      to read a changelog from. A SHA build is placed among the releases by
+#      git ancestry (GitHub's compare API), not by date. When the wizard
+#      cannot tell what lies in between it says so and still asks — it never
+#      treats "could not find out" as "nothing to read".
+#   4. IS IT INTACT?  → cosign-verifies the image against the identity of the
 #      release-images workflow on this repo before anything is swapped. If
 #      cosign is absent it says so loudly rather than quietly skipping.
-#   3. DID IT WORK?   → polls the public health URL after the swap, and rolls
+#   5. DID IT WORK?   → polls the public health URL after the swap, and rolls
 #      back to the previous tag automatically if it does not come good.
+#
+# 2 and 3 only read: one releases request, a handful of compare requests for a
+# SHA, one `docker manifest inspect` per image. Deploying from one SHA build to
+# a newer one with no release in between prints and asks exactly what it did
+# before they existed.
 #
 # The images are public, so no registry credential is needed to pull one. A
 # token is optional and buys only a longer menu: GitHub gates the package
@@ -68,13 +85,134 @@ hr()  { printf '%s\n' "${DIM}─────────────────
 
 compose() { ( cd "$PROJECT_DIR" && docker compose --env-file .env.docker $COMPOSE_FILES "$@" ); }
 
+# ----- prompts --------------------------------------------------------------
+# Every y/N goes through here. A bare `read` under `set -e` exits silently when
+# stdin ends — a wizard that stops mid-question without a word, with whoever
+# piped the answers left guessing how far it got. So the two ways of not saying
+# yes are told apart: an answer that is not yes is a decision (exit 0), and no
+# answer at all is a failure (exit 1). `|| [ -n "$ans" ]` keeps a last line
+# that has no newline after it.
+no_input() { echo; echo "${RED}aborted (no input).${R}" >&2; exit 1; }
+ask() {
+  local ans=""
+  printf '%s' "$1"
+  read -r ans || [ -n "$ans" ] || no_input
+  case "$ans" in y|Y|yes|YES) return 0 ;; esac
+  echo "aborted."; exit 0
+}
+
+# ----- GitHub's public API ---------------------------------------------------
+# api_get <path> fetches https://api.github.com/repos/$REPO/<path>, leaving the
+# body in API_BODY and the HTTP status in API_CODE; it returns 1 on anything
+# but a 200. Globals rather than stdout, because a caller needs the status as
+# well: a 403 is the rate limit, and that deserves a different sentence from
+# "not found".
+#
+# With a token it asks with the token first and, if that fails, once more
+# without. The token was given for the registry; one scoped to packages only,
+# or expired, is refused by the repository API — and must not hide a public
+# repository that would have answered a stranger.
+API_BODY=""; API_CODE=""
+api_get() {
+  local url="https://api.github.com/repos/${REPO}/$1" out
+  API_BODY=""; API_CODE="000"
+  if [ -n "${TOKEN:-}" ] && out="$(curl -fsSL --max-time 30 -w '\n%{http_code}' \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Accept: application/vnd.github+json" "$url" 2>/dev/null)"; then
+    API_BODY="${out%$'\n'*}"; API_CODE="200"; return 0
+  fi
+  if out="$(curl -fsSL --max-time 30 -w '\n%{http_code}' \
+      -H "Accept: application/vnd.github+json" "$url" 2>/dev/null)"; then
+    API_BODY="${out%$'\n'*}"; API_CODE="200"; return 0
+  fi
+  API_CODE="${out##*$'\n'}"
+  return 1
+}
+
+# A version, as opposed to a SHA build or a moving tag: v1.2.3 or v1.2.3-rc1.
+# Narrower than what the menu lists (which admits `v1.2.3abc`), because the two
+# steps that use it — "is it published" and "what lies in between" — reason
+# about order, and only this shape has one.
+VERSION_RE='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+
+# Shared by the two python programs below, which is why it is a variable: the
+# rules for text that came from GitHub must not exist in two copies.
+#
+# A release title or body is remote input printed to a terminal. Anyone who can
+# edit a release could otherwise send escape sequences — retitle the window,
+# hide a line, rewrite what the upgrade notes appear to say — so control
+# characters are removed before anything is shown: C0 and C1 controls, DEL, and
+# the bidirectional overrides that reorder text on screen. A body keeps its
+# newlines and tabs; a title keeps neither, because it is one field on one row.
+#
+# (Double quotes only in here and in the programs that use it, because they sit
+# inside shell single quotes; and ASCII only, with \u escapes for the dash and
+# the bar, so the source does not depend on the locale python starts in.)
+PY_GITHUB='
+import json, re, sys
+VERSION = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.]+))?$")
+CONTROLS = "\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069"
+
+def clean_body(text):
+    return re.sub("[" + CONTROLS + "]", "", text if isinstance(text, str) else "")
+
+def clean_title(text):
+    return re.sub("[\t\n" + CONTROLS + "]", "", text if isinstance(text, str) else "")
+
+def title_of(tag, release, limit):
+    # A release is titled "v0.2.0", or the tag, a dash and some words. The tag
+    # is already in its own column, so only the words are the title; a title
+    # that is only the tag is none.
+    name = clean_title(release.get("name"))
+    if name.startswith(tag):
+        name = name[len(tag):]
+        for sep in (" \u2014 ", " - ", ": "):
+            if name.startswith(sep):
+                name = name[len(sep):]
+                break
+    name = name.strip()
+    return name if len(name) <= limit else name[:limit - 1] + "\u2026"
+
+def version_key(tag):
+    # Numeric triple first. A suffix sorts BELOW the same triple without one
+    # (v1.0.0-rc1 comes before v1.0.0), and suffixes compare naturally, so
+    # rc2 < rc10.
+    major, minor, patch, suffix = VERSION.match(tag).groups()
+    natural = [(0, int(p), "") if p.isdigit() else (1, 0, p)
+               for p in re.findall(r"\d+|\D+", suffix or "")]
+    return (int(major), int(minor), int(patch), 0 if suffix else 1, natural)
+
+def published(text):
+    # Maps tag to release for every release that is not a draft, or None when the
+    # list could not be read. An empty string is "could not be read", not "no
+    # releases": it must never reach json.loads and it must never look like [].
+    if not text.strip():
+        return None
+    try:
+        data = json.loads(text)
+    except Exception:
+        return None
+    if not isinstance(data, list):
+        return None
+    return {r["tag_name"]: r for r in data
+            if isinstance(r, dict) and isinstance(r.get("tag_name"), str) and not r.get("draft")}
+
+def read_stdin():
+    # Bytes, decoded here: a NAS with LANG=C would otherwise decode a title as
+    # ASCII and die on the first dash.
+    return sys.stdin.buffer.read().decode("utf-8", "replace")
+
+def emit(lines):
+    sys.stdout.buffer.write(("\n".join(lines) + "\n").encode("utf-8"))
+'
+
 # ----- args -----------------------------------------------------------------
 STATUS_ONLY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -n) WINDOW="${2:?-n needs a number}"; shift 2 ;;
     --status) STATUS_ONLY=1; shift ;;
-    -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown arg: $1" ;;
   esac
 done
@@ -196,7 +334,9 @@ read_token() {
   if [ -n "${PPP_TOKEN:-}" ]; then TOKEN="$PPP_TOKEN"; return; fi
   printf 'ghcr.io token for the full image list, or press enter for releases only: '
   stty -echo 2>/dev/null || true
-  read -r TOKEN
+  # No input here means "no token", not "abort": `--status </dev/null` should
+  # still print the table.
+  read -r TOKEN || true
   stty echo 2>/dev/null || true
   printf '\n'
 }
@@ -211,13 +351,25 @@ if [ -n "$TOKEN" ]; then
     -H "Authorization: Bearer $TOKEN" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/user/packages/container/ppp-app/versions?per_page=100" 2>/dev/null || true)"
+  # The release list is wanted here too, for the titles in the menu and the
+  # upgrade notes later. Losing it costs those, not the menu.
+  if api_get "releases?per_page=100"; then
+    RELEASES="$API_BODY"
+  else
+    RELEASES=""
+    echo "${DIM}release titles unavailable (could not read the releases list)${R}"
+  fi
 else
   echo "${DIM}→ asking GitHub what has been released…${R}"
   SOURCE_LABEL="releases only (no token given)"
-  VERSIONS="$(curl -sSL --max-time 20 \
-    -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/${REPO}/releases?per_page=100" 2>/dev/null || true)"
+  # One request serves as both the menu and the release list.
+  api_get "releases?per_page=100" || true
+  RELEASES="$API_BODY"
+  VERSIONS="$RELEASES"
 fi
+# The newest hundred releases, one page: the list is not paginated. Past a
+# hundred, older ones lose their title and a deploy that reaches back that far
+# is told the wizard could not place it, rather than shown a partial answer.
 
 # Two things this filtering has to get right, both learned the hard way:
 #   - release-images publishes cosign signatures and SBOM attestations to the
@@ -227,18 +379,29 @@ fi
 #     release touches the OLD version's updated_at too, so ordering by it
 #     reshuffles history and shows a build's date as the day it was
 #     superseded.
-CANDIDATES="$(printf '%s' "$VERSIONS" | python3 -c '
-import json, re, sys
+#
+# Two JSON documents go in on stdin, the image list and the release list,
+# separated by \x1e — a byte JSON cannot contain unescaped. Not an argument or
+# an environment variable: a release list with its bodies passes the kernel's
+# 128 KB limit on a single string, and the wizard would die with "Argument
+# list too long" on the day the project had written enough release notes.
+#
+# Rows come back with \x1f between fields, not a tab. A tab is whitespace to
+# `read`, which collapses an empty field — and `moving` is empty on most rows,
+# so everything after it would shift one column left.
+CANDIDATES="$(printf '%s\n\x1e\n%s' "$VERSIONS" "$RELEASES" | python3 -c "$PY_GITHUB"'
 # A 7-char commit SHA, or a release like v0.1.0 / v1.2.3-rc1. Everything else
 # in this package is machinery: cosign publishes `sha256-<digest>.sig` and the
 # SBOM publishes `.att`, and neither is a runnable image.
 DEPLOYABLE = re.compile(r"^([0-9a-f]{7}|v\d+\.\d+\.\d+[0-9A-Za-z.\-]*)$")
+versions, _, release_list = read_stdin().partition("\x1e")
 try:
-    data = json.load(sys.stdin)
+    data = json.loads(versions)
 except Exception:
     sys.exit(1)
 if not isinstance(data, list):
     sys.exit(1)
+releases = published(release_list)
 rows = []
 for v in data:
     # Two shapes: a package version carries its tags under metadata.container,
@@ -259,8 +422,21 @@ for v in data:
         continue
     rows.append((v.get("created_at") or "", sha, "latest" in tags))
 rows.sort(reverse=True)
+out = []
 for when, sha, is_latest in rows:
-    print("\t".join([sha, when[:16].replace("T", " "), "latest" if is_latest else ""]))
+    # What GitHub says about this tag as a release. Empty for a SHA build, and
+    # empty for everything when the release list could not be read: "tagged,
+    # not released" is a claim, and without the list it would be a guess.
+    kind = title = ""
+    if releases is not None and sha.startswith("v"):
+        release = releases.get(sha)
+        if release is None:
+            kind = "tag"
+        else:
+            kind = "pre-release" if release.get("prerelease") else "release"
+            title = title_of(sha, release, 44)
+    out.append("\x1f".join([sha, when[:16].replace("T", " "), "latest" if is_latest else "", kind, title]))
+emit(out)
 ' 2>/dev/null || true)"
 
 if [ -z "$CANDIDATES" ]; then
@@ -273,19 +449,26 @@ fi
 echo
 echo "${B}Deployable${R} ${DIM}— ${SOURCE_LABEL}, newest first:${R}"
 echo
-printf "  ${DIM} %-3s %-10s %-18s %-8s %s${R}\n" "#" "tag" "published" "moving" "state"
+printf "  ${DIM} %-3s %-10s %-18s %-8s %s${R}\n" "#" "tag" "published" "moving" "state release"
 
 declare -a IDX_SHA
 i=0; DEFAULT=""
-while IFS=$'\t' read -r sha when islatest; do
+while IFS=$'\x1f' read -r sha when islatest kind title; do
   [ -n "$sha" ] || continue
   i=$((i+1)); [ "$i" -gt "$WINDOW" ] && break
   IDX_SHA[$i]="$sha"
+  # `pad` brings the state to four visible columns. printf cannot do it: the
+  # state carries colour codes, which it would count as width.
   if [ "$sha" = "$CURRENT" ]; then
-    state="${CYN}LIVE${R}"
+    state="${CYN}LIVE${R}"; pad=""
   else
-    state="${DIM}-${R}"
+    state="${DIM}-${R}"; pad="   "
   fi
+  case "$kind" in
+    release|pre-release) release="${kind}${title:+  $title}" ;;
+    tag) release="${DIM}tagged, not released${R}" ;;
+    *) release="" ;;
+  esac
   # Recommend the newest published image that is not already live, and only
   # when it is NEWER than what is live — never point the default backwards at
   # something old that simply never shipped; that would read as a regression.
@@ -294,7 +477,13 @@ while IFS=$'\t' read -r sha when islatest; do
   else
     mark=" "
   fi
-  printf " %b %-3s ${CYN}%-10s${R} %-18s %-8s %b\n" "$mark" "$i" "$sha" "$when" "${islatest:-}" "$state"
+  # A row with nothing to say about a release prints exactly as it always has,
+  # with no trailing padding. The title is %s, never %b: it is GitHub's text.
+  if [ -n "$release" ]; then
+    printf " %b %-3s ${CYN}%-10s${R} %-18s %-8s %b%s  %s\n" "$mark" "$i" "$sha" "$when" "${islatest:-}" "$state" "$pad" "$release"
+  else
+    printf " %b %-3s ${CYN}%-10s${R} %-18s %-8s %b\n" "$mark" "$i" "$sha" "$when" "${islatest:-}" "$state"
+  fi
 done <<< "$CANDIDATES"
 echo
 
@@ -314,7 +503,9 @@ echo "   ${B}<number>${R}  deploy that image"
 [ -n "$DEFAULT" ] && echo "   ${B}<enter>${R}   deploy the recommended image (${CYN}${IDX_SHA[$DEFAULT]}${R})"
 echo "   ${B}q${R}         quit"
 printf "> "
-read -r choice
+# An empty line is an answer here (the recommended image), so only stdin
+# ending without one is "no input".
+read -r choice || [ -n "$choice" ] || no_input
 
 if [ -z "$choice" ]; then
   [ -n "$DEFAULT" ] || { echo "aborted."; exit 0; }
@@ -327,23 +518,244 @@ case "$choice" in q|Q) echo "aborted."; exit 0 ;; esac
 TARGET="${IDX_SHA[$choice]}"
 [ "$TARGET" = "$CURRENT" ] && echo "${YLW}note: ${TARGET} is already live — this is a redeploy.${R}"
 
+# ----- is it published yet? -------------------------------------------------
+# Pushing a version tag is what STARTS the image build, so for a few minutes
+# the release list offers a version the registry does not have. Chosen then,
+# the pull fails partway — one image there, the next not — and the message is
+# docker's, about a manifest. Ask the registry first and say it plainly.
+#
+# Only for a version: a SHA build is listed BY the registry, so it exists.
+#
+# Three answers, not two. "Missing" is only what the registry says is missing.
+# `denied`, a network error, or a docker too old to have `manifest` mean the
+# wizard could not find out — what a private fork sees here, before the login
+# further down — and refusing on those would lock out a deployment that works.
+# The pull is the safety net for them, as it always was.
+if [[ "$TARGET" =~ $VERSION_RE ]]; then
+  missing=""; unknown=""
+  for img in $IMAGES; do
+    if out="$(docker manifest inspect "ghcr.io/${REGISTRY_OWNER}/${img}:${TARGET}" 2>&1)"; then
+      continue
+    fi
+    case "$(printf '%s' "$out" | tr 'A-Z' 'a-z')" in
+      *"manifest unknown"*|*"not found"*|*"no such manifest"*)
+        missing="${missing}${missing:+, }${img}:${TARGET}" ;;
+      *)
+        # The first line only, and without control characters: it is the
+        # registry's text.
+        why="$(printf '%s' "${out%%$'\n'*}" | tr -d '\000-\037\177')"
+        unknown="${unknown}${DIM}could not check whether ${img}:${TARGET} is published (${why:0:160}) — the pull will tell.${R}"$'\n' ;;
+    esac
+  done
+  if [ -n "$missing" ]; then
+    echo "${RED}✗ ${TARGET} is not fully published yet — missing: ${missing}${R}" >&2
+    echo "  A version tag exists a few minutes before its images do. Wait for the build:" >&2
+    echo "      https://github.com/${REPO}/actions/workflows/release-images.yml" >&2
+    echo "  then run the wizard again. Nothing was changed." >&2
+    exit 1
+  fi
+  printf '%s' "$unknown"
+fi
+
+# ----- what does upgrading need? --------------------------------------------
+# A release can need something done BEFORE its image starts: a snapshot, a
+# one-shot migration container, a variable that changed meaning. That is
+# written in the release notes under an "Upgrading" heading, and nobody reads
+# release notes on a NAS. So show the Upgrading section of every release
+# between what is running and what was chosen — every one, because going from
+# v0.1.0 to v0.4.0 crosses the steps of v0.2.0 and v0.3.0 too — and ask.
+#
+# "Between" is decided by git ancestry, not by dates. Each end is given a base,
+# the newest release it contains: a version is its own base; a SHA build is
+# placed by asking GitHub's compare API whether it contains a release. The
+# releases strictly after the lower base, up to and including the higher one,
+# are the ones crossed. Going back crosses the same ones, and shows them too:
+# they say what each release changed and whether there is a way back.
+#
+# The rule that matters most: "could not find out" is never "nothing to
+# read". Every way of not knowing — no release list, a tag that is neither a
+# version nor a SHA, a version GitHub has no release for, a compare call that
+# fails — says so, says the notes were NOT shown, and asks.
+PY_NOTES='
+releases = published(read_stdin())
+if releases is None:
+    sys.exit(3)
+ordered = sorted((t for t in releases if VERSION.match(t)), key=version_key)
+if sys.argv[1] == "list":
+    emit(ordered)
+    sys.exit(0)
+
+HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
+UPGRADING = re.compile(r"^upgrading\b", re.I)
+
+def upgrading(body):
+    # Every section whose heading starts with "Upgrading", at any level (the
+    # changelog writes it as ###, the hand-written v0.2.0 notes as ##), up to
+    # the next heading of the same or a higher level. Fenced blocks are
+    # tracked so that a `# comment` in a shell example is not taken for a
+    # heading, which would end the section early or start one in the middle
+    # of a code block.
+    out, level, fenced = [], 0, False
+    for line in clean_body(body).split("\n"):
+        if line.lstrip().startswith(("```", "~~~")):
+            fenced = not fenced
+        elif not fenced:
+            m = HEADING.match(line)
+            if m and level and len(m.group(1)) <= level:
+                level = 0
+            if m and not level and UPGRADING.match(m.group(2)):
+                level = len(m.group(1))
+                while out and not out[-1]:
+                    out.pop()
+                if out:
+                    out.append("")
+                out.append(m.group(2).rstrip("# ").strip())
+                continue
+        if level:
+            out.append(line.rstrip())
+    while out and not out[-1]:
+        out.pop()
+    return out
+
+# argv: "notes", then the first and last index into `ordered` of the releases
+# crossed. The first line out is how many of them have notes; the rest is what
+# to show.
+lines, with_notes = [], 0
+for tag in ordered[int(sys.argv[2]):int(sys.argv[3]) + 1]:
+    release = releases[tag]
+    title = title_of(tag, release, 72)
+    date = clean_title(release.get("published_at") or release.get("created_at"))[:10]
+    lines.append("  " + tag + (" \u2014 " + title if title else "") + ("  (" + date + ")" if date else ""))
+    notes = upgrading(release.get("body"))
+    with_notes += 1 if notes else 0
+    for note in notes or ["(no upgrade notes)"]:
+        lines.append(("    \u2502 " + note).rstrip())
+    lines.append("")
+emit([str(with_notes)] + lines)
+'
+
+# base_of <tag> sets BASE to the index in RLIST of the newest release the tag
+# contains (-1: older than every release), or returns 1 with WHY_NOT set.
+RLIST=(); BASE=0; WHY_NOT=""
+base_of() {
+  local x="$1" n="${#RLIST[@]}" i lo hi mid status
+  if [[ "$x" =~ $VERSION_RE ]]; then
+    for (( i = 0; i < n; i++ )); do
+      if [ "${RLIST[$i]}" = "$x" ]; then BASE="$i"; return 0; fi
+    done
+    # A version tag with no release (or only a draft) cannot be ordered among
+    # the releases by anything the wizard has, and guessing "nothing in
+    # between" is the dangerous guess.
+    WHY_NOT="$x has no published GitHub release"; return 1
+  fi
+  BASE=-1
+  # No releases at all: nothing can lie in between, whatever the tag is.
+  [ "$n" -gt 0 ] || return 0
+  if ! [[ "$x" =~ ^[0-9a-f]{7,40}$ ]]; then
+    WHY_NOT="$x is neither a version nor a commit SHA"; return 1
+  fi
+  # Binary search. main is linear and every release is a commit on it, so "this
+  # commit contains release r" is true up to some release and false after it —
+  # two or three questions for a dozen releases instead of a dozen, which
+  # matters at 60 unauthenticated requests an hour. `?per_page=1&page=2` asks
+  # for the verdict without the megabyte of commits and diffs that comes with
+  # it by default; `status` is the same either way.
+  lo=0; hi=$((n - 1))
+  while [ "$lo" -le "$hi" ]; do
+    mid=$(( (lo + hi) / 2 ))
+    if ! api_get "compare/${RLIST[$mid]}...${x}?per_page=1&page=2"; then
+      case "$API_CODE" in
+        403|429) WHY_NOT="GitHub rate limit reached (60 requests an hour without a token)" ;;
+        *) WHY_NOT="GitHub could not place $x relative to ${RLIST[$mid]}" ;;
+      esac
+      return 1
+    fi
+    status="$(printf '%s' "$API_BODY" | python3 -c '
+import json, sys
+try:
+    print(json.loads(sys.stdin.buffer.read().decode("utf-8", "replace")).get("status") or "")
+except Exception:
+    pass
+' 2>/dev/null || true)"
+    case "$status" in
+      # The commit is the release, or has it in its history.
+      ahead|identical) BASE="$mid"; lo=$((mid + 1)) ;;
+      # The release is newer than the commit, or on a line it never joined.
+      behind|diverged) hi=$((mid - 1)) ;;
+      *) WHY_NOT="GitHub could not place $x relative to ${RLIST[$mid]}"; return 1 ;;
+    esac
+  done
+  return 0
+}
+
+# A redeploy crosses nothing by definition, so it asks GitHub nothing.
+if [ "$TARGET" != "$CURRENT" ]; then
+  NOTES=""; crossed=0
+  if ! rlist="$(printf '%s' "$RELEASES" | python3 -c "$PY_GITHUB$PY_NOTES" list 2>/dev/null)"; then
+    WHY_NOT="could not read the release list from GitHub"
+  else
+    while IFS= read -r r; do
+      if [ -n "$r" ]; then RLIST+=("$r"); fi
+    done <<< "$rlist"
+    if base_of "$CURRENT"; then
+      base_current="$BASE"
+      if base_of "$TARGET"; then
+        base_target="$BASE"
+        if [ "$base_target" -gt "$base_current" ]; then
+          first=$((base_current + 1)); last="$base_target"
+        else
+          first=$((base_target + 1)); last="$base_current"
+        fi
+        crossed=$((last - first + 1))
+        if [ "$crossed" -gt 0 ]; then
+          NOTES="$(printf '%s' "$RELEASES" | python3 -c "$PY_GITHUB$PY_NOTES" notes "$first" "$last" 2>/dev/null)" \
+            || WHY_NOT="could not read the release notes GitHub returned"
+        fi
+      fi
+    fi
+  fi
+
+  if [ -n "$WHY_NOT" ]; then
+    echo
+    echo "${YLW}⚠ could not work out which releases lie between ${CURRENT} and ${TARGET}: ${WHY_NOT}.${R}"
+    echo "  Upgrade notes were NOT shown. Read them before continuing:"
+    echo "      https://github.com/${REPO}/releases"
+    ask "Continue without having seen them? [y/N] "
+  elif [ "$crossed" -gt 0 ] && [ "${NOTES%%$'\n'*}" = "0" ]; then
+    echo
+    echo "${DIM}No upgrade notes in the ${crossed} release(s) between ${CURRENT} and ${TARGET}.${R}"
+  elif [ "$crossed" -gt 0 ]; then
+    echo
+    if [ "$base_target" -gt "$base_current" ]; then
+      echo "${B}Upgrade notes — ${CURRENT} → ${TARGET} crosses ${crossed} release(s):${R}"
+    else
+      echo "${B}${YLW}Going BACK from ${CURRENT} to ${TARGET} undoes ${crossed} release(s). Their upgrade notes say what they changed and whether there is a way back:${R}"
+    fi
+    echo
+    printf '%s\n' "${NOTES#*$'\n'}"
+    echo
+    echo "All release notes: https://github.com/${REPO}/releases"
+    ask "I have read the upgrade notes above. Continue? [y/N] "
+  fi
+  # Nothing crossed — one SHA build to the next, with no release in between —
+  # prints nothing and asks nothing: that deploy is as it always was.
+fi
+
 echo
 if [ "$HEALTH" != "200" ]; then
   echo "${YLW}⚠ ${HEALTH_URL} is already answering ${HEALTH}, before any change.${R}"
   echo "  ${DIM}Whatever is wrong is not this image, and the automatic rollback"
   echo "  cannot help — it rolls back to the version that is failing now."
   echo "  Worth fixing the current breakage first.${R}"
-  printf "Deploy anyway? [y/N] "
-  read -r ans; case "$ans" in y|Y|yes|YES) ;; *) echo "aborted."; exit 0 ;; esac
+  ask "Deploy anyway? [y/N] "
   echo
 fi
 
 if [ "$TARGET" = "$CURRENT" ]; then
-  printf "Redeploy %s? [y/N] " "$TARGET"
+  ask "Redeploy ${TARGET}? [y/N] "
 else
-  printf "Deploy ${CYN}%s${R} (replacing %s)? [y/N] " "$TARGET" "$CURRENT"
+  ask "Deploy ${CYN}${TARGET}${R} (replacing ${CURRENT})? [y/N] "
 fi
-read -r ans; case "$ans" in y|Y|yes|YES) ;; *) echo "aborted."; exit 0 ;; esac
 
 # ----- signature ------------------------------------------------------------
 # CI signs both images with cosign keyless, pinning the identity of the
@@ -405,8 +817,7 @@ else
   echo "      chmod +x ${PROJECT_DIR}/bin/cosign"
   echo
   echo "  This wizard looks there as well as on PATH.${R}"
-  printf "Continue without verification? [y/N] "
-  read -r ans; case "$ans" in y|Y|yes|YES) ;; *) echo "aborted."; exit 0 ;; esac
+  ask "Continue without verification? [y/N] "
 fi
 
 # ----- deploy ---------------------------------------------------------------

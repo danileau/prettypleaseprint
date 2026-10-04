@@ -159,19 +159,51 @@ the NAS is a consumer of images and should stay one.
 
 It answers what a bare `sed PPP_TAG && docker compose up -d` does not:
 
-1. **Which image?** It asks ghcr.io what is actually published, newest first,
-   with build dates and the live one marked, so you pick from a menu instead of
-   copying a SHA out of a CI log. It filters to 7-hex-char tags — the cosign
-   `.sig` and SBOM `.att` tags live in the same package and are not runnable
-   images — and sorts by `created_at`, because re-pointing `latest` touches the
-   *previous* version's `updated_at` and would otherwise reshuffle history.
-2. **Is it intact?** It `cosign verify`s both images against the identity of
+1. **Which image?** It lists what can be deployed, newest first, with dates and
+   the live one marked, so you pick from a menu instead of copying a tag out of
+   a CI log. Without a token the list is the GitHub releases, which is the
+   right list for most deployments. With one it is every published image:
+   releases by their version, builds of `main` by their 7-character SHA. The
+   cosign `.sig` and SBOM `.att` tags live in the same package and are left
+   out, because they are not runnable images; the order is by `created_at`,
+   because re-pointing `latest` touches the *previous* version's `updated_at`
+   and would otherwise reshuffle history. A version that is a GitHub release is
+   marked `release` with its title, and a version tag nobody has published a
+   release for says `tagged, not released`.
+2. **Is it published yet?** Pushing a version tag is what starts the image
+   build, so for a few minutes a version is on offer that the registry does not
+   have. A version is refused until every image in `PPP_IMAGES` exists at that
+   tag, with a link to the build to wait for, and nothing is changed. If the
+   registry will not say (a private package before the login, a network
+   error) the wizard says it could not check and lets the pull decide.
+3. **What does upgrading need?** Before swapping, it shows the "Upgrading"
+   notes of every release between what is running and what you chose, and asks
+   whether you have read them. Going from v0.1.0 to v0.4.0 shows the notes of
+   v0.2.0, v0.3.0 and v0.4.0; going back shows the same ones, because they say
+   whether there is a way back. They come from the GitHub releases, since the
+   NAS has no checkout to read a changelog from. A SHA build is placed among
+   the releases by git ancestry (which releases that commit contains, asked of
+   GitHub's compare API), not by date. When the wizard cannot tell what lies
+   in between — `PPP_TAG` is `latest`, the version has no published release,
+   GitHub does not answer — it says so, says the notes were *not* shown, and
+   still asks. A deploy from one SHA build to the next with no release in
+   between shows nothing and asks nothing extra.
+4. **Is it intact?** It `cosign verify`s both images against the identity of
    this repo's `release-images` workflow before anything is swapped. If cosign
    is missing it says so and asks, rather than skipping quietly.
-3. **Did it work?** It polls the public health URL after the swap and **rolls
+5. **Did it work?** It polls the public health URL after the swap and **rolls
    back to the previous tag automatically** if health does not stabilise —
    then tells you whether the rollback is healthy, which distinguishes "bad
    image" from "the proxy or the database is down".
+
+For the wizard to find them, a release's notes must keep a heading that starts
+with "Upgrading" (any level, as in `## Upgrading from v0.1.0`); everything up
+to the next heading of the same level is shown. Only the newest hundred
+releases are read.
+
+Answers can be piped in. A "no" stops the wizard with exit 0; stdin ending
+before a question is answered stops it with `aborted (no input).` and exit 1,
+so a script cannot mistake one for the other.
 
 The registry token is borrowed and returned: read from a hidden prompt, used
 for the pull, then `docker logout` on exit including on failure. Nothing
