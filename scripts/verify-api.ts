@@ -393,6 +393,37 @@ async function main() {
         again.status === 409, `status ${again.status} ${again.body.error}`);
 
   // ------------------------------------------------------------------
+  section("filtering by who uploaded it");
+
+  type Listed = { stories: { id: number; uploader: { id: string } }[] };
+  const byAyla = await ruben.json<Listed>(`${APP}/api/stories?uploader=${ayla.id}`);
+  check("the printer owner can list one person's tickets",
+        byAyla.status === 200 && byAyla.body.stories.length > 0 &&
+        byAyla.body.stories.every((s) => s.uploader.id === ayla.id) &&
+        byAyla.body.stories.some((s) => s.id === mine.id),
+        `status ${byAyla.status}, ${byAyla.body.stories?.length} rows`);
+  const byBoth = await ruben.json<Listed>(`${APP}/api/stories?uploader=${ayla.id},${mallory.id}`);
+  const byBothRepeated = await ruben.json<Listed>(
+    `${APP}/api/stories?uploader=${ayla.id}&uploader=${mallory.id}`);
+  check("or several people's, comma-separated or repeated",
+        byBoth.body.stories.some((s) => s.id === mine.id) &&
+        byBoth.body.stories.some((s) => s.id === theirs.id) &&
+        byBothRepeated.body.stories.length === byBoth.body.stories.length,
+        `${byBoth.body.stories.length} vs ${byBothRepeated.body.stories.length}`);
+  const byNobody = await ruben.json<Listed>(`${APP}/api/stories?uploader=no-such-person`);
+  check("an id that names nobody matches nothing, and is not an error",
+        byNobody.status === 200 && byNobody.body.stories.length === 0, `status ${byNobody.status}`);
+  const peek2 = await client.json<Listed>(`${APP}/api/stories?uploader=${mallory.id}`);
+  check("a client naming somebody else gets nothing — the filter cannot widen their scope",
+        peek2.status === 200 && peek2.body.stories.length === 0,
+        `${peek2.body.stories?.length} rows`);
+  const selfOnly = await client.json<Listed>(`${APP}/api/stories?uploader=${ayla.id},${mallory.id}`);
+  check("and naming themselves beside somebody else gets only their own",
+        selfOnly.body.stories.length > 0 && selfOnly.body.stories.every((s) => s.uploader.id === ayla.id));
+  const tooMany = await ruben.json(`${APP}/api/stories?uploader=${Array.from({ length: 60 }, (_, i) => `u${i}`).join(",")}`);
+  check("an absurdly long list of people is refused", tooMany.status === 400, `status ${tooMany.status}`);
+
+  // ------------------------------------------------------------------
   section("priority: the requester's and the owner's, while it is on the rail");
 
   const urgent = await makeStory(ayla.id, "Bracket holding up the build");

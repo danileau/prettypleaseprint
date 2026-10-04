@@ -47,6 +47,9 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   request form filled in with what you asked for last time, so the material,
   colour, quantity and print settings can change before it is sent. The model
   is copied server-side, so the two tickets own independent files.
+- **See what each person has sent** — the printer owner picks one person or
+  several at `/admin/prints` and gets everything they have uploaded, in any
+  state. Each member on the guest list links straight to theirs.
 - **Say how much it matters** — a request carries a priority (low, medium,
   high). The printer owner's queue lists the urgent ones first, and the
   requester or the owner can change it on the ticket while it is still on the

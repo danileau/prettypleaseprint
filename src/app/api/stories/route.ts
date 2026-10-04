@@ -28,6 +28,9 @@ const QuerySchema = z.object({
   status: z.array(StatusSchema).optional(),
   flagged: z.enum(["true", "false"]).optional(),
   mine: z.enum(["true", "false"]).optional(),
+  // Ids are opaque strings; the bound keeps a hostile query small. An id that
+  // names nobody simply matches nothing.
+  uploader: z.array(z.string().min(1).max(64)).max(50).optional(),
   limit: z.coerce.number().int().min(1).max(LIST_LIMIT_MAX).optional(),
   before: z.coerce.number().int().positive().optional(),
 });
@@ -44,8 +47,15 @@ export const GET = withActor(async (request, actor) => {
     .map((v) => v.trim())
     .filter(Boolean);
 
+  const uploaders = url.searchParams
+    .getAll("uploader")
+    .flatMap((v) => v.split(","))
+    .map((v) => v.trim())
+    .filter(Boolean);
+
   const parsed = QuerySchema.safeParse({
     status: statuses.length ? statuses : undefined,
+    uploader: uploaders.length ? uploaders : undefined,
     flagged: url.searchParams.get("flagged") ?? undefined,
     mine: url.searchParams.get("mine") ?? undefined,
     limit: url.searchParams.get("limit") ?? undefined,
@@ -63,6 +73,7 @@ export const GET = withActor(async (request, actor) => {
     status: parsed.data.status,
     flagged: parsed.data.flagged === undefined ? undefined : parsed.data.flagged === "true",
     mine: parsed.data.mine === "true",
+    uploaderIds: parsed.data.uploader,
     limit: parsed.data.limit ?? LIST_LIMIT_DEFAULT,
     before: parsed.data.before,
   });

@@ -118,6 +118,14 @@ export default async function InvitesPage() {
                     <p className="m-0 font-mono text-[11.5px] text-ink-3">{m.email}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-[8.8px]">
+                    {/* What this person has sent — the first thing to look at
+                        before resetting or suspending them. */}
+                    <Link
+                      href={`/admin/prints?who=${encodeURIComponent(m.id)}`}
+                      className="stamp rounded-chip border-[3px] border-ink bg-porcelain px-[13.2px] py-[6px] text-[13px] font-bold text-ink hover:bg-sun"
+                    >
+                      Their prints
+                    </Link>
                     <ResetPassword
                       userId={m.id}
                       name={m.name.split(" ")[0] ?? m.name}

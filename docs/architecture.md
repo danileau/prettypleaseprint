@@ -354,6 +354,15 @@ side:
   editing it afterwards would rewrite what was asked for), and the board card
   marks it only when it is *not* medium, so the mark means something. The
   queue's *Waiting on you* reads high first, oldest first within a priority.
+- **Prints by person** (`/admin/prints`) is the owner's answer to "what has
+  this person sent me". It adds no new read: the list is `listStories` with an
+  `uploaderIds` filter ANDed onto `storyScope` like every other filter, so the
+  same parameter on `GET /api/stories` gives a client their own tickets or
+  nothing. The roster with a count per person (`listPeopleWithPrints`) is the
+  one new query, and it refuses anyone but the owner in the service — a count
+  beside each colleague's name is a view into other people's work. The
+  selection is a query string of ids, each person a link that toggles itself,
+  so there is no form control and nothing to hydrate.
 - **An optional free-text print-settings field** rides along on a request and
   shows on the ticket for the owner. The structured / access-gated "advanced
   mode" is deferred.

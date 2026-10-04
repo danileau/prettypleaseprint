@@ -218,6 +218,12 @@ export type StoryQuery = {
   status?: StoryStatus[];
   flagged?: boolean;
   mine?: boolean;
+  /**
+   * Only tickets uploaded by these people. Like every filter here it is ANDed
+   * onto the scope, so for a client it can only ever return their own tickets
+   * or nothing — naming somebody else's id is not a way to see their work.
+   */
+  uploaderIds?: string[];
   limit?: number;
   /** Id of the last story on the previous page. Ids descend, so this is `id <`. */
   before?: number;
@@ -244,6 +250,7 @@ export async function listStories(actor: Actor, query: StoryQuery = {}) {
     AND: [
       storyScope(actor),
       ...(query.mine ? [{ uploaderId: actor.id }] : []),
+      ...(query.uploaderIds?.length ? [{ uploaderId: { in: query.uploaderIds } }] : []),
       ...(query.status?.length ? [{ status: { in: query.status } }] : []),
       ...(query.flagged === undefined ? [] : [{ flagged: query.flagged }]),
       ...(query.before === undefined ? [] : [{ id: { lt: query.before } }]),
@@ -264,6 +271,42 @@ export async function listStories(actor: Actor, query: StoryQuery = {}) {
     stories,
     nextCursor: rows.length > limit ? (stories[stories.length - 1]?.id ?? null) : null,
   };
+}
+
+/**
+ * Everybody who can upload, with how many tickets each has — the choices on
+ * the owner's "prints by person" page.
+ *
+ * The owner's only. A roster of who is in the group and how busy each of them
+ * has been is not something one member is owed about another: a client's
+ * whole view of this app is their own tickets, and a count per colleague
+ * would be a window into everyone else's. Refused here rather than only on
+ * the page, because the page is one caller and the rule should not depend on
+ * which caller remembered it.
+ *
+ * Suspended people are included and marked. Their tickets did not go away
+ * with their access, and the owner looking for "what did they send me" is the
+ * case this exists for.
+ */
+export async function listPeopleWithPrints(actor: Actor) {
+  if (actor.role !== "admin") {
+    throw problem(403, "Only the printer owner sees who has uploaded what.");
+  }
+  const people = await db.user.findMany({
+    orderBy: { name: "asc" },
+    select: {
+      id: true, name: true, initials: true, role: true, banned: true,
+      _count: { select: { stories: true } },
+    },
+  });
+  return people.map((p) => ({
+    id: p.id,
+    name: p.name,
+    initials: p.initials,
+    isOwner: p.role === "admin",
+    suspended: p.banned === true,
+    prints: p._count.stories,
+  }));
 }
 
 /**
