@@ -1,0 +1,20 @@
+2026-11-01.
+
+A fixture release: one thing added and one fixed. See [the guide](https://github.com/octo/widgets/blob/v0.2.0/docs/x.md#a),
+[an absolute link](https://example.org/y) and [an anchor](#v010).
+
+### Upgrading from v0.1.0
+
+- **Move the files first.** The commands are in
+  [the deployment guide](https://github.com/octo/widgets/blob/v0.2.0/docs/deployment.md#moving-the-files).
+
+```bash
+# Upgrading by hand is a comment in a code block, not a heading
+docker compose up -d
+```
+
+#### If it goes wrong
+
+- Restore the snapshot.
+
+Everything, entry by entry: https://github.com/octo/widgets/blob/v0.2.0/CHANGELOG.md
