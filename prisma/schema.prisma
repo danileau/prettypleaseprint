@@ -58,6 +58,11 @@ model User {
   invitedBy    User?   @relation("Invitations", fields: [invitedById], references: [id], onDelete: SetNull)
   invitedUsers User[]  @relation("Invitations")
 
+  /// Send this person's notifications by email as well as to the Activity
+  /// panel. Theirs to switch off, on their profile. It decides nothing when the
+  /// deployment has no mail transport — then nobody is emailed anything.
+  notifyByEmail Boolean @default(true)
+
   // --- admin plugin ---
   banned     Boolean?  @default(false)
   banReason  String?
