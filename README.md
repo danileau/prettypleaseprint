@@ -30,6 +30,11 @@ that: there is no multi-tenancy, no billing, and no queue theory.
 - **Invite-only.** There is no public sign-up. A `User` row cannot come into
   existence without a pending invitation, enforced in a single hook that every
   authentication method goes through.
+- **Or sign in with what you already have** — optionally, through an OpenID
+  Connect provider (Authentik, Keycloak, VoidAuth, Authelia…), instead of or
+  beside the password. Still invite-only by default: the provider replaces the
+  password, not the guest list. See
+  [Single sign-on](docs/authentication.md#single-sign-on).
 - **Upload a model** — `.stl` or `.3mf`, validated against its actual bytes
   rather than its filename, measured for its bounding box, stored on disk
   and never in the web root.
@@ -185,6 +190,11 @@ with commentary is [`.env.docker.example`](.env.docker.example).
 | `MAIL_FROM` | | Envelope sender. |
 | `TRUST_PROXY_HEADERS` | | Which header carries the client address: `false` (trust nothing, the default), `true` (left-most `X-Forwarded-For`), or `cloudflare` (`CF-Connecting-IP`). See [the reasoning](docs/deployment.md#why-trust_proxy_headers-is-a-separate-switch). |
 | `HIBP_DISABLED` | | `true` disables the breach check. Only for a host with no outbound internet — it fails closed, so without it nobody could register. |
+| `AUTH_METHODS` | | How people sign in: `local` (username/password and passkeys — the default), `oidc`, or `local,oidc`. See [Single sign-on](docs/deployment.md#single-sign-on) before changing it. |
+| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | with `oidc` | The provider, and this app's client there. The redirect URI to register is `<APP_URL>/api/auth/callback/oidc`. |
+| `OIDC_NAME` | | What the button calls it: "Sign in with *the office login*". |
+| `OIDC_SIGNUP` | | `invite` (default — an invitation is still required) or `open` (anyone the provider signs in gets an account). |
+| `OIDC_PROMPT` | | `login` makes the provider ask for credentials every time. For shared machines. |
 | `IMPORT_SOURCES` | | `printables` lets a request start from a Printables link instead of an upload. **Off when unset.** Needs outbound HTTPS, and a misspelt value stops the app. See [Importing from a link](docs/deployment.md#importing-from-a-link). |
 | `SOURCE_URL` | | Where this instance's source lives, shown in the footer. **Change it if you modify the code** — see [Licence](#licence). Defaults to the upstream repository. |
 | `PPP_REGISTRY` / `PPP_TAG` | | Which published image to run. Pin `PPP_TAG` to a release (`v0.3.0`) or a commit SHA; either is also how you roll back. |
@@ -425,7 +435,7 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 | **[Development](docs/development.md)** | stack, local setup, the verification suites, the full local run, CI, cutting a release |
 | **[Security audit](docs/security-audit.md)** | the OWASP Top 10 assessment, findings, and residual risk accepted |
 | **[Security policy](SECURITY.md)** | how to report a vulnerability |
-| **[Contributing](CONTRIBUTING.md)** | the eleven suites are the contract; what a good change looks like |
+| **[Contributing](CONTRIBUTING.md)** | the twelve suites are the contract; what a good change looks like |
 | **[Changelog](CHANGELOG.md)** | what changed in each release |
 
 ## Security
@@ -456,8 +466,8 @@ something, see [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
-Issues and pull requests are welcome. The eleven verification suites in
-`scripts/` are the contract — `verify:models`, `verify:auth`, `verify:upload`,
+Issues and pull requests are welcome. The twelve verification suites in
+`scripts/` are the contract — `verify:models`, `verify:auth`, `verify:sso`, `verify:upload`,
 `verify:import`, `verify:queue`, `verify:frr`, `verify:benefits`, `verify:catalog`, `verify:api`,
 `verify:passkey` and `probe:security`. All but `verify:models` run in CI against the built
 container image rather than a dev server. If a change makes one fail, that is the

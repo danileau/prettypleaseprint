@@ -6,6 +6,7 @@ import { bearer } from "better-auth/plugins/bearer";
 import { openAPI } from "better-auth/plugins";
 import { haveIBeenPwned } from "better-auth/plugins/haveibeenpwned";
 import { username } from "better-auth/plugins/username";
+import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { passkey } from "@better-auth/passkey";
 
 import { db } from "@/lib/db";
@@ -18,6 +19,13 @@ import {
 import { initialsFor } from "@/lib/tokens";
 import { isBuildPhase } from "@/lib/runtime";
 import { enabledSources } from "@/lib/import-source";
+import {
+  OIDC_PROVIDER_ID,
+  authMethods,
+  disabledAuthPaths,
+  mayProvision,
+  oidcConfig,
+} from "@/lib/auth-methods";
 import { record } from "@/lib/audit";
 import {
   PASSWORD_MAX,
@@ -53,6 +61,17 @@ const isLoopback = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(
 // misspelt IMPORT_SOURCES throws by name on the first request instead of
 // quietly meaning "off" — see `enabledSources`.
 if (!isBuildPhase) enabledSources();
+
+/**
+ * How people sign in here — see `src/lib/auth-methods.ts`.
+ *
+ * Read once, at load, and refused by name if it does not add up: a provider
+ * with no client secret, an issuer over plain HTTP, a method that is not one.
+ * During `next build` there is no deployment environment to read, so the build
+ * sees the default (local only) and the guards wait for the first request.
+ */
+const methods = isBuildPhase ? { local: true, oidc: false } : authMethods();
+const oidc = isBuildPhase ? null : oidcConfig();
 
 if (isProd && !isBuildPhase) {
   if (!process.env.BETTER_AUTH_SECRET) {
@@ -107,6 +126,36 @@ export const auth = betterAuth({
   },
 
   trustedOrigins: [baseURL],
+
+  /**
+   * A method that is off is off at the endpoint, not just missing from the
+   * page. See `disabledAuthPaths`.
+   */
+  disabledPaths: disabledAuthPaths(methods),
+
+  /**
+   * A failed single sign-on comes back to the sign-in page, which knows how to
+   * say what went wrong, rather than to Better Auth's own bare error page.
+   */
+  onAPIError: { errorURL: "/signin" },
+
+  account: {
+    /**
+     * Somebody who already has an account here, signing in through the
+     * provider for the first time, lands in *that* account — if, and only if,
+     * the provider says it has verified the address and it matches.
+     *
+     * `trustedProviders` is left empty on purpose. A trusted provider is
+     * linked on its say-so even when it has *not* verified the address, and
+     * the whole of this rule is that it has. The printer owner's account is
+     * included: the provider a deployment configures can become its owner, so
+     * it has to be one the host controls. docs/authentication.md says so.
+     */
+    accountLinking: { enabled: true, trustedProviders: [] },
+    // Tokens are not refreshed on sign-in because none are kept — see the
+    // account hooks below.
+    updateAccountOnSignIn: false,
+  },
 
   /**
    * Reset links are filed under a digest of their token rather than the token
@@ -268,15 +317,35 @@ export const auth = betterAuth({
       }
 
       const invited = Boolean(await pendingInviteFor(email));
-      if (!invited || !isClaimingInvite(email)) {
+      const viaOidc = source.method === "oauth" && source.oauth?.providerId === OIDC_PROVIDER_ID;
+      const verdict = mayProvision({
+        invited,
+        claimingLink: isClaimingInvite(email),
+        viaOidc,
+        // Exactly `true`. `mapProfileToUser` below already reduces the claim
+        // to a boolean; this is the belt to that braces.
+        emailVerifiedByProvider: viaOidc && user.emailVerified === true,
+        oidcSignup: oidc?.signup ?? null,
+      });
+      if (!verdict.ok) {
         // Worth a trail entry: repeated rejections for the same address are
         // the shape of someone probing for a way in — and `no_link` against an
         // address that *is* invited is the shape of someone who knows who was.
         await record({
           action: "invite.rejected",
           subject: email,
-          detail: { reason: invited ? "no_link" : "no_invitation" },
+          detail: { reason: verdict.reason, ...(viaOidc ? { via: "oidc" } : {}) },
         });
+        // One refusal has its own answer. An address the provider has not
+        // verified is refused before anything is looked up about it, so saying
+        // so tells nobody who has been invited — and it is the one of these
+        // the person at the keyboard can go and fix.
+        if (verdict.reason === "unverified_email") {
+          return {
+            error: "email_not_verified",
+            errorDescription: "Your sign-on provider has not verified that address.",
+          };
+        }
         return {
           error: "invite_required",
           errorDescription:
@@ -321,6 +390,53 @@ export const auth = betterAuth({
             actor: { id: user.id, email: user.email },
             subject: user.email,
             detail: { name: user.name },
+          });
+        },
+      },
+    },
+
+    account: {
+      create: {
+        /**
+         * Keep none of the provider's tokens.
+         *
+         * Better Auth stores the access, refresh and ID token it was handed.
+         * This app never calls the provider on anybody's behalf — the sign-in
+         * is the whole of the relationship — so they would be credentials for
+         * somebody else's system, sitting in this database for no reason. The
+         * row keeps what it needs: which provider, and which subject there.
+         */
+        async before(account) {
+          if (account.providerId !== OIDC_PROVIDER_ID) return;
+          return {
+            data: {
+              ...account,
+              accessToken: null,
+              refreshToken: null,
+              idToken: null,
+              accessTokenExpiresAt: null,
+              refreshTokenExpiresAt: null,
+            },
+          };
+        },
+
+        /**
+         * An identity at the provider now opens this account. For somebody who
+         * already had a password that is a new way in, added without anyone
+         * here pressing a button — exactly the kind of change the trail is for.
+         */
+        async after(account) {
+          if (account.providerId !== OIDC_PROVIDER_ID) return;
+          const user = await db.user.findUnique({
+            where: { id: account.userId },
+            select: { id: true, email: true, role: true },
+          });
+          if (!user) return;
+          await record({
+            action: "auth.sso_linked",
+            actor: user,
+            subject: user.email,
+            detail: { provider: oidc?.issuer ?? null, role: user.role },
           });
         },
       },
@@ -388,6 +504,56 @@ export const auth = betterAuth({
       enabled: process.env.HIBP_DISABLED !== "true",
       customPasswordCompromisedMessage:
         "That password appears in a known breach. Pick another — length beats cleverness.",
+    }),
+
+    /**
+     * Single sign-on, through one OpenID Connect provider the host names.
+     *
+     * Always registered, with no providers when it is off: a plugin list whose
+     * shape depends on the environment would make `auth.api` a different type
+     * on every deployment. Off, it adds nothing — and `/sign-in/social` is in
+     * `disabledPaths` besides.
+     *
+     * Discovery rather than typed-out endpoints, so the keys come from the
+     * provider's own document and the ID token is checked against them:
+     * signature, issuer, audience, expiry, and the nonce that binds it to the
+     * request that asked. `requireIdTokenVerification` makes that a condition
+     * of the provider existing at all — without it, a discovery document that
+     * failed to load would quietly downgrade sign-in to *decoding* a token
+     * nobody had verified. PKCE is on by default and left on.
+     */
+    genericOAuth({
+      config: oidc
+        ? [
+            {
+              providerId: OIDC_PROVIDER_ID,
+              name: oidc.name,
+              discoveryUrl: oidc.discoveryUrl,
+              clientId: oidc.clientId,
+              clientSecret: oidc.clientSecret,
+              scopes: ["openid", "email", "profile"],
+              prompt: oidc.prompt,
+              requireIdTokenVerification: true,
+              /**
+               * Three claims, and nothing else from the provider reaches a
+               * user row. In particular not a role: who the printer owner is
+               * was decided by the seed, and what an invitee may do by their
+               * invitation.
+               *
+               * `email_verified` must be the boolean `true`. Providers have
+               * been seen sending the string "false", which is truthy.
+               */
+              mapProfileToUser: (profile) => ({
+                email: typeof profile.email === "string" ? profile.email : undefined,
+                emailVerified: profile.email_verified === true,
+                name:
+                  (typeof profile.name === "string" && profile.name.trim()) ||
+                  (typeof profile.preferred_username === "string" && profile.preferred_username.trim()) ||
+                  undefined,
+              }),
+            },
+          ]
+        : [],
     }),
 
     passkey({

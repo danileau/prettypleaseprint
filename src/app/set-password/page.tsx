@@ -1,3 +1,4 @@
+import { authMethods, oidcConfig } from "@/lib/auth-methods";
 import Link from "next/link";
 
 import { readResetToken } from "@/lib/password-reset";
@@ -20,6 +21,30 @@ export default async function SetPasswordPage({
   searchParams: Promise<{ token?: string }>;
 }) {
   const { token } = await searchParams;
+
+  // Passwords are off for this deployment, so there is none to set — and the
+  // endpoint this form posts to refuses. Say so, rather than take a password
+  // from somebody and then fail to save it.
+  if (!authMethods().local) {
+    return (
+      <AuthShell>
+        <Kicker>New key, cut fresh</Kicker>
+        <H1>No passwords here</H1>
+        <Lead>
+          This instance signs people in with {oidcConfig()?.name ?? "single sign-on"} only,
+          so there is no password to choose. Sign in with the address you were
+          invited as.
+        </Lead>
+        <Link
+          href="/signin"
+          className="font-bold text-[15px] text-cherry-dk underline underline-offset-2 hover:text-cherry"
+        >
+          Go to sign in →
+        </Link>
+      </AuthShell>
+    );
+  }
+
   const resolved = token ? await readResetToken(token) : null;
 
   if (!resolved) {

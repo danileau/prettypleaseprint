@@ -6,6 +6,7 @@ import { isFreshAuth } from "@/lib/reauth";
 import { AuthShell, H1, Kicker, Lead } from "@/components/ui";
 import { ReauthForm } from "./reauth-form";
 import { safeRedirect } from "@/lib/safe-redirect";
+import { authMethods, oidcConfig } from "@/lib/auth-methods";
 
 /**
  * "Confirm it's you" before the actions that move access around.
@@ -27,6 +28,9 @@ export default async function ReauthPage({
   const user = await requireUser(`/reauth?next=${encodeURIComponent(target)}`);
   if (await isFreshAuth()) redirect(target);
 
+  const methods = authMethods();
+  const sso = oidcConfig();
+
   const row = await db.user.findUnique({
     where: { id: user.id },
     select: { username: true, displayUsername: true },
@@ -37,14 +41,17 @@ export default async function ReauthPage({
       <Kicker>One more time, please</Kicker>
       <H1>Is that still you?</H1>
       <Lead>
-        You are about to change who can get in. A password or a passkey confirms
-        it is you at the keyboard and not a browser somebody left open.
+        {methods.local
+          ? "You are about to change who can get in. A password or a passkey confirms it is you at the keyboard and not a browser somebody left open."
+          : `You are about to change who can get in. Signing in with ${sso?.name ?? "single sign-on"} again confirms it is you at the keyboard and not a browser somebody left open.`}
       </Lead>
 
       <ReauthForm
         next={target}
         username={row?.username ?? ""}
         displayUsername={row?.displayUsername ?? row?.username ?? ""}
+        local={methods.local}
+        ssoName={sso?.name ?? null}
       />
     </AuthShell>
   );

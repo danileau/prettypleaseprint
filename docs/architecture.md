@@ -456,6 +456,7 @@ src/lib/
   auth.ts                Better Auth config — the invite gate lives here
   auth-client.ts         browser client (username, passkey, admin)
   auth-rules.ts          username and password rules, shared with the forms
+  auth-methods.ts        which ways in are on, and who may be given an account
   authz.ts               requireUser/requireAdmin, notify, the printer owner
   scope.ts               pure authorisation rules: scopes, the two status flows
   reauth.ts              "sign in again" before handing out access
@@ -526,9 +527,10 @@ scripts/
   tests/                 the three shell scripts above, tested in sandboxes
   verify-models.ts       validator vs. hostile fixtures
   verify-auth.ts         registration, sign-in and password reset
+  verify-sso.ts          single sign-on, and everything a provider can get wrong
   verify-upload.ts       upload -> board -> ticket, and printing again
   verify-import.ts       a model from a link, and every way the far end can misbehave
-  stubs/                 the stand-in for Printables that suite runs against
+  stubs/                 stand-ins for Printables and for an OIDC provider
   verify-queue.ts        the queue, the flow, priority, prints by person
   verify-frr.ts          the feature-request track, filed and triaged
   verify-benefits.ts     the owner-managed benefits catalogue

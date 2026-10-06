@@ -18,6 +18,24 @@ services:
       # than at the real Printables — see scripts/stubs/printables-stub.mjs.
       IMPORT_SOURCES: printables
       IMPORT_PRINTABLES_BASE: http://printables-stub:4010
+      # Both ways in at once, so the suites that sign in with a password keep
+      # working and `verify:sso` has a provider to sign in through: the
+      # stand-in below. It has no certificate — it is a container on this
+      # private network — which is the one thing OIDC_ALLOW_INSECURE_ISSUER is
+      # for. Never set that on a deployed host.
+      AUTH_METHODS: local,oidc
+      OIDC_ISSUER: http://oidc-stub:4020
+      OIDC_ALLOW_INSECURE_ISSUER: "true"
+      OIDC_CLIENT_ID: ppp
+      OIDC_CLIENT_SECRET: ppp-stub-secret
+      OIDC_NAME: the office login
+    depends_on:
+      # Better Auth reads the provider's discovery document when it first
+      # starts. If the provider is not up yet it leaves single sign-on off
+      # until a restart — true of a real provider too, and written down in
+      # docs/deployment.md.
+      oidc-stub:
+        condition: service_started
   db:
     ports:
       - "5432:5432"
@@ -42,3 +60,17 @@ services:
       - ./scripts/stubs/printables-stub.mjs:/stub/printables-stub.mjs:ro
     ports:
       - "${PRINTABLES_STUB_PORT:-4010}:4010"
+  # A stand-in OpenID Connect provider, for `verify:sso` — one that can be told
+  # who is signing in, and told to lie. See scripts/stubs/oidc-stub.mjs.
+  # Published so the suite can follow the browser's half of the redirect.
+  oidc-stub:
+    image: node:22-alpine
+    container_name: ppp-oidc-stub
+    command: ["node", "/stub/oidc-stub.mjs"]
+    environment:
+      STUB_ISSUER: http://oidc-stub:4020
+      STUB_REDIRECT_URIS: ${APP_URL:-http://localhost:3000}/api/auth/callback/oidc
+    volumes:
+      - ./scripts/stubs/oidc-stub.mjs:/stub/oidc-stub.mjs:ro
+    ports:
+      - "${OIDC_STUB_PORT:-4020}:4020"

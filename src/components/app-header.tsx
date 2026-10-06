@@ -7,6 +7,7 @@ import { Brand } from "@/components/ui";
 import { ActivityMenu, type FeedItem } from "@/components/activity-menu";
 import { UserMenu } from "@/components/user-menu";
 import { PasskeyNudge } from "@/components/passkey-nudge";
+import { authMethods } from "@/lib/auth-methods";
 
 /**
  * The sign over the counter, on every screen.
@@ -123,7 +124,8 @@ export async function AppHeader({
       <div className="h-[5px] bg-chrome" aria-hidden />
       <div className="checker h-[8px] border-b-[3px] border-ink" aria-hidden />
 
-      {passkeyCount === 0 && <PasskeyNudge />}
+      {/* Nothing to nudge towards where passkeys are off. */}
+      {passkeyCount === 0 && authMethods().local && <PasskeyNudge />}
     </header>
   );
 }

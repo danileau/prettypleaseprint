@@ -93,7 +93,7 @@ S="$STUB/state"
 if [ "${1:-} ${2:-}" = "run -s" ]; then
   script="${3:-}"
   case "$script" in
-    typecheck|check:links|verify:models|verify:auth|verify:upload|verify:import|verify:queue|verify:frr|verify:benefits|verify:catalog|verify:api|verify:passkey|probe:security) ;;
+    typecheck|check:links|verify:models|verify:auth|verify:sso|verify:upload|verify:import|verify:queue|verify:frr|verify:benefits|verify:catalog|verify:api|verify:passkey|probe:security) ;;
     check:secrets)
       # The secret scanner has to see the developer's own env files.
       printf 'SCANNED %s\n' "$(tail -1 .env 2>/dev/null)" >>"$STUB/log" ;;
@@ -224,7 +224,7 @@ nok() { local what=$1; shift; if "$@" >/dev/null 2>&1; then no "$what"; fi; }
 restored() { eq "the three env files" "$(envsum)" "$ENV0"; nok "the saved copies are still there" test -e "$SAVED"; }
 suites_run() { grep -E '^npm run -s (verify|probe):' "$T/stub/log" | grep -v 'verify:models' | awk '{print $4}' | tr '\n' ' '; }
 
-ALL_SUITES="verify:auth verify:upload verify:import verify:queue verify:frr verify:benefits verify:catalog verify:api verify:passkey probe:security "
+ALL_SUITES="verify:auth verify:sso verify:upload verify:import verify:queue verify:frr verify:benefits verify:catalog verify:api verify:passkey probe:security "
 
 # ============================================================================
 # 31, F3, F4, R8. refusing
@@ -274,7 +274,7 @@ ft
 t "32 the whole run passes and puts all three env files back, content and mode"
 rc 0; restored; out "DONE failed=0"; no_out "PARTIAL RUN"
 out "restored .env, .env.backup, .env.docker; stack down; logs in $LOGS"
-eq "steps that passed" "$(grep -c PASS "$LOGS/summary.txt")" "21"
+eq "steps that passed" "$(grep -c PASS "$LOGS/summary.txt")" "22"
 eq "the suites, in order" "$(suites_run)" "$ALL_SUITES"
 
 t "39 up and down are both aimed at the project ppp-fulltest with the three files and the profile"
@@ -442,7 +442,7 @@ t "38 SIGTERM during a suite: the stack comes down and the env files go back"
 new_sandbox; echo "verify:upload" >"$T/stub/state/term-during"
 ft
 rc 130; restored; logged '^docker compose .* down -v --remove-orphans$'
-eq "the suites" "$(suites_run)" "verify:auth verify:upload "
+eq "the suites" "$(suites_run)" "verify:auth verify:sso verify:upload "
 
 t "F1 a second signal during the teardown cannot skip the restore"
 new_sandbox; echo "verify:upload" >"$T/stub/state/term-during"; touch "$T/stub/state/term-on-down"

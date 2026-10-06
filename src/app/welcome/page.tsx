@@ -1,5 +1,7 @@
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/authz";
+import { authMethods } from "@/lib/auth-methods";
 import { AuthShell, H1, Kicker, Lead } from "@/components/ui";
 import { PasskeyPrompt } from "./passkey-prompt";
 
@@ -18,6 +20,9 @@ function deviceLabel(userAgent: string | null): string {
 
 export default async function WelcomePage() {
   const user = await requireUser("/welcome");
+  // This page exists to offer a passkey. Where they are off there is nothing
+  // to offer, and the board is where people are going anyway.
+  if (!authMethods().local) redirect("/board");
   const ua = (await headers()).get("user-agent");
 
   return (

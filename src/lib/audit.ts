@@ -26,6 +26,7 @@ export type AuditAction =
   | "invite.rejected"
   | "auth.signed_in"
   | "auth.signed_out"
+  | "auth.sso_linked"
   | "user.role_changed"
   | "password.reset_requested"
   | "password.reset_completed"

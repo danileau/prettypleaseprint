@@ -571,6 +571,53 @@ archive Postgres refuses to start from. On ZFS a snapshot sidesteps this
 entirely; elsewhere the copy has to be made from inside a container, which the
 README now says.
 
+## Single sign-on
+
+Added after the audit above: an optional second way in, through an OpenID
+Connect provider, off unless `AUTH_METHODS` names it. It makes a second party
+able to say who somebody is, so what was checked is what the app does when that
+party is wrong. Every row is asserted by `npm run verify:sso` against a
+stand-in provider; the starred rows are guards this app adds itself, and each
+was watched failing with the guard removed.
+
+| The risk | What stops it |
+| --- | --- |
+| A forged or misdirected ID token | Verified against the provider's published keys, with issuer, audience, expiry and a per-request nonce — and `requireIdTokenVerification` makes that a condition of the provider being registered at all. A wrong signature, issuer, audience or nonce, or an expired token, signs nobody in. ★ (nonce) |
+| The provider vouches for a stranger | A pending invitation is still required unless the host set `OIDC_SIGNUP=open`. ★ |
+| An address the provider has not verified opens an account | `email_verified` must be the boolean `true` — not the string, not absent — both where the profile is mapped and again in the gate. ★ ★ |
+| …or takes over an existing account | Linking requires the same claim; the provider is deliberately not a "trusted provider", which would link on its say-so alone. ★ |
+| A claim makes somebody the owner | No claim reaches `role`. Asserted with `role`, `groups` and `is_admin` all sent. |
+| A replayed or borrowed callback | State is bound to the browser that started the flow and the code is single-use: a second browser, a second use and an invented state are all refused. |
+| The flow is used as an open redirect | A `callbackURL` on another origin is refused before the provider is contacted. |
+| A signed-in person attaches an arbitrary identity | `/link-social` is closed in every mode. ★ |
+| Provider tokens leak from the database | None are stored. ★ |
+| A method that is "off" is only hidden | Its endpoints answer 404 — checked by hand in single-sign-on-only mode, and by a pure check of the list in every mode. |
+| A suspended account comes back through the provider | Refused; no session is created. |
+
+**Accepted, and worth knowing:**
+
+- **The provider can become the owner.** Linking on a verified address includes
+  the owner's. This was the choice — the alternative is an owner who can never
+  use single sign-on — and it makes the provider part of the trust boundary.
+  The link is recorded as `auth.sso_linked` with the role.
+- **Re-authentication is as strong as the provider.** A provider that does not
+  re-prompt makes "confirm it is you" a click. `OIDC_PROMPT=login` is the
+  answer for a shared machine, and it is not the default.
+- **A second identity can link to one account.** Two subjects at the provider
+  that both carry the same verified address both open that account. That is
+  what trusting the provider's word for an address means.
+- **A provider that is down at start-up disables single sign-on until
+  restart**, with the button still shown. Availability, not confidentiality,
+  and loud in the log — but it is the sharpest edge here, and in `oidc`-only
+  mode it means nobody can sign in.
+- **`OIDC_ALLOW_INSECURE_ISSUER`** lets the issuer be plain `http://`. It
+  exists for the suites, whose stand-in has no certificate, and must never be
+  set in a deployment.
+- **Only the local-and-OIDC mode runs in CI.** Single-sign-on-only and open
+  sign-up are covered by pure checks of the rules and by a manual run; the
+  default local-only mode by running every existing suite against it by hand
+  before this merged.
+
 ## Importing from a link
 
 Added after the audit above, and the first thing in the app that makes a
