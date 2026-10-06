@@ -19,6 +19,7 @@ import { initialsFor } from "@/lib/tokens";
 import { isBuildPhase } from "@/lib/runtime";
 import { enabledSources } from "@/lib/import-source";
 import { record } from "@/lib/audit";
+import { deviceSessions } from "@/lib/device-sessions";
 import {
   PASSWORD_MAX,
   PASSWORD_MIN,
@@ -81,7 +82,10 @@ export const auth = betterAuth({
   database: prismaAdapter(db, { provider: "postgresql" }),
 
   /**
-   * Username and password is how people get in.
+   * Username and password is how the printer owner gets in. Members do not
+   * have one: their device is signed in from an invitation or a device link —
+   * see `deviceSessions()` below. Accounts that registered with a password
+   * before that keep it, and it still works.
    *
    * `requireEmailVerification` stays off: the address was verified by
    * construction. An account is only ever opened by redeeming an invite link
@@ -442,6 +446,13 @@ export const auth = betterAuth({
      * in `set-auth-token` is already the signed one.
      */
     bearer(),
+
+    /**
+     * Passwordless sign-in for members: a name, typed once per device, behind
+     * a single-use link. Server-only endpoints — nothing new is mounted under
+     * `/api/auth`. See `src/lib/device-sessions.ts`.
+     */
+    deviceSessions(),
 
     /**
      * Describes every endpoint above, for `src/lib/openapi.ts` to fold into

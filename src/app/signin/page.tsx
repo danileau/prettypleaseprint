@@ -31,7 +31,9 @@ export default async function SignInPage({
       <Kicker>Members only · ask at the counter</Kicker>
       <H1>What&rsquo;ll it be?</H1>
       <Lead>
-        Use the passkey on this device, or your username and password.
+        Members: there is no password to type. Open the link the printer owner
+        gave you on this device and you are in — ask them for one if you need
+        it. Printer owner: your passkey, or your username and password.
       </Lead>
 
       {reset && (

@@ -21,7 +21,7 @@ const REJECTIONS: Record<InviteRejection, { title: string; body: string }> = {
   },
   already_accepted: {
     title: "That invitation has been used",
-    body: "The account already exists — sign in instead. Invitation links only work once, on purpose.",
+    body: "The account already exists. Invitation links only work once, on purpose — to use it on this device, ask whoever owns the printer for a link for it.",
   },
 };
 
@@ -62,8 +62,8 @@ export default async function InvitePage({
       <Lead>
         Upload an <span className="font-mono">.stl</span> or{" "}
         <span className="font-mono">.3mf</span>, say what you are hoping for,
-        and it lands on the backlog as a story you can follow. Pick a name to
-        go by, a username and a password, and you are in.
+        and it lands on the backlog as a story you can follow. Tell us your
+        name and you are in — no password.
       </Lead>
 
       <ClaimForm
@@ -74,9 +74,9 @@ export default async function InvitePage({
 
       <div className="mt-[22px]">
         <Notice>
-          This link registers the account — there is no second email. You are
-          signed in the moment it is created, and the next screen offers a
-          passkey so you can skip the password on this device.
+          This device stays signed in as you. On another phone or computer, ask{" "}
+          {inviter?.name ?? "the printer owner"} for a link for that one — the
+          invitation itself only works once.
         </Notice>
       </div>
     </AuthShell>

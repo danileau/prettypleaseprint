@@ -6,69 +6,51 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import {
-  PASSWORD_MAX,
-  PASSWORD_MIN,
-  USERNAME_MAX,
-  USERNAME_MIN,
-  USERNAME_PATTERN,
-  USERNAME_RULE,
-} from "@/lib/auth-rules";
 import { checkInviteToken, claimingInvite } from "@/lib/invites";
 
 const ClaimSchema = z.object({
   token: z.string().min(1),
   name: z.string().trim().min(1, "Tell us what to call you.").max(80),
-  // Passed on as typed. The username plugin folds it to lower case for
-  // `username` and keeps the original in `displayUsername`, so the person
-  // sees back what they wrote and still signs in either way.
-  username: z
-    .string()
-    .trim()
-    .min(USERNAME_MIN, `A username needs at least ${USERNAME_MIN} characters.`)
-    .max(USERNAME_MAX, `A username can be at most ${USERNAME_MAX} characters.`)
-    .regex(USERNAME_PATTERN, USERNAME_RULE),
-  password: z
-    .string()
-    .min(PASSWORD_MIN, `A password needs at least ${PASSWORD_MIN} characters.`)
-    .max(PASSWORD_MAX, `That password is longer than ${PASSWORD_MAX} characters.`),
 });
 
 /** `field` puts the message against the input it belongs to. */
 export type ClaimState = {
   error?: string;
-  field?: "name" | "username" | "password";
+  field?: "name";
+  /** What was typed, so a refused name is there to correct, not to retype. */
+  name?: string;
 };
 
-/** Better Auth's codes, in the words the person at the keyboard needs. */
-function claimFailure(code: string | undefined, message: string): ClaimState {
-  switch (code) {
-    case "USERNAME_IS_ALREADY_TAKEN":
-      return { error: "Somebody already has that username. Try another.", field: "username" };
-    case "USERNAME_TOO_SHORT":
-    case "USERNAME_TOO_LONG":
-    case "INVALID_USERNAME":
-      return { error: USERNAME_RULE, field: "username" };
-    case "PASSWORD_COMPROMISED":
-      return { error: message, field: "password" };
-    case "PASSWORD_TOO_SHORT":
-      return { error: `A password needs at least ${PASSWORD_MIN} characters.`, field: "password" };
-    case "PASSWORD_TOO_LONG":
-      return { error: `That password is longer than ${PASSWORD_MAX} characters.`, field: "password" };
-    default:
-      return { error: message || "That did not go through. Try again." };
-  }
+/**
+ * Is this name already somebody's?
+ *
+ * A name is how a member is known on every ticket, and with no username or
+ * password it is the only thing that tells two people apart — so it is
+ * unique, ignoring case and surrounding space. A second device for the same
+ * person does not come through here: it comes through a device link from the
+ * printer owner, which signs it in to the account that already has the name.
+ *
+ * Not exported: everything exported from a "use server" file is a server
+ * action anybody can call, and this would be a free oracle for who is here.
+ */
+async function nameIsTaken(name: string): Promise<boolean> {
+  const taken = await db.user.findFirst({
+    where: { name: { equals: name.trim(), mode: "insensitive" } },
+    select: { id: true },
+  });
+  return Boolean(taken);
 }
 
 /**
- * Turn a valid invite into an account.
+ * Turn a valid invite into an account, signed in on this device.
  *
  * The token is re-checked here rather than trusted from the page render: the
  * page may have been sitting open while the invite was revoked or claimed
  * elsewhere.
  *
- * Registration goes through Better Auth's own sign-up rather than a direct
- * insert, which is what keeps the two server-side rules attached to it — the
+ * Registration goes through Better Auth's own `createUser` (by way of the
+ * server-only `registerMemberDevice`) rather than a direct insert, which is
+ * what keeps the two server-side rules attached to it — the
  * `user.validateUserInfo` invite gate, and the `user.create.before` hook that
  * stamps `role`, `initials` and `invitedById` from the invite row.
  */
@@ -79,21 +61,31 @@ export async function acceptInvite(
   const parsed = ClaimSchema.safeParse({
     token: formData.get("token"),
     name: formData.get("name"),
-    username: formData.get("username"),
-    password: formData.get("password"),
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    return {
-      error: issue?.message ?? "Check the form.",
-      field: issue?.path[0] as ClaimState["field"],
-    };
+    return { error: issue?.message ?? "Check the form.", field: "name" };
   }
 
   const check = await checkInviteToken(parsed.data.token);
   if (!check.ok) {
     // Bounce to the same page, which renders the reason properly.
     redirect(`/invite/${encodeURIComponent(parsed.data.token)}`);
+  }
+
+  // Device sign-in is for members. An invitation for any other role would be
+  // a passwordless way into it, so it is refused rather than downgraded.
+  if (check.invite.role !== "client") {
+    return { error: "This invitation cannot be accepted here. Ask the printer owner." };
+  }
+
+  if (await nameIsTaken(parsed.data.name)) {
+    return {
+      error:
+        "Somebody already goes by that name. If it is you on another device, ask the printer owner for a link for this one.",
+      field: "name",
+      name: parsed.data.name,
+    };
   }
 
   // The name the invitee chose wins over the one the admin guessed. It is read
@@ -108,27 +100,21 @@ export async function acceptInvite(
     // and that — not the address — is what the gate in src/lib/auth.ts admits.
     const requestHeaders = await headers();
     await claimingInvite(check.invite, () =>
-      auth.api.signUpEmail({
-        body: {
-          email: check.invite.email,
-          name: parsed.data.name,
-          username: parsed.data.username,
-          password: parsed.data.password,
-        },
+      auth.api.registerMemberDevice({
+        body: { email: check.invite.email, name: parsed.data.name },
         headers: requestHeaders,
       }),
     );
   } catch (error) {
     const e = error as { body?: { code?: string; message?: string }; message?: string };
-    const code = e.body?.code;
-    if (code === "invite_required") {
+    if (e.body?.code === "invite_required") {
       // The invite went away between the check above and here.
       redirect(`/invite/${encodeURIComponent(parsed.data.token)}`);
     }
-    return claimFailure(code, e.body?.message ?? e.message ?? "");
+    return { error: e.body?.message || e.message || "That did not go through. Try again." };
   }
 
   // `nextCookies()` has copied the session cookie into the response by now, so
-  // /welcome renders for the person who just registered.
-  redirect("/welcome");
+  // the board renders for the person who just arrived.
+  redirect("/board");
 }

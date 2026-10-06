@@ -123,7 +123,9 @@ export async function AppHeader({
       <div className="h-[5px] bg-chrome" aria-hidden />
       <div className="checker h-[8px] border-b-[3px] border-ink" aria-hidden />
 
-      {passkeyCount === 0 && <PasskeyNudge />}
+      {/* Members have no password to be tired of typing — their device is
+          their sign-in — so the nudge is for the printer owner alone. */}
+      {user.role === "admin" && passkeyCount === 0 && <PasskeyNudge />}
     </header>
   );
 }

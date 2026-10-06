@@ -29,6 +29,8 @@ export type AuditAction =
   | "user.role_changed"
   | "password.reset_requested"
   | "password.reset_completed"
+  | "device.link_requested"
+  | "device.linked"
   | "access.revoked"
   | "access.restored"
   // work

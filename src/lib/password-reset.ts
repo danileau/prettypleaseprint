@@ -50,8 +50,8 @@ export async function issuePasswordSetupUrl(userId: string): Promise<string> {
  *
  * Matching on `value` rather than `identifier` because the identifier is a
  * digest we cannot search by prefix. It is exact enough: a reset row's value
- * is the bare user id, and the only other rows in this table are WebAuthn
- * challenges, whose value is always a JSON object.
+ * is the bare user id, WebAuthn challenges' is always a JSON object, and a
+ * device link's is prefixed `device-link:` (src/lib/device-link.ts).
  */
 export async function revokePasswordSetupLinks(userId: string): Promise<void> {
   await db.verification.deleteMany({ where: { value: userId } });

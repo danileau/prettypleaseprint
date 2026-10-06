@@ -58,20 +58,30 @@ export function UserMenu({
           <p className="m-0 mt-[8.8px] inline-block rounded-chip border-2 border-ink bg-cream-2 px-[8px] font-mono text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink">
             {role === "admin" ? "Printer owner" : "Invited member"}
           </p>
-          {/* How you sign in, and a way to change it. Without this the only
-              passkey prompt in the whole app is the one at invite time. */}
+          {/* How you sign in. The printer owner gets a way to change it;
+              a member's device is their sign-in, and there is nothing to
+              change. */}
           <div className="mt-[13.2px] border-t-2 border-dashed border-rule pt-[13.2px]">
-            <p className="m-0 font-mono text-[11.5px] uppercase text-ink-3">
-              {passkeyCount === 0
-                ? "Signing in with a password"
-                : `${passkeyCount} passkey${passkeyCount === 1 ? "" : "s"} on this account`}
-            </p>
-            <a
-              href="/welcome"
-              className="mt-[6px] inline-block font-bold text-[14px] text-cherry-dk underline underline-offset-2 hover:text-cherry"
-            >
-              {passkeyCount === 0 ? "Add a passkey →" : "Add another →"}
-            </a>
+            {role === "admin" ? (
+              <>
+                <p className="m-0 font-mono text-[11.5px] uppercase text-ink-3">
+                  {passkeyCount === 0
+                    ? "Signing in with a password"
+                    : `${passkeyCount} passkey${passkeyCount === 1 ? "" : "s"} on this account`}
+                </p>
+                <a
+                  href="/welcome"
+                  className="mt-[6px] inline-block font-bold text-[14px] text-cherry-dk underline underline-offset-2 hover:text-cherry"
+                >
+                  {passkeyCount === 0 ? "Add a passkey →" : "Add another →"}
+                </a>
+              </>
+            ) : (
+              <p className="m-0 font-mono text-[11.5px] uppercase text-ink-3">
+                This device keeps you signed in. For another one, ask the
+                printer owner for a link.
+              </p>
+            )}
           </div>
 
           {/* The API console. In the account menu rather than the nav because
@@ -94,6 +104,17 @@ export function UserMenu({
           <button
             type="button"
             onClick={async () => {
+              // A member has no password to come back with, so signing out
+              // is "until the printer owner sends a new link". Worth one
+              // question before it happens rather than a surprise after.
+              if (
+                role === "client" &&
+                !window.confirm(
+                  "Sign this device out? You will need a new link from the printer owner to get back in.",
+                )
+              ) {
+                return;
+              }
               await authClient.signOut();
               window.location.assign("/signin");
             }}

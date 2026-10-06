@@ -30,6 +30,9 @@ that: there is no multi-tenancy, no billing, and no queue theory.
 - **Invite-only.** There is no public sign-up. A `User` row cannot come into
   existence without a pending invitation, enforced in a single hook that every
   authentication method goes through.
+- **No passwords for members.** The invitation asks for a name and nothing
+  else, and that device stays signed in. A new phone or a wiped browser gets a
+  single-use link from the printer owner. Only the printer owner has a password.
 - **Upload a model** — `.stl` or `.3mf`, validated against its actual bytes
   rather than its filename, measured for its bounding box, stored on disk
   and never in the web root.
@@ -430,23 +433,27 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 
 ## Security
 
-Invite-only enforced in one hook across every authentication method. Passwords
-are ≥10 characters and refused if they appear in a known breach corpus.
+Invite-only enforced in one hook across every authentication method. Members
+have no password: an invitation or a printer-owner-minted device link signs one
+browser in for up to four hundred days, so on a shared machine whoever sits
+down at a member's browser is that member — sign out there. The printer
+owner's password is ≥10 characters and refused if it appears in a known
+breach corpus.
 Authorisation answers **404, not 403**, for a resource you may not see — a 403
 confirms it exists. CSP carries a per-request nonce. Every access and content
 change is audited.
 
 Session cookies are `HttpOnly`, `SameSite=Lax` and `__Secure-` prefixed, with
-cookie caching deliberately off so sign-out is immediate. A session is worth
-**twenty idle minutes**, not a month: the window used to renew itself on every
+cookie caching deliberately off so sign-out is immediate. The printer owner's
+session is worth **twenty idle minutes**, not a month: the window used to renew itself on every
 visit, which meant a captured cookie on a shared desk was good more or less
 indefinitely. Twenty minutes is only humane because passkeys are here, and
 signing back in is a touch.
 
 Shortening it limits how long a stolen cookie is useful but not whether it is
 useful *now*, so the four actions that outlive a session — inviting somebody,
-re-sending an invitation, minting a password-reset link, revoking or restoring
-access — ask for the passkey or the password again if the current sign-in is
+re-sending an invitation, minting a password-reset or device link, revoking or
+restoring access — ask for the passkey or the password again if the current sign-in is
 more than five minutes old. That is the one control on the list a copied cookie
 cannot satisfy.
 

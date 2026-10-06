@@ -2,18 +2,26 @@
 
 [← back to the README](../README.md)
 
-**An invitation link registers you; after that you sign in with a username and
-a password.** No inbox round trip, and nothing in the running system depends on
-a mail server.
+**Members type their name; the printer owner types a password.** An invitation
+link asks a member for a name and nothing else, and the browser it was opened
+in stays signed in. Nothing in the running system depends on a mail server.
 
-Two ways in:
+How each kind of account gets in:
 
-- **Username and password** — the way in, and the one that always works. At
-  least 10 characters, capped at 128, and refused outright if the password
-  already appears in a known breach corpus.
-- **Passkey** (WebAuthn) — optional, stronger, and faster. Offered through
-  browser conditional UI, so it can sign someone in from the username field
-  with no click at all.
+- **Members: the device is the credential.** No username, no password. The
+  invitation signs in one browser, and every further device needs a
+  single-use link the printer owner hands over. See
+  [Members sign in by device](#members-sign-in-by-device).
+- **The printer owner: username and password.** This always works. At least
+  10 characters, capped at 128, and refused outright if the password already
+  appears in a known breach corpus.
+- **The printer owner: passkey** (WebAuthn). Optional, stronger and faster.
+  Offered through browser conditional UI, so it can sign the owner in from the
+  username field with no click at all.
+
+Members who registered with a password before it went away keep it, and it
+still works. Everything below about passwords and passkeys applies to the
+printer owner and to those accounts.
 
 The passkey is an accelerator, not the way in. That is the correction this
 model makes over the one before it: an emailed link was doing the job of a
@@ -159,13 +167,15 @@ row, and so is registering an invited address without its link.
 2. `createInvite` mints 32 bytes of CSPRNG output, stores **only its SHA-256
    digest**, and emails the raw token inside the link. The raw token is never
    returned to the admin either — it exists in the email and nowhere else.
-3. The invitee opens `/invite/<token>`, sees who invited them and which
-   address the invite is bound to, and picks a display name, a **username** and
-   a **password**.
-4. Submitting checks the token again and calls Better Auth's sign-up as the
-   redemption of that invite, which runs the invite gate and the stamping
-   hook, creates the account and returns a session. They land on
-   `/welcome`, which offers a passkey.
+3. The invitee opens `/invite/<token>`, sees who invited them, and types the
+   **name** they want to go by. That is the whole form. A name somebody already
+   has, ignoring case, is refused, with a pointer to the printer owner if the
+   name is theirs on another device.
+4. Submitting checks the token again and calls the server-only
+   `registerMemberDevice` as the redemption of that invite. It creates the
+   account through Better Auth's own `createUser`, so the invite gate and the
+   stamping hook run exactly as they would for a sign-up, and it starts a
+   device session. They land on the board.
 5. `databaseHooks.user.create.after` burns every open invite for that address,
    so the link cannot mint a second account.
 
@@ -184,8 +194,57 @@ So registration creates the session directly. There is no in-process link to
 redeem and no `AsyncLocalStorage` machinery holding one; the previous version
 had both, and they existed only to work around the absence of a password.
 
+### Members sign in by device
+
+A member has no password and no username. Their browser is signed in when they
+accept the invitation, and stays signed in for **four hundred days**, the
+longest a browser keeps a cookie. To sign in on another device, or after
+clearing cookies, they need a **device link**:
+
+1. The printer owner presses **Link a device** against them on the guest list.
+   This asks for re-authentication, like a reset, because it is the ability
+   to become that person.
+2. `issueDeviceLinkUrl` mints a single-use, thirty-minute token. It is stored
+   as a digest in Better Auth's `verification` table, with its own prefix so
+   `/reset-password` cannot redeem it. Any earlier link for that member is
+   revoked. The link is mailed when there is a transport and shown to the
+   owner to hand over when there is not, just like invitations and resets.
+3. `/device/<token>` says whose link it is and offers one button. Opening the
+   page spends nothing, so a chat app unfurling the link cannot use it up.
+   Pressing the button spends the token and calls the server-only
+   `signInMemberDevice`. If the browser was signed in as somebody else, that
+   session is signed out first.
+
+Both endpoints live in `src/lib/device-sessions.ts` and are declared with
+`createAuthEndpoint.serverOnly`, so they are not on the HTTP router: nothing
+new is reachable under `/api/auth`, and they are not in the OpenAPI document.
+They refuse any account that is not a client. A passwordless way into the
+admin surface would bypass both the twenty-minute window and the sudo gate.
+Better Auth's admin plugin still refuses a session for a suspended member,
+and revoking access also revokes any device link still outstanding.
+
+**The session.** The row is created with `expiresAt` four hundred days out
+and the cookie with the same `Max-Age`. Better Auth only slides a session once
+it is within `expiresIn` (twenty minutes) of expiring, so a device session
+never slides: it lasts its four hundred days and then needs a new link.
+Middleware's twenty-minute re-stamp would otherwise cut the cookie short on
+the first page view. The `ppp.device` cookie, holding a SHA-256 digest of the
+session token, tells middleware to leave the cookie alone. It is a digest
+rather than a flag so that a marker a member left behind cannot spare a later
+sign-in on the same browser, such as the printer owner's, from the
+twenty-minute rule. The marker grants nothing: the `session` row is still the
+authority, and revoking access or signing out ends it immediately.
+
+**What this trades away.** A member's browser is now their only credential.
+On a shared office machine, anyone who sits down at a member's browser is
+that member until somebody signs out. That is the threat the twenty-minute
+window was chosen for, and members no longer have it. Signing out asks for
+confirmation, because getting back in takes a new link. The owner keeps the
+short window, which guards the admin surface.
+
 #### Usernames
 
+The printer owner's, and those of members who registered with a password.
 3–32 characters of letters, digits, `-` and `_`. Case is accepted but not kept:
 the value is folded to lower case on write and looked up folded, so `Ayla_B` is
 stored as `ayla_b`, signs in as either, and cannot be registered twice in
@@ -242,8 +301,8 @@ and every server action.
 
 Four things an admin can do outlive any session: inviting somebody (a whole new
 account), re-sending an invitation (a fresh working link), minting a
-password-reset link (the ability to become that person) and revoking or
-restoring access. All four ask for the passkey or the password again if the
+password-reset or device link (the ability to become that person) and revoking
+or restoring access. All four ask for the passkey or the password again if the
 current sign-in is more than five minutes old, and send you to `/reauth` if it
 is.
 
@@ -271,8 +330,9 @@ minutes is not long.
   on the *URL scheme* rather than `NODE_ENV` — a production boot over plain
   HTTP throws unless it is loopback, and an HTTPS deployment always gets the
   flag regardless of how the env is set.
-- **A session is worth twenty idle minutes**, sliding every minute
-  (`SESSION_IDLE_SECONDS`). It used to be thirty days with a daily slide, which
+- **The printer owner's session is worth twenty idle minutes**, sliding every
+  minute (`SESSION_IDLE_SECONDS`); a member's device session is the exception
+  described [above](#members-sign-in-by-device). It used to be thirty days with a daily slide, which
   in practice meant *forever*: `expiresIn` is an idle window that renews, so a
   session used once a month never expired at all. Twenty minutes is only
   humane because passkeys are here — which does make the passkey nudge

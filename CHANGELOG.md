@@ -5,6 +5,30 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+### Changed
+
+- **Members no longer have a password.** The invitation link asks for a name
+  and nothing else, and the browser it was opened in stays signed in for up to
+  four hundred days, the longest a browser keeps a cookie. Names are unique,
+  ignoring case. To sign in on another device, or after clearing cookies, a
+  member asks the printer owner, who mints a single-use, thirty-minute device
+  link from **Link a device** on the guest list. It is mailed when there is a
+  transport and handed over when there is not. Unlike a reset link, it *does*
+  sign the holder in, so it sits behind the same re-authentication, revokes
+  any earlier link, and is audited when it is minted (`device.link_requested`)
+  and when it is used (`device.linked`).
+
+  The printer owner is unchanged: a password, passkeys, twenty idle minutes.
+  Members who registered with a password keep it, and it still works.
+  **Forgotten password?** stays on the guest list for them only. Members no
+  longer see the passkey banner or the passkey offer after registering.
+
+  The trade is worth saying out loud. A member's browser is now their only
+  credential, so on a shared machine anybody who sits down at it is that
+  member until they sign out. Signing out asks first, because getting back in
+  takes a new link. The two new Better Auth endpoints are server-only, so
+  nothing new is mounted under `/api/auth`.
+
 ### Added
 
 - **A request can start from a Printables link instead of an upload** (#91).
