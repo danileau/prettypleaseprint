@@ -93,6 +93,25 @@ async function main() {
   }
   console.info(`Benefits ready: ${DEFAULT_BENEFITS.length} default tip(s) present.`);
 
+  // Where local sign-in is off there is no password to set, and the link below
+  // would lead to a page that says so. The owner gets in the way everybody
+  // does: through the provider, as the address above — the first sign-in with
+  // that address, verified there, opens this account.
+  //
+  // Read straight from the environment rather than through
+  // src/lib/auth-methods.ts: the migrator image carries `prisma/` and nothing
+  // from `src/`. The app itself refuses a value this would misread.
+  const methods = (process.env.AUTH_METHODS ?? "local").toLowerCase().split(",").map((m) => m.trim());
+  if (!methods.includes("local")) {
+    console.info(
+      `\nSign-in here is single sign-on only (AUTH_METHODS=${process.env.AUTH_METHODS}).\n` +
+        `Sign in at ${appUrl("/signin")} as ${admin.email} — your provider must\n` +
+        "report that address as verified. Then invite the rest of the office\n" +
+        "from /admin/invites.",
+    );
+    return;
+  }
+
   // A `credential` account with a password is the thing that makes signing in
   // possible. A passkey creates no such row, so somebody who enrolled one and
   // never set a password still counts as needing this — which is correct: the

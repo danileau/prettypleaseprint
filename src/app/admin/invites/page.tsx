@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
 import { INVITE_TTL_DAYS } from "@/lib/invites";
 import { RESET_TTL_MINUTES } from "@/lib/password-reset";
+import { authMethods } from "@/lib/auth-methods";
 import { AppHeader } from "@/components/app-header";
 import { Kicker, StatusChip } from "@/components/ui";
 import { InviteForm } from "./invite-form";
@@ -126,11 +127,15 @@ export default async function InvitesPage() {
                     >
                       Their prints
                     </Link>
-                    <ResetPassword
-                      userId={m.id}
-                      name={m.name.split(" ")[0] ?? m.name}
-                      expiresInMinutes={RESET_TTL_MINUTES}
-                    />
+                    {/* No passwords, no resets: with local sign-in off the
+                        link this mints would lead to an endpoint that refuses. */}
+                    {authMethods().local && (
+                      <ResetPassword
+                        userId={m.id}
+                        name={m.name.split(" ")[0] ?? m.name}
+                        expiresInMinutes={RESET_TTL_MINUTES}
+                      />
+                    )}
                     <MemberAccess
                       userId={m.id}
                       name={m.name.split(" ")[0] ?? m.name}

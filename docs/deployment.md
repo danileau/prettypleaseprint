@@ -484,6 +484,64 @@ root. It is only removal that does.
 Take the snapshot first, and do this last. Nothing else in the migration is
 irreversible; this is.
 
+### Single sign-on
+
+Off by default. To let people sign in through an OpenID Connect provider,
+register this app with the provider as a confidential client, with exactly one
+redirect URI:
+
+```
+https://print.example/api/auth/callback/oidc
+```
+
+and the scopes `openid email profile`. Then add to `.env.docker`:
+
+```sh
+AUTH_METHODS="local,oidc"                      # or "oidc" for single sign-on only
+OIDC_ISSUER="https://id.example/realms/office" # where /.well-known/openid-configuration lives
+OIDC_CLIENT_ID="ppp"
+OIDC_CLIENT_SECRET="…"
+OIDC_NAME="the office login"                   # the button reads "Sign in with the office login"
+# OIDC_SIGNUP="invite"                         # or "open" — see below
+# OIDC_PROMPT="login"                          # make the provider ask for credentials every time
+```
+
+Restart the app. The sign-in page gains the button; with `local` still listed,
+the password form and passkeys stay beside it.
+
+Things to know before switching it on — the first three can lock people out:
+
+- **The provider must report addresses as verified.** An account opens, or an
+  existing one links, only on `email_verified: true`. If your provider does not
+  send that claim, or sends it `false` for everybody, nobody gets in this way,
+  and the sign-in page says the address is unverified. Check it for your own
+  account first.
+- **The provider must be up when the app starts.** Its discovery document is
+  read once, on the first request after start. If that fails, single sign-on is
+  off — the button is still there, and answers that it could not be started —
+  **and it stays off until the app is restarted**, even after the provider
+  comes back. The log says `Discovery fetch failed for "oidc"`. `/api/health`
+  keeps answering 200, so nothing restarts it for you. Start the provider
+  first; if both run on one host, make the app `depends_on` it.
+- **`AUTH_METHODS="oidc"` has no way in when the provider is away.** There are
+  no passwords to fall back on, the owner's included. Run `local,oidc` until
+  you trust the arrangement, and consider leaving it that way.
+- **Whoever controls the provider can become the printer owner**, by asserting
+  the owner's address. Point this at a provider you run.
+- **`OIDC_SIGNUP="open"` turns the invite-only rule off** for this door: anyone
+  the provider signs in gets an account. Leave it at `invite` and the provider
+  replaces the password while you keep the guest list — invite an address, and
+  that person signs in with no link to follow and nothing to choose.
+- **The issuer must be `https://`**, and a misspelt or incomplete setting stops
+  the app with a log line naming the variable, rather than quietly leaving the
+  button off.
+- **First start with `oidc` only:** the seed prints no set-password link,
+  because there is no password to set. Sign in through the provider as
+  `ADMIN_EMAIL`.
+
+[How authentication works](authentication.md#single-sign-on) has the reasoning,
+and what the provider is and is not trusted to say.
+
 ### Importing from a link
 
 Off by default. Add this to `.env.docker` and restart the app:

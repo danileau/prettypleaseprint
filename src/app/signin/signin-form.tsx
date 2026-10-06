@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { Button, Input, Label, Notice } from "@/components/ui";
+import { OrRule, SsoButton } from "@/components/sso-button";
 
 /**
  * One message for every way a sign-in can fail.
@@ -13,7 +14,17 @@ import { Button, Input, Label, Notice } from "@/components/ui";
  */
 const REFUSED = "That username and password do not match. Try again.";
 
-export function SignInForm({ next }: { next: string }) {
+export function SignInForm({
+  next,
+  local,
+  ssoName,
+}: {
+  next: string;
+  /** Are passwords and passkeys on for this deployment? */
+  local: boolean;
+  /** What the single sign-on provider is called, or null when it is off. */
+  ssoName: string | null;
+}) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -21,6 +32,9 @@ export function SignInForm({ next }: { next: string }) {
   const [passkeySupported, setPasskeySupported] = useState(false);
 
   useEffect(() => {
+    // No passkeys where local sign-in is off: the endpoints refuse, and a
+    // browser offering one would be offering something that cannot work.
+    if (!local) return;
     if (typeof window === "undefined" || !window.PublicKeyCredential) return;
     setPasskeySupported(true);
 
@@ -31,7 +45,7 @@ export function SignInForm({ next }: { next: string }) {
     void authClient.signIn.passkey({ autoFill: true }).then((res) => {
       if (res && !res.error) window.location.assign(next);
     });
-  }, [next]);
+  }, [next, local]);
 
   async function signInWithPasskey() {
     setError(null);
@@ -72,19 +86,30 @@ export function SignInForm({ next }: { next: string }) {
 
   return (
     <div className="flex flex-col gap-[22px]">
-      {passkeySupported && (
+      {/* Single sign-on first where it is on: it is the way in that asks for
+          nothing, and where it is the only way in it is the whole form. */}
+      {ssoName && (
         <>
-          <Button type="button" onClick={signInWithPasskey} className="w-full">
-            Sign in with a passkey
-          </Button>
-          <div className="flex items-center gap-[13.2px]">
-            <span className="h-[3px] flex-1 rounded-full bg-ink" />
-            <span className="font-mono text-[11.5px] font-bold uppercase tracking-[0.14em] text-ink-3">or</span>
-            <span className="h-[3px] flex-1 rounded-full bg-ink" />
-          </div>
+          <SsoButton label={`Sign in with ${ssoName}`} next={next} />
+          {local && <OrRule />}
         </>
       )}
 
+      {local && passkeySupported && (
+        <>
+          <Button
+            type="button"
+            variant={ssoName ? "secondary" : "primary"}
+            onClick={signInWithPasskey}
+            className="w-full"
+          >
+            Sign in with a passkey
+          </Button>
+          <OrRule />
+        </>
+      )}
+
+      {local && (
       <form onSubmit={signInWithPassword} className="flex flex-col gap-[13.2px]">
         <div>
           <Label htmlFor="username">Username</Label>
@@ -125,13 +150,14 @@ export function SignInForm({ next }: { next: string }) {
           {busy ? "Checking…" : "Sign in"}
         </Button>
       </form>
+      )}
 
       {error && <Notice tone="warn">{error}</Notice>}
 
       <p className="m-0 border-t-2 border-dashed border-rule pt-[13.2px] text-[13.5px] leading-[1.5] text-ink-2">
-        Pretty Please Print is invite-only — there is no sign-up. If you have not
-        been invited yet, or you have forgotten your password, ask whoever owns
-        the printer.
+        {local
+          ? "Pretty Please Print is invite-only — there is no sign-up. If you have not been invited yet, or you have forgotten your password, ask whoever owns the printer."
+          : "Pretty Please Print is invite-only. If signing in tells you that you have not been invited, ask whoever owns the printer."}
       </p>
     </div>
   );

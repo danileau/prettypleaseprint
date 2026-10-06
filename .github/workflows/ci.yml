@@ -139,6 +139,12 @@ jobs:
 
       - name: Invite and sign-in flow
         run: npm run verify:auth
+      # The other way in. The test overlay runs both at once and brings a
+      # stand-in identity provider that can be told who is signing in — and
+      # told to lie: a forged signature, a wrong audience, an unverified
+      # address. What the app refuses is most of what there is to check.
+      - name: Single sign-on (OIDC)
+        run: npm run verify:sso
       - name: Upload, board and story
         run: npm run verify:upload
       # The other way a model arrives. The test overlay switches importing on

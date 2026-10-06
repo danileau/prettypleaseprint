@@ -7,6 +7,32 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Added
 
+- **Single sign-on through an OpenID Connect provider** (#56). A deployment can
+  let people sign in with the login they already have — Authentik, Keycloak,
+  VoidAuth, Authelia, a cloud provider — instead of, or beside, the username
+  and password. `AUTH_METHODS` chooses: `local` (the default, and unchanged),
+  `oidc`, or `local,oidc`. A method that is off is off at its endpoints, not
+  just hidden.
+
+  **Still invite-only, unless a host says otherwise.** The provider replaces
+  the password, not the guest list: invite an address, and that person signs in
+  through the provider with nothing to follow and nothing to choose.
+  `OIDC_SIGNUP="open"` gives an account to anyone the provider signs in.
+
+  Somebody who already has an account lands in it the first time they sign in
+  this way. Both that and a new account require the provider to say, as the
+  boolean `true`, that it has verified the address. No claim from the provider
+  reaches a role, and none of its tokens are stored.
+
+  Three things to read before switching it on, in
+  [Single sign-on](docs/deployment.md#single-sign-on): the provider can assert
+  the printer owner's address, so it must be one you control; it has to be up
+  when the app starts, or single sign-on stays off until a restart; and with
+  `oidc` alone there is no password to fall back on.
+
+  `npm run verify:sso` is the twelfth suite, and runs against a stand-in
+  provider that can be told to lie.
+
 - **A request can start from a Printables link instead of an upload** (#91).
   Where the printer owner switches it on, the request form offers *or paste a
   Printables link* under the dropzone. Paste the address of a model's page and

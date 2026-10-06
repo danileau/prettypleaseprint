@@ -265,6 +265,85 @@ re-authenticating signs you in again and the gate reads the age of the session
 that comes back. The session it replaces is left to expire, which at twenty
 minutes is not long.
 
+### Single sign-on
+
+A deployment can sign people in through an OpenID Connect provider — Authentik,
+Keycloak, VoidAuth, Authelia, a cloud one — instead of, or alongside, the
+username and password. [Deployment](deployment.md#single-sign-on) covers
+setting it up; this is what it does and does not change.
+
+`AUTH_METHODS` names which ways in are on: `local` (the default, and what every
+existing instance keeps doing), `oidc`, or `local,oidc`. A method that is off is
+off **at the endpoint**, not merely missing from the page: with `local` left
+out, the password and passkey endpoints answer 404 to a request sent straight
+at them.
+
+**The provider replaces the password, not the guest list.** By default a new
+account still needs an invitation. What changes is the proof: locally it is the
+invitation's link; through the provider it is the provider's word that the
+address is verified. The whole rule is one pure function, `mayProvision` in
+[`src/lib/auth-methods.ts`](../src/lib/auth-methods.ts), called from the same
+single hook as before:
+
+| | needs |
+| --- | --- |
+| local | a pending invitation **and** its link |
+| through the provider | a pending invitation **and** `email_verified: true` |
+| through the provider, `OIDC_SIGNUP=open` | `email_verified: true` |
+
+That middle row is not finding 10 again. There, an address was something a
+stranger typed into a request. Here it is a claim in a token signed by the
+provider this deployment chose, checked against that provider's published keys
+and bound by nonce to the request that asked for it. The link only ever proved
+somebody could read the mailbox; this is the same proof from a better witness.
+The claim has to be the boolean `true` — providers have been seen sending the
+string `"false"`, which is truthy — and without it the address is refused
+before anything is looked up, so the refusal says nothing about who is invited.
+
+`open` hands the guest list to the provider: anybody it signs in gets an
+account. That switches off the invite-only rule this app is built around, for
+that door, so a host has to ask for it by name.
+
+**Somebody who already has an account lands in it.** The first sign-in through
+the provider with a matching, verified address links the two, and is recorded
+as `auth.sso_linked`. An address the provider has *not* verified links nothing
+and signs nobody in.
+
+> **That includes the printer owner.** Whoever controls the configured provider
+> can assert the owner's address and become the owner. Point this only at a
+> provider you run or trust as much as the app itself — it is, from then on,
+> part of how the owner is authenticated.
+
+**What the provider does not get to say.** Three claims reach a user row — the
+address, whether it is verified, and a name for a *new* account. Not a role:
+the owner was decided by the seed and an invitee's role by their invitation, so
+a `role` or `groups` claim changes nothing. An existing account keeps its own
+name. And none of the provider's tokens are stored: the app never calls the
+provider on anybody's behalf, so they would be credentials for somebody else's
+system sitting in this database for no reason.
+
+**Confirming it is still you** works as before — freshness is the age of the
+session, and signing in through the provider again mints a new one. It is,
+though, only as strong as the provider's willingness to ask again: one that
+waves through whoever holds its session confirms nothing on a shared machine.
+`OIDC_PROMPT=login` makes the provider ask for credentials every time, at the
+cost of the "single" in single sign-on. Unset by default.
+
+**What single sign-on does not do here:**
+
+- **Sign you out of the provider.** Signing out of this app ends this app's
+  session. Revoking access here is still what locks somebody out here.
+- **Give an SSO-only person a password.** They cannot use the bearer-token
+  [API](api.md) from a script, because that starts with a username and
+  password. With `local` on they can be given one from the guest list.
+- **Survive the provider being down at start-up.** See the deployment guide —
+  it is the sharpest edge of this feature.
+
+`npm run verify:sso` drives all of it against a stand-in provider
+(`scripts/stubs/oidc-stub.mjs`) that can be told who is signing in and told to
+lie: a forged signature, a wrong audience, a replayed nonce, an unverified
+address.
+
 ### Other decisions worth knowing
 
 - **Cookies** are `HttpOnly`, `SameSite=Lax`, `__Secure-` prefixed, and keyed

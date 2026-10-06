@@ -5,7 +5,7 @@ maintainer — so the bar is not "be an expert", it is "leave it working".
 
 ## The contract
 
-Eleven verification suites. Ten of them run in CI **against the built container
+Twelve verification suites. Eleven of them run in CI **against the built container
 image** rather than a dev server; `verify:models` is a pure-function test of the
 upload validator and runs in its own gate with nothing else up. They are the
 specification; if a change makes one fail, that is the change talking.
@@ -13,6 +13,7 @@ specification; if a change makes one fail, that is the change talking.
 ```bash
 npm run verify:models     # upload validator vs. hostile fixtures — needs nothing running
 npm run verify:auth       # registration, sign-in, password reset
+npm run verify:sso        # single sign-on, against a stand-in provider that can lie
 npm run verify:upload     # upload → board → story
 npm run verify:import     # a model from a link, against a stand-in for the site
 npm run verify:queue      # admin queue, status flow, conversation, access
