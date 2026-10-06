@@ -5,7 +5,47 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+### Added
+
+- **A request can start from a Printables link instead of an upload** (#91).
+  Where the printer owner switches it on, the request form offers *or paste a
+  Printables link* under the dropzone. Paste the address of a model's page and
+  the app lists the `.stl` and `.3mf` files in it; pick one, fill in the rest
+  as usual, and the server fetches the file itself. Nobody downloads a model
+  only to upload it again. The ticket links back to the model's page, where the
+  author, the licence and the print notes are.
+
+  From the moment the bytes arrive it is an upload: the same inspection, the
+  same refusal of anything that is not really an STL or 3MF, the same 250 MB
+  limit. What a model site says a file is counts for nothing.
+
+  **Off by default**, because it makes the server call somebody else's on a
+  requester's say-so: set `IMPORT_SOURCES="printables"`. A requester chooses a
+  model and never an address — the pasted link is read for a numeric id and
+  thrown away, the file is fetched only from the one origin Printables serves
+  from, and redirects are refused rather than followed. It speaks the API the
+  Printables website uses, which is not a published one and can change; when
+  it does, importing says so and points at the upload. Read
+  [Importing from a link](docs/deployment.md#importing-from-a-link) first.
+
+  Only Printables. MakerWorld and Thingiverse were asked for too and are not
+  supported; [the architecture notes](docs/architecture.md#importing-from-a-link)
+  say why.
+
+  Over the API it is `POST /api/import/files` to list and `POST /api/import` to
+  open the request, `GET /api/catalog` says whether an instance imports at all,
+  and every ticket carries `source` — the model's page, or `null` for an
+  upload. `npm run verify:import` is the eleventh suite, and runs against a
+  stand-in for Printables so that the far end can be made to misbehave.
+
 ### Changed
+
+- **Opening a ticket from a model's bytes lives in one place.** It was the body
+  of the upload route while that was the only way a model arrived;
+  `src/lib/intake.ts` now holds it and the upload and the import both call it.
+  The limit on how many models are held in memory at once moved with it and is
+  shared, so an upload and an import in flight together count as two, not one
+  each. Nothing about uploading changes.
 
 - **The documentation caught up with v0.3.0.** A sweep of every guide against
   the code as released. The architecture guide's file layout had drifted

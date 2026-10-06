@@ -22,6 +22,7 @@ import {
 
 /** One owner-managed tip option, passed from the server (see upload/page.tsx). */
 type Benefit = { label: string; preferred: boolean };
+import { SOURCE_LABEL, identifySource, type ImportSource } from "@/lib/import-source";
 import { Button, Label, Notice } from "@/components/ui";
 import { ColorSwatch } from "@/components/color-swatch";
 
@@ -49,6 +50,26 @@ type Phase =
   | { kind: "idle" }
   | { kind: "uploading"; percent: number }
   | { kind: "error"; message: string };
+
+/** What `POST /api/import/files` answers with — a model and its printable files. */
+type Listing = {
+  source: ImportSource;
+  model: { id: string; name: string; url: string; author: string | null; license: string | null };
+  files: { id: string; name: string; size: number; tooLarge: boolean }[];
+  otherFiles: number;
+};
+
+/**
+ * The link step, when this instance imports.
+ *
+ *   idle     nothing asked yet
+ *   looking  the server is asking the site what the model holds
+ *   listed   it answered; `fileId` is the file picked, if one has been
+ */
+type Linked =
+  | { kind: "idle" }
+  | { kind: "looking" }
+  | { kind: "listed"; url: string; listing: Listing; fileId: string | null };
 
 /** Segmented control. Handoff §3: track #eaecee, 3px inset, 6px options. */
 function Segmented<T extends string | number>({
@@ -98,11 +119,14 @@ export function UploadForm({
   catalog,
   benefits,
   again,
+  importSources = [],
 }: {
   owner: string;
   catalog: CatalogMaterialChoice[];
   benefits: Benefit[];
   again?: Again;
+  /** The sites this instance imports from. Empty hides the link step entirely. */
+  importSources?: ImportSource[];
 }) {
   // Default to a preferred benefit if the owner has marked one, else the first
   // on the list, else empty (the list is seeded, so empty is only a safety net).
@@ -130,6 +154,8 @@ export function UploadForm({
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  const [link, setLink] = useState("");
+  const [linked, setLinked] = useState<Linked>({ kind: "idle" });
 
   const [title, setTitle] = useState(again?.title ?? "");
   const [material, setMaterial] = useState<string>(initialMaterial.name);
@@ -172,7 +198,84 @@ export function UploadForm({
       });
     }
     setFile(picked);
+    // One model per ticket: a file from disk replaces a file picked from a link.
+    setLinked({ kind: "idle" });
   }, []);
+
+  const sourceNames = importSources.map((s) => SOURCE_LABEL[s]).join(" or ");
+  const picked =
+    linked.kind === "listed"
+      ? linked.listing.files.find((f) => f.id === linked.fileId) ?? null
+      : null;
+
+  /**
+   * Ask the server what the link holds. The browser never talks to the model
+   * site itself — `connect-src 'self'` would refuse it, and the server is the
+   * one that has to fetch the file anyway.
+   */
+  async function lookUp() {
+    const url = link.trim();
+    if (!url || linked.kind === "looking") return;
+    // The same parse the server makes, for an answer before the round trip.
+    if (!identifySource(url, importSources)) {
+      setLinked({ kind: "idle" });
+      return setPhase({ kind: "error", message: `That is not a link to a model on ${sourceNames}.` });
+    }
+    setPhase({ kind: "idle" });
+    setLinked({ kind: "looking" });
+    try {
+      const res = await fetch("/api/import/files", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLinked({ kind: "idle" });
+        return setPhase({ kind: "error", message: body.error ?? "That did not go through. Try again." });
+      }
+      const listing = body as Listing;
+      // A model with exactly one printable file needs no choosing.
+      const only = listing.files.length === 1 && !listing.files[0]!.tooLarge ? listing.files[0]!.id : null;
+      setFile(null);
+      if (inputRef.current) inputRef.current.value = "";
+      setLinked({ kind: "listed", url, listing, fileId: only });
+      // A model's files are called things like `body_v2_final.stl`; the model
+      // itself has a name a person chose. Offered, never forced: only into an
+      // empty box, and it stays editable.
+      setTitle((current) => current || listing.model.name.slice(0, 120));
+    } catch {
+      setLinked({ kind: "idle" });
+      setPhase({ kind: "error", message: "The connection dropped. Try again." });
+    }
+  }
+
+  /**
+   * Importing sends the wish and two ids; the server fetches the bytes. There
+   * is nothing leaving this machine to measure, so no percentage — the bar
+   * would be a lie.
+   */
+  async function sendImport(url: string, fileId: string) {
+    setPhase({ kind: "uploading", percent: 100 });
+    try {
+      const res = await fetch("/api/import", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          url, fileId, title, material, colorName: color, quantity, priority, tip, note, printSettings,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return setPhase({ kind: "error", message: body.error ?? "That did not go through. Try again." });
+      }
+      const id: number | null = body.story?.id ?? null;
+      router.push(id === null ? "/board" : `/story/${id}?sent=1`);
+      router.refresh();
+    } catch {
+      setPhase({ kind: "error", message: "The connection dropped. Try again." });
+    }
+  }
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -211,6 +314,7 @@ export function UploadForm({
     // actually being sent rather than a half-typed draft.
     setQuantityDraft(null);
     if (again) return void sendAgain(again);
+    if (linked.kind === "listed" && picked) return void sendImport(linked.url, picked.id);
     if (!file) return;
 
     const body = new FormData();
@@ -347,14 +451,14 @@ export function UploadForm({
           {file ? file.name : "Drop your .stl or .3mf here"}
         </span>
         <span className="mt-[6px] block font-mono text-[12px] uppercase tracking-[0.04em] text-ink-3">
-          {busy
+          {busy && !picked
             ? `Uploading… ${phase.percent}%`
             : file
               ? `${formatBytes(file.size)} · checked on the server when you send it`
               : `or click to choose a file · ${formatBytes(MAX_UPLOAD_BYTES)} max`}
         </span>
 
-        {busy && (
+        {busy && !picked && (
           <span className="mt-[13.2px] block h-[10px] overflow-hidden rounded-full border-[3px] border-ink bg-cream-2">
             <span
               className="block h-full bg-cherry transition-[width] duration-200"
@@ -363,6 +467,100 @@ export function UploadForm({
           </span>
         )}
       </label>}
+
+      {/* ---- or a link (only where the instance has switched importing on) ---- */}
+      {!again && importSources.length > 0 && (
+        <div className="mt-[17.6px]">
+          <Label htmlFor="import-link">Or paste a {sourceNames} link</Label>
+          <div className="flex flex-wrap gap-[8.8px]">
+            <input
+              id="import-link"
+              type="url"
+              inputMode="url"
+              value={link}
+              disabled={busy}
+              onChange={(e) => setLink(e.target.value)}
+              // Enter here means "look this up", not "send the request": the
+              // form is not ready to send until a file has been picked.
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                void lookUp();
+              }}
+              placeholder="https://www.printables.com/model/…"
+              className="min-w-[240px] flex-1 rounded-card border-[3px] border-ink bg-porcelain px-[15px] py-[12px] text-[16px] text-ink placeholder:text-ink-3"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy || linked.kind === "looking" || !link.trim()}
+              onClick={() => void lookUp()}
+            >
+              {linked.kind === "looking" ? "Looking…" : "Find the files"}
+            </Button>
+          </div>
+
+          {linked.kind === "listed" && (
+            <div
+              aria-live="polite"
+              className="mt-[13.2px] rounded-panel border-[3px] border-ink bg-porcelain px-[22px] py-[17.6px] shadow-stamp"
+            >
+              <p className="m-0 break-words font-display text-[19px] text-ink">{linked.listing.model.name}</p>
+              <p className="m-0 mt-[3px] font-mono text-[12px] uppercase tracking-[0.04em] text-ink-3">
+                {[
+                  linked.listing.model.author ? `by ${linked.listing.model.author}` : null,
+                  linked.listing.model.license,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || SOURCE_LABEL[linked.listing.source]}
+              </p>
+
+              {linked.listing.files.length === 0 ? (
+                <p className="m-0 mt-[13.2px] text-[15px] text-ink-2">
+                  There is no .stl or .3mf in that model, so there is nothing here to print.
+                </p>
+              ) : (
+                <div
+                  role="radiogroup"
+                  aria-label="Which file to print"
+                  className="mt-[13.2px] flex max-h-[280px] flex-col gap-[6px] overflow-y-auto"
+                >
+                  {linked.listing.files.map((f) => {
+                    const active = f.id === linked.fileId;
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        disabled={f.tooLarge || busy}
+                        onClick={() => setLinked({ ...linked, fileId: f.id })}
+                        className={`flex cursor-pointer items-baseline justify-between gap-[13.2px] rounded-card border-[3px] border-ink px-[13px] py-[9px] text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                          active ? "bg-cherry-dk text-cream" : "bg-cream text-ink hover:bg-sun"
+                        }`}
+                      >
+                        <span className="min-w-0 break-words text-[15px] font-bold">{f.name}</span>
+                        <span className="shrink-0 font-mono text-[12px] uppercase tracking-[0.04em]">
+                          {formatBytes(f.size)}
+                          {f.tooLarge ? ` · over ${formatBytes(MAX_UPLOAD_BYTES)}` : ""}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <p className="m-0 mt-[11px] font-mono text-[11.5px] uppercase tracking-[0.04em] text-ink-3">
+                {linked.listing.files.length > 1 ? "One file per request · " : ""}
+                {linked.listing.otherFiles > 0
+                  ? `${linked.listing.otherFiles} other ${linked.listing.otherFiles === 1 ? "file" : "files"} there cannot be printed here · `
+                  : ""}
+                fetched and checked on the server when you send it
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {phase.kind === "error" && (
         <div className="mt-[13.2px]">
@@ -582,9 +780,9 @@ export function UploadForm({
 
       {/* ---- actions ---- */}
       <div className="mt-[26.4px] flex flex-wrap items-center gap-[13.2px]">
-        <Button type="submit" disabled={(!file && !again) || busy} className="px-[30px]">
+        <Button type="submit" disabled={(!file && !again && !picked) || busy} className="px-[30px]">
           {busy
-            ? again ? "Sending…" : `Sending… ${phase.percent}%`
+            ? again ? "Sending…" : picked ? "Fetching it…" : `Sending… ${phase.percent}%`
             : again ? `Send it to ${owner} again` : `Send it to ${owner}`}
         </Button>
         <Button
@@ -594,7 +792,7 @@ export function UploadForm({
         >
           Cancel
         </Button>
-        {!file && !again && (
+        {!file && !again && !picked && (
           <span className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-ink-3">Pick a file to continue.</span>
         )}
       </div>

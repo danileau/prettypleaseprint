@@ -142,6 +142,7 @@ export const STORY_FIELDS = {
   fileSize: true,
   mimeType: true,
   dims: true,
+  sourceUrl: true,
   createdAt: true,
   updatedAt: true,
   uploaderId: true,
@@ -632,7 +633,7 @@ export async function requeueStory(
       id: true, title: true, quantity: true, priority: true, material: true,
       colorName: true, tip: true, note: true, printSettings: true,
       filename: true, fileSize: true,
-      mimeType: true, storageKey: true, dims: true, uploaderId: true,
+      mimeType: true, storageKey: true, dims: true, sourceUrl: true, uploaderId: true,
     },
   });
   if (!src) throw problem(404, "That ticket no longer exists.");
@@ -714,6 +715,9 @@ export async function requeueStory(
       mimeType: src.mimeType,
       storageKey: destKey,
       dims: src.dims,
+      // The same model from the same place; a reprint did not stop having come
+      // from there.
+      sourceUrl: src.sourceUrl,
     },
     select: { id: true },
   });

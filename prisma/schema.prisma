@@ -323,6 +323,12 @@ model Story {
   mimeType   String
   storageKey String
 
+  /// Where the model came from, when it was imported from a link instead of
+  /// uploaded: the model's page on the site it was fetched from. Built by the
+  /// server from what that site's API returned, never copied from what the
+  /// requester typed — see src/lib/import.ts. Null for an upload.
+  sourceUrl String?
+
   // --- measured from the mesh at upload time, display only ---
   //
   // There is deliberately no `estimate` column. A print time derived from the

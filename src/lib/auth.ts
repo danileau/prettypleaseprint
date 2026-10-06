@@ -17,6 +17,7 @@ import {
 } from "@/lib/invites";
 import { initialsFor } from "@/lib/tokens";
 import { isBuildPhase } from "@/lib/runtime";
+import { enabledSources } from "@/lib/import-source";
 import { record } from "@/lib/audit";
 import {
   PASSWORD_MAX,
@@ -46,6 +47,12 @@ const isHttps = baseURL.startsWith("https://");
 const isLoopback = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(
   baseURL,
 );
+
+// Not an authentication setting, and here anyway: this is the module every
+// request loads, which is what makes it where configuration is refused. A
+// misspelt IMPORT_SOURCES throws by name on the first request instead of
+// quietly meaning "off" — see `enabledSources`.
+if (!isBuildPhase) enabledSources();
 
 if (isProd && !isBuildPhase) {
   if (!process.env.BETTER_AUTH_SECRET) {

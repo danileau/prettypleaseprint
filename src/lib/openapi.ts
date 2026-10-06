@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { COLOR_MODES, STORY_PRIORITIES, TIPS, WishSchema } from "@/lib/catalog";
 import { ACCEPTED_EXTENSIONS, MAX_BYTES, formatBytes } from "@/lib/models";
 import { FLOW } from "@/lib/scope";
+import { IMPORT_SOURCES } from "@/lib/import-source";
 import { BodySchema, LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX, ReasonSchema } from "@/lib/stories";
 import { NOTIFICATION_LIMIT_MAX } from "@/lib/notifications";
 
@@ -145,6 +146,14 @@ const STORY_SCHEMA = {
           examples: ["/api/models/4"],
         },
       },
+    },
+    source: {
+      type: ["string", "null"],
+      format: "uri",
+      description:
+        "The page the model was imported from, for a ticket opened with " +
+        "`POST /api/import`. Null for an upload.",
+      examples: ["https://www.printables.com/model/3161-3d-benchy"],
     },
     uploader: {
       type: "object",
@@ -314,7 +323,7 @@ export async function buildOpenApiDocument() {
       { name: "queue", description: "The printer owner's actions on a ticket." },
       { name: "conversation", description: "The thread that lives on a ticket." },
       { name: "activity", description: "Your notifications." },
-      { name: "files", description: "Uploading a model, and fetching its bytes." },
+      { name: "files", description: "Uploading or importing a model, and fetching its bytes." },
       { name: "service", description: "Liveness, and this document." },
       ...authHalf.tags,
     ],
@@ -785,6 +794,13 @@ export async function buildOpenApiDocument() {
                   schema: {
                     type: "object",
                     properties: {
+                      importSources: {
+                        type: "array",
+                        items: { type: "string", enum: [...IMPORT_SOURCES] },
+                        description:
+                          "The sites this instance imports models from — see " +
+                          "`POST /api/import`. Empty when importing is not switched on.",
+                      },
                       materials: {
                         type: "array",
                         items: {
@@ -965,6 +981,176 @@ export async function buildOpenApiDocument() {
             "413": errorResponse("Larger than the cap."),
             "422": errorResponse("The bytes are not an acceptable model. The reason says which check failed."),
             "502": errorResponse("The file could not be written to disk. Nothing was saved."),
+            ...COMMON_ERRORS,
+          },
+        },
+      },
+
+      "/api/import/files": {
+        post: {
+          tags: ["files"],
+          summary: "List what a link to a model offers",
+          description:
+            "The first of two steps in importing a model from the site it is " +
+            "published on, instead of downloading it and uploading it here. " +
+            "Give it the link to the model's page and it answers with the " +
+            "model and the `.stl` and `.3mf` files in it. A model usually " +
+            "carries several and a ticket holds one, so pick one and send its " +
+            "`id` to `POST /api/import`.\n\n" +
+            "**Off unless the instance switches it on.** `GET /api/catalog` " +
+            "lists the sites in `importSources`; where that is empty this " +
+            "answers `501`.\n\n" +
+            "The link is read for a model id and nothing else. The server " +
+            "does not fetch the address it was given.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["url"],
+                  properties: {
+                    url: {
+                      type: "string",
+                      description: "The model's page.",
+                      examples: ["https://www.printables.com/model/3161-3d-benchy"],
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "The model, and its printable files in the site's order.",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      source: { type: "string", enum: [...IMPORT_SOURCES] },
+                      model: {
+                        type: "object",
+                        properties: {
+                          id: { type: "string", examples: ["3161"] },
+                          name: { type: "string", examples: ["3D BENCHY"] },
+                          url: {
+                            type: "string",
+                            format: "uri",
+                            description: "The model's page, as the ticket will record it.",
+                          },
+                          author: { type: ["string", "null"] },
+                          license: { type: ["string", "null"] },
+                        },
+                      },
+                      files: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          properties: {
+                            id: { type: "string", examples: ["49068"] },
+                            name: { type: "string", examples: ["3dbenchy.stl"] },
+                            size: { type: "integer", description: "Bytes, as the site lists it." },
+                            tooLarge: {
+                              type: "boolean",
+                              description: `Over ${formatBytes(MAX_BYTES)}, so it cannot be imported.`,
+                            },
+                          },
+                        },
+                      },
+                      otherFiles: {
+                        type: "integer",
+                        description: "How many files the model carries that are neither `.stl` nor `.3mf`.",
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            "400": errorResponse("The body is not a JSON object."),
+            "403": errorResponse("A cross-origin request."),
+            "404": errorResponse("The site has no model at that link."),
+            "422": errorResponse("Not a link to a model on a site this instance imports from."),
+            "501": errorResponse("Importing is not switched on for this instance."),
+            "502": errorResponse(
+              "The site could not be reached, or answered in a way this app does not " +
+                "recognise. Its API is not a published one and can change.",
+            ),
+            ...COMMON_ERRORS,
+          },
+        },
+      },
+
+      "/api/import": {
+        post: {
+          tags: ["files"],
+          summary: "Import a model from a link and open a request",
+          description:
+            "`POST /api/upload` without the upload: the server fetches one " +
+            "file from the model's page and opens a ticket from it. The body " +
+            "is the wish an upload carries, plus `url` and the `fileId` chosen " +
+            "from `POST /api/import/files`.\n\n" +
+            "From there it is an upload in every respect. The decision is made " +
+            "on the **bytes** that arrive, not on what the site called them; " +
+            "nothing reaches storage until they have been inspected, and no " +
+            "ticket exists until the file is in place. The ticket records " +
+            "where the model came from in `source`.\n\n" +
+            "The wish is checked before anything is fetched. The file must be " +
+            `at most ${formatBytes(MAX_BYTES)}, and is refused if it arrives ` +
+            "larger than the site listed it.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  allOf: [
+                    { $ref: "#/components/schemas/Wish" },
+                    {
+                      type: "object",
+                      required: ["url", "fileId"],
+                      properties: {
+                        url: {
+                          type: "string",
+                          description: "The model's page.",
+                          examples: ["https://www.printables.com/model/3161-3d-benchy"],
+                        },
+                        fileId: {
+                          type: "string",
+                          description: "One of the `files[].id` values listed for that model.",
+                          examples: ["49068"],
+                        },
+                      },
+                    },
+                  ],
+                },
+                example: {
+                  url: "https://www.printables.com/model/3161-3d-benchy",
+                  fileId: "49068",
+                  material: "PETG",
+                  colorName: "Slate",
+                  quantity: 1,
+                  tip: "A beer",
+                },
+              },
+            },
+          },
+          responses: {
+            "201": storyResponse("Fetched, stored, and the printer owner was told."),
+            "400": errorResponse("A malformed body, no `fileId`, or a field the catalogue does not allow."),
+            "403": errorResponse("A cross-origin request."),
+            "404": errorResponse("The site has no model at that link, or that file is not one of its printable files."),
+            "413": errorResponse("Larger than the cap."),
+            "422": errorResponse(
+              "Not a link to a model on a site this instance imports from — or the " +
+                "bytes that arrived are not an acceptable model. The reason says which.",
+            ),
+            "501": errorResponse("Importing is not switched on for this instance."),
+            "502": errorResponse(
+              "The site could not be reached, would not hand the file over, pointed " +
+                "somewhere this app does not fetch from, or sent more than it listed. " +
+                "Nothing was saved.",
+            ),
+            "503": errorResponse("Too many models are being handled at once. Send it again in a moment."),
             ...COMMON_ERRORS,
           },
         },

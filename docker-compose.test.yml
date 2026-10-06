@@ -12,6 +12,12 @@ services:
   app:
     ports:
       - "${APP_PORT:-3000}:3000"
+    environment:
+      # Importing from a link is off unless a deployment asks for it. The
+      # suites ask for it, and point the importer at the stand-in below rather
+      # than at the real Printables — see scripts/stubs/printables-stub.mjs.
+      IMPORT_SOURCES: printables
+      IMPORT_PRINTABLES_BASE: http://printables-stub:4010
   db:
     ports:
       - "5432:5432"
@@ -21,3 +27,18 @@ services:
       # 1025 is SMTP, which the host-side suites post to directly.
       - "${MAILPIT_UI_PORT:-8025}:8025"
       - "1025:1025"
+  # A stand-in for Printables, so `verify:import` can make the far end
+  # misbehave. The Dockerfile's own base image, running one file with no
+  # dependencies. Published so the suite can read its request counts and assert
+  # that a refused link was never connected to at all.
+  printables-stub:
+    image: node:22-alpine
+    container_name: ppp-printables-stub
+    command: ["node", "/stub/printables-stub.mjs"]
+    environment:
+      STUB_ORIGIN: http://printables-stub:4010
+      STUB_ELSEWHERE_ORIGIN: http://printables-stub:4011
+    volumes:
+      - ./scripts/stubs/printables-stub.mjs:/stub/printables-stub.mjs:ro
+    ports:
+      - "${PRINTABLES_STUB_PORT:-4010}:4010"
