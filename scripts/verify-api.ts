@@ -217,6 +217,7 @@ async function main() {
     "/api/stories/{id}/requeue", "/api/stories/{id}/priority",
     "/api/notifications", "/api/notifications/read",
     "/api/catalog", "/api/upload", "/api/models/{id}",
+    "/api/import", "/api/import/files",
   ]) {
     check(`it documents ${expected}`, paths.includes(expected));
   }

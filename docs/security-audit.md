@@ -274,7 +274,7 @@ section 2b.
 | **A07** | Auth Failures | **Pass, after fix 1.** Passwords: ≥10 characters, breach-checked against HIBP by k-anonymity, guessing capped at 10/min per IP. No user enumeration — a wrong password and an invented username give byte-identical responses, and an unknown username still pays for a hash so the wall clock does not answer either. Set-password links single-use, 30-minute TTL, hashed at rest, and they establish **no session**. Setting a password revokes the sessions the old one opened. Off-site redirect targets refused, both via `?next=` and via the API's `callbackURL` — decided by resolving the target against a sentinel origin rather than by matching its prefix, because `/\evil.example` passes “starts with / and not //” and then resolves off-site. That is fix 8 below. Sign-out kills the session server-side. A bearer token is the session token rather than a separate credential: an invented one grants nothing, and sign-out revokes the token at the same instant it revokes the cookie — probed, because a token that outlived sign-out would be a way back into an account whose owner believes they have left. See the section below. |
 | **A08** | Integrity Failures | **Pass.** `role`, `initials` and `invitedById` cannot be set from the request body: declared `input: false`, and Better Auth refuses the whole sign-up with `FIELD_NOT_ALLOWED` rather than silently trimming it. A chosen `id` and a posted `emailVerified` reach the endpoint undeclared and are overruled server-side from the invite. Both halves probed. On upload, `uploaderId` comes from the session and a posted `status` is ignored, both probed. Storage keys are generated, never derived from the filename. Lockfile committed. |
 | **A09** | Logging & Monitoring | **Pass.** An append-only `AuditEvent` table records invitations sent, resent, revoked, accepted and *rejected*; access revoked and restored; password resets requested and completed; sign-in and sign-out; story creation and refused uploads. The client address is recorded only from a header the deployment has explicitly named as trustworthy (`TRUST_PROXY_HEADERS`), and no address at all otherwise — a blank rather than a fiction. Rows are denormalised (`actorEmail`, `subject`) so the trail still reads correctly after the user or story it refers to is deleted, and a probe asserts no token or secret reaches `detail`. |
-| **A10** | SSRF | **Pass (low exposure).** The app makes no outbound request from user input. A link-local `callbackURL` (`169.254.169.254`) is refused. |
+| **A10** | SSRF | **Pass.** A link-local `callbackURL` (`169.254.169.254`) is refused. One feature makes an outbound request because a requester asked — importing a model from a link, off by default — and the requester never chooses its address: see [Importing from a link](#importing-from-a-link). |
 
 ## A07 with passwords in the picture
 
@@ -570,6 +570,46 @@ cannot read it, and one taken with `sudo` that flattens ownership produces an
 archive Postgres refuses to start from. On ZFS a snapshot sidesteps this
 entirely; elsewhere the copy has to be made from inside a container, which the
 README now says.
+
+## Importing from a link
+
+Added after the audit above, and the first thing in the app that makes a
+request to another server on a requester's say-so. It is off unless
+`IMPORT_SOURCES` names a source. What follows is what it was built to refuse.
+Every row but the last is asserted by `npm run verify:import`, and the four
+that are new code rather than reuse — the link parse, the download origin and
+redirect, the size cut-off, and the stored link — were each watched failing
+with the guard removed before the check was believed.
+
+| The risk | What stops it |
+| --- | --- |
+| A pasted link makes the server request an address of the requester's choosing — an internal service, the metadata endpoint, `localhost` | The link is never fetched. It is parsed for a numeric model id, compared against the Printables hostnames *as a parsed host*, and discarded. Twenty-one look-alike links are refused with no outbound request made at all. |
+| The far end names somewhere else to connect to | The download link is fetched only on the one file origin, compared after parsing; redirects are an error rather than followed. A stand-in serving a perfectly good model from a second origin is never connected to. |
+| The far end sends something other than a model | The bytes go through the same `inspectModel` an upload does. A web page named `.stl` is `422`, recorded as `upload.rejected` with its source, and nothing is stored. |
+| The far end sends more than it said | The download is cut off at the listed size, which is already held to the upload cap — with or without a `Content-Length` admitting it. |
+| A client names a file from a different model, or lies about its size | The listing is re-fetched server-side at import time. The client supplies two ids and nothing else is taken from it. |
+| A cross-site page drives it with a signed-in person's cookie | Both endpoints are `POST` and sit behind the same Origin check as every write — including the listing, which changes nothing but does make the server call out. |
+| The stored link becomes a `javascript:` URL on a ticket | `sourceUrl` is built from the API's id and slug, never from input, and is validated again on the way out. A hostile value written straight into the column renders as nothing. |
+| Memory | An import takes one of the same two slots an upload does, and fills one pre-sized buffer rather than joining chunks. |
+
+**Accepted, and worth knowing:**
+
+- **The API is undocumented.** It is the endpoint the Printables website uses,
+  not a published contract. The response is parsed against a schema and a
+  mismatch fails by name. That bounds the damage of a change to "importing
+  stops, with a sentence saying why"; it does not make the dependency stable.
+- **No per-person rate limit on listing.** A signed-in colleague could make the
+  server ask Printables about models in a loop. Everyone who can sign in was
+  invited, each request is a few kilobytes, and the slot gate bounds the
+  expensive half. Revisit if the group grows.
+- **`IMPORT_PRINTABLES_BASE` moves the allowlist.** It points the importer at a
+  stand-in so the suite can run without calling Printables, and with it set the
+  stand-in is the *only* host the importer talks to. It is operator
+  environment, unreachable from any request, and should never be set in a
+  deployment — but it is a knob that exists, and this is where that is written
+  down.
+- **DNS is trusted.** The allowlist is hostnames, not addresses. Someone who
+  can answer DNS for `printables.com` on your network can already do worse.
 
 ## Open items
 

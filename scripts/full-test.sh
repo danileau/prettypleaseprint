@@ -101,18 +101,19 @@ COMPOSE_FILES_NEEDED="docker-compose.prod.yml docker-compose.build.yml docker-co
 
 # The names docker-compose.prod.yml pins with container_name. They are why
 # only one stack can exist on a machine, whatever its project is called.
-STACK_NAMES="ppp-app ppp-db ppp-migrate ppp-mailpit"
+# and docker-compose.test.yml adds the Printables stand-in.
+STACK_NAMES="ppp-app ppp-db ppp-migrate ppp-mailpit ppp-printables-stub"
 
-# What docker-compose.test.yml publishes on the host. APP_PORT and
-# MAILPIT_UI_PORT could move two of them, but this script unsets both, so the
-# four are fixed. PPP_FULLTEST_PORTS exists for this script's own tests, which
+# What docker-compose.test.yml publishes on the host. APP_PORT,
+# MAILPIT_UI_PORT and PRINTABLES_STUB_PORT could move three of them, but this
+# script unsets them all, so the five are fixed. PPP_FULLTEST_PORTS exists for this script's own tests, which
 # have to run on machines where 3000 is taken.
-PORTS="${PPP_FULLTEST_PORTS:-3000 5432 1025 8025}"
+PORTS="${PPP_FULLTEST_PORTS:-3000 5432 1025 8025 4010}"
 
 # In CI's order (the `verify` job of .github/workflows/ci.yml). A test pins
 # this list to that file, because the hand-rolled predecessor of this script
 # had quietly lost verify:catalog.
-SUITES="verify:auth verify:upload verify:queue verify:frr verify:benefits verify:catalog verify:api verify:passkey probe:security"
+SUITES="verify:auth verify:upload verify:import verify:queue verify:frr verify:benefits verify:catalog verify:api verify:passkey probe:security"
 
 ENV_FILES=".env .env.backup .env.docker"
 
@@ -286,6 +287,7 @@ fi
 unset DB_PASSWORD APP_URL APP_PORT BETTER_AUTH_SECRET BETTER_AUTH_URL \
   ADMIN_EMAIL ADMIN_NAME MAIL_FROM SMTP_URL DATABASE_URL MODELS_ROOT PPP_TAG \
   PPP_REGISTRY PPP_ENV_FILE MAILPIT_UI_PORT TRUST_PROXY_HEADERS MAILPIT_URL \
+  PRINTABLES_STUB_PORT PRINTABLES_STUB_URL IMPORT_SOURCES IMPORT_PRINTABLES_BASE \
   RESEND_API_KEY PASSKEY_RP_ID PASSKEY_RP_NAME COMPOSE_PROFILES COMPOSE_FILE \
   COMPOSE_PROJECT_NAME DATA_ROOT HIBP_DISABLED
 

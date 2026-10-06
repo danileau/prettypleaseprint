@@ -5,6 +5,7 @@ import { getStoryOr404, printerName, requireUser, storyRef, FLOW } from "@/lib/a
 import { PRIORITY_CHIP, STORY_PRIORITIES, quantityText, relativeTime } from "@/lib/catalog";
 import { changeStoryPriority } from "@/app/actions/stories";
 import { formatBytes } from "@/lib/models";
+import { trustedSourceLink } from "@/lib/import-source";
 import { AppHeader } from "@/components/app-header";
 import { Fact, Notice, StatusChip } from "@/components/ui";
 import { AdminActions } from "@/components/admin-actions";
@@ -44,6 +45,9 @@ export default async function StoryPage({
   const owner = await printerName();
 
   const currentIndex = (FLOW as readonly string[]).indexOf(story.status);
+  // Null for an upload — and for anything in the column that is not a link
+  // this app could have written, because it is about to become an href.
+  const source = trustedSourceLink(story.sourceUrl);
   // Matches `changeStoryPriority` in src/lib/stories.ts: the requester or the
   // owner, and only while there is still something to order.
   const canReprioritise =
@@ -84,6 +88,23 @@ export default async function StoryPage({
                 </span>
               ))}
             </div>
+
+            {/* Where an imported model came from: the page with its author,
+                its licence and its print notes, which the file alone does not
+                carry. */}
+            {source && (
+              <p className="m-0 mt-[13.2px] font-mono text-[12px] uppercase tracking-[0.04em] text-ink-3">
+                Imported from{" "}
+                <a
+                  href={source.href}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="font-bold text-ink-2 underline underline-offset-4 hover:text-cherry-dk"
+                >
+                  {source.label} ↗
+                </a>
+              </p>
+            )}
 
             {/* Send the model to a PrusaSlicer on the viewer's own machine.
                 The bytes are fetched by a local helper, not by the slicer —

@@ -141,6 +141,12 @@ jobs:
         run: npm run verify:auth
       - name: Upload, board and story
         run: npm run verify:upload
+      # The other way a model arrives. The test overlay switches importing on
+      # and points it at a stand-in for Printables, so this run calls nobody —
+      # and so the far end can be made to redirect, lie about a size, or hand
+      # back a link to another host, which is most of what there is to check.
+      - name: Import from a link
+        run: npm run verify:import
       - name: Admin queue and the status flow
         run: npm run verify:queue
       # The 'frr' feature-request track — the same board/queue/flow mechanics as

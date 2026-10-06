@@ -484,6 +484,50 @@ root. It is only removal that does.
 Take the snapshot first, and do this last. Nothing else in the migration is
 irreversible; this is.
 
+### Importing from a link
+
+Off by default. Add this to `.env.docker` and restart the app:
+
+```sh
+IMPORT_SOURCES="printables"
+```
+
+The request form then offers *or paste a Printables link* under the dropzone.
+Someone pastes the address of a model's page, the app lists that model's
+`.stl` and `.3mf` files, they pick one, and the server fetches it — nobody
+downloads a model only to upload it again. From there it is an upload in every
+respect, and the ticket links back to the model's page.
+
+Four things to know before switching it on:
+
+- **It needs outbound HTTPS** from the app container to `api.printables.com`
+  and `files.printables.com`, and nowhere else. On a host with no route out it
+  fails with a message saying Printables could not be reached; uploading is
+  unaffected.
+- **It speaks an API Printables has not published.** There is no documented
+  public one, so this uses the endpoint the Printables website itself uses,
+  and identifies itself honestly when it does (`PrettyPleasePrint (+<your
+  SOURCE_URL>)`). It can change without notice. When it does, importing
+  answers that the API may have changed and to upload the file instead — it
+  does not half-work. Whether that use suits you under their terms is your
+  call to make as the operator; this project has not been told either way.
+- **It is not bound by your proxy's upload limit.** The file comes *in* from
+  Printables rather than up through Cloudflare or Nginx, so the 100 MB edge cap
+  described below does not apply; the app's own 250 MB limit does.
+- **A misspelt value stops the app, on purpose.** `IMPORT_SOURCES="printable"`
+  makes sign-in and the API answer 500 with a log line naming the variable,
+  rather than quietly meaning "off". `/api/health` only checks the database and keeps
+  answering 200, so the deploy wizard will not roll this back for you — sign
+  in once after changing it.
+
+Only Printables. MakerWorld and Thingiverse are not supported, and
+[the architecture notes](architecture.md#importing-from-a-link) say why.
+
+What a signed-in person can make the server do with this is narrow by
+construction — they choose a model, never an address — and the
+[security notes](security-audit.md#importing-from-a-link) set out what was
+checked and what is accepted.
+
 ### What to back up
 
 Everything is under `DATA_ROOT`: `db/` (Postgres) and `uploads/` (the uploaded

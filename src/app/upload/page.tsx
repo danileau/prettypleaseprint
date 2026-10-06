@@ -4,6 +4,7 @@ import { AppHeader } from "@/components/app-header";
 import { Kicker } from "@/components/ui";
 import { Notice } from "@/components/ui";
 import { availableCatalog } from "@/lib/catalog-data";
+import { enabledSources } from "@/lib/import-source";
 import { UploadForm } from "./upload-form";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +42,12 @@ export default async function UploadPage() {
           </p>
         </div>
         {catalog.length > 0 ? (
-          <UploadForm owner={owner} catalog={catalog} benefits={benefits} />
+          <UploadForm
+            owner={owner}
+            catalog={catalog}
+            benefits={benefits}
+            importSources={enabledSources()}
+          />
         ) : (
           <div className="max-w-[780px]">
             <Notice tone="warn">

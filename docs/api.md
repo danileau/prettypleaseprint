@@ -69,8 +69,10 @@ no header that names a user.
 | `POST` | `/api/stories/{id}/requeue` | Print your own ticket again from the same file, changing what you like. |
 | `GET` | `/api/notifications` | Your Activity feed. |
 | `POST` | `/api/notifications/read` | Mark one read, or all of them. |
-| `GET` | `/api/catalog` | The materials and colours on offer right now. |
+| `GET` | `/api/catalog` | The materials and colours on offer right now, and which sites — if any — this instance imports from. |
 | `POST` | `/api/upload` | Upload a model and open a request. Multipart. |
+| `POST` | `/api/import/files` | What a link to a model offers: the model and its printable files. `501` unless the instance imports. |
+| `POST` | `/api/import` | Open a request from one of those files instead of an upload. |
 | `GET` | `/api/models/{id}` | The model's bytes. |
 | `GET` | `/api/openapi.json` | This surface, machine-readable. |
 | | `/api/auth/*` | Every Better Auth endpoint — sign-in, passkeys, admin, reset. |
@@ -204,7 +206,7 @@ npx @openapitools/openapi-generator-cli generate -i openapi.json -g typescript-f
 
 ## What is not here
 
-- **No webhooks.** Nothing calls out. If you want to know when a ticket moves,
+- **No webhooks.** Nothing calls *you*. If you want to know when a ticket moves,
   poll `/api/notifications`.
 - **No bulk endpoints.** Five people and one printer; a loop is fine.
 - **No API keys, scopes or service accounts.** Every call is made *as* a

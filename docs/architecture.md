@@ -170,6 +170,74 @@ Three decisions inside it are worth knowing:
   generated UUIDs, so it should never fire; the cost of being wrong is writing
   outside the volume.
 
+## Importing from a link
+
+Where a deployment switches it on, a request can start from a link to a model
+on Printables instead of from a file on the requester's disk. The server lists
+the model's `.stl` and `.3mf` files, the requester picks one, and the server
+fetches it. [Deployment](deployment.md#importing-from-a-link) covers switching
+it on; this is how it is built.
+
+**It is a second door onto the same room.** Everything that turns bytes into a
+ticket — inspecting them, the atomic write, the row, the notification, the
+audit event — used to live in the upload route, because that was the only way
+a model arrived. It moved to `src/lib/intake.ts`, and both doors now hand it a
+name and some bytes. The reasoning is the service layer's, unchanged: a rule
+that lives in the caller holds only for the caller that remembered it. An
+imported file is refused for exactly the reasons an uploaded one is, by the
+same lines of code, and what the site *called* the file counts for nothing.
+
+**The requester chooses the model; the code chooses the host.** This is the one
+place the app makes a request to somebody else's server because a signed-in
+person asked, so the question that shapes it is whose choice the address is:
+
+1. The pasted link is parsed for a model id and thrown away
+   (`src/lib/import-source.ts`). Only digits survive. The host is compared
+   whole, after parsing — `printables.com.evil.example` and
+   `printables.com@evil.example` both contain the right letters.
+2. The listing is asked of one fixed endpoint, with the id as a GraphQL
+   variable rather than part of a URL.
+3. The download link comes back from that endpoint and is fetched only if it
+   is on the one origin Printables serves files from. Anything else is refused
+   before a connection is opened.
+4. Redirects are an error. A redirect is the far end choosing a new address,
+   which is the thing being prevented.
+
+The listing is fetched again at import time rather than trusted from the
+browser, so a client can name a file only by id, and only one that belongs to
+the model it named. The download is cut off at the size the listing gave —
+which was already held to the upload cap — so a file larger than advertised is
+refused as it arrives rather than after it has been buffered.
+
+**Two things it shares with an upload, on purpose.** The wish is validated
+before anything is fetched: a colour that is off the shelf should not cost a
+200 MB download to discover. And the fetch takes one of the same two slots an
+upload does (`src/lib/upload-slots.ts`), because it holds the same memory; two
+gates of two would have been a gate of four.
+
+**The browser never talks to Printables.** It posts the link to this app and
+gets the listing back, which is why `connect-src 'self'` did not have to move.
+
+**It is off by default, and the API is not a published one.** Printables has no
+documented public API; this speaks the GraphQL endpoint its own website uses.
+That is the honest weak point, and it is handled by failing in words: the
+answer is parsed against a schema, and a shape that does not match is a `502`
+saying the API may have changed and to upload the file instead. Nothing falls
+back to guessing. `Story.sourceUrl` records the model's page — rebuilt from
+the API's own id and slug, never copied from what was typed — and is checked
+again before it is rendered, because it becomes an `href`.
+
+Only Printables. MakerWorld answers a server's request for a model page with a
+browser challenge, and by the account of the tools that do fetch from it, hands
+files only to a signed-in session. Thingiverse's API answers `401` without a
+token the operator would have to register for. The first is not something a
+server can do on a requester's behalf without pretending to be a browser; the
+second is a possible later source.
+
+`npm run verify:import` drives all of it against a stand-in
+(`scripts/stubs/printables-stub.mjs`), because most of the above is refusals
+and a refusal can only be tested against a far end willing to misbehave.
+
 ## Decisions taken against the handoff
 
 The handoff contradicts itself in two places and leaves three things open.
@@ -403,6 +471,10 @@ src/lib/
   catalog.ts             request schemas, priorities and catalogue types, shared with the browser
   catalog-data.ts        live material/colour reads and the authoritative lookup
   models.ts              upload validation + mesh measurement
+  intake.ts              bytes into a ticket — shared by upload and import
+  import.ts              fetching a model from Printables, and what it refuses
+  import-source.ts       what counts as a link, and which sources are on
+  upload-slots.ts        how many models are held in memory at once
   upload-limits.ts       the three size limits, in one place
   storage.ts             model files on disk: atomic writes, generated keys
   storage-layout.ts      file and directory modes, shared with the migration
@@ -437,7 +509,8 @@ src/app/admin/           the printer owner's pages; 404 for anyone else
   audit/                 the dashboard and the log
 src/app/api/
   auth/[...all]/         every Better Auth endpoint
-  upload/                validation, storage, ticket creation
+  upload/                the multipart door onto intake.ts
+  import/                the link door: list a model's files, import one
   stories/               list, read, withdraw
   stories/[id]/…         advance, decline, flag, comments, priority, requeue
   catalog/               what can be asked for right now
@@ -454,6 +527,8 @@ scripts/
   verify-models.ts       validator vs. hostile fixtures
   verify-auth.ts         registration, sign-in and password reset
   verify-upload.ts       upload -> board -> ticket, and printing again
+  verify-import.ts       a model from a link, and every way the far end can misbehave
+  stubs/                 the stand-in for Printables that suite runs against
   verify-queue.ts        the queue, the flow, priority, prints by person
   verify-frr.ts          the feature-request track, filed and triaged
   verify-benefits.ts     the owner-managed benefits catalogue

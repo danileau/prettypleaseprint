@@ -1,5 +1,6 @@
 import { ok, withActor } from "@/lib/api";
 import { availableCatalog } from "@/lib/catalog-data";
+import { enabledSources } from "@/lib/import-source";
 
 /**
  * What can be asked for right now: the materials on the shelf, each with the
@@ -22,6 +23,9 @@ export const GET = withActor(async () => {
   const materials = await availableCatalog();
   // Every field named, no row spread — see `storyResource` in src/lib/api.ts.
   return ok({
+    // The other thing a client cannot learn any other way: whether this
+    // instance imports from a link, and from where. Empty when it does not.
+    importSources: enabledSources(),
     materials: materials.map((material) => ({
       name: material.name,
       colors: material.colors.map((color) => ({
