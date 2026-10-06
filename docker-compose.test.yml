@@ -6,8 +6,8 @@
 #     -f docker-compose.prod.yml -f docker-compose.test.yml \
 #     --profile mailcatcher up -d --build
 #
-# Never apply this on a deployed host. Postgres and MinIO are internal
-# services, and the app should only ever be reached through the proxy.
+# Never apply this on a deployed host. Postgres is an internal service, and
+# the app should only ever be reached through the proxy.
 services:
   app:
     ports:

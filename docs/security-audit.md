@@ -93,8 +93,10 @@ worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests
 
 COOP, COEP and CORP were absent. Now `same-origin`, `credentialless` and
 `same-origin` respectively. COEP is `credentialless` rather than
-`require-corp` deliberately — model files will be fetched from object storage
-over signed URLs, and `require-corp` would demand CORP headers on every one.
+`require-corp` deliberately. The reasons given at the time — signed storage
+URLs and a third-party font host — have both since gone: models are streamed by
+the app and the fonts are vendored. `require-corp` is now reachable and is left
+for a change of its own; `next.config.ts` says why.
 
 ### 4. Six dependency advisories — *high, fixed*
 
@@ -578,8 +580,8 @@ README now says.
 - **No authenticated active scan.** ZAP ran a passive baseline against the
   unauthenticated surface. The authenticated surface is covered by the 91
   custom probes instead, which is better for authorisation logic and worse for
-  generic injection classes. Once the board and upload screens land, an
-  authenticated ZAP active scan is worth configuring.
+  generic injection classes. The board and upload screens have long since
+  landed, so an authenticated ZAP active scan is worth configuring.
 - **CSP verified against served markup, not a live browser** — except at
   `/docs`, which was. Building the API console forced the issue: its stylesheet
   had to move out of an inline `<style>` block and into a file, because
@@ -587,11 +589,10 @@ README now says.
   than failing. That is the failure mode this item is about — a policy
   violation that looks like a design bug. The rest of the app still deserves
   the same browser check.
-- **Signed model URLs are minted but nothing serves them yet.**
-  `signedModelUrl` exists with a 10-minute expiry and the ownership check
-  gates it, but the download route lands with the 3D viewer. When it does,
-  `connect-src` has to widen to the storage origin — it is `'self'` today,
-  which will block the fetch.
+- ~~Signed model URLs are minted but nothing serves them yet~~ — closed by
+  removal. There is no storage service and no signed URL: `/api/models/[id]`
+  streams the file from disk behind the ownership check, and `connect-src`
+  stays `'self'`.
 - **The upload buffers the whole file in memory**, and now at a 250 MB cap
   rather than 50 MB. The buffering is not the validator's doing —
   `request.formData()` has already read the whole body before the route handler

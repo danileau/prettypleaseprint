@@ -391,8 +391,7 @@ ENV_SAVED="saved"
 # shellcheck disable=SC2086
 rm -f $ENV_FILES
 
-# As CI does it (the "Compose environment" step), minus S3_SECRET_KEY, which
-# nothing has read since the object store went.
+# As CI does it (the "Compose environment" step).
 {
   cat .env.docker.example
   echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)"

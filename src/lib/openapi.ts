@@ -140,8 +140,8 @@ const STORY_SCHEMA = {
         url: {
           type: "string",
           description:
-            "Where the bytes are. Proxied through the app, not a signed " +
-            "storage URL — object storage publishes no port in this deployment.",
+            "Where the bytes are. Streamed by the app from its own disk — " +
+            "model files are not in the web root, so there is no other URL.",
           examples: ["/api/models/4"],
         },
       },
@@ -964,7 +964,7 @@ export async function buildOpenApiDocument() {
             "400": errorResponse("No file attached, a malformed body, or a field the catalogue does not allow."),
             "413": errorResponse("Larger than the cap."),
             "422": errorResponse("The bytes are not an acceptable model. The reason says which check failed."),
-            "502": errorResponse("Object storage would not take it. Nothing was saved."),
+            "502": errorResponse("The file could not be written to disk. Nothing was saved."),
             ...COMMON_ERRORS,
           },
         },
@@ -975,10 +975,8 @@ export async function buildOpenApiDocument() {
           tags: ["files"],
           summary: "Download the model",
           description:
-            "The bytes, streamed through the app rather than handed out as a " +
-            "signed storage URL — object storage publishes no port in this " +
-            "deployment, so a signed URL would point at something a browser " +
-            "cannot reach.\n\n" +
+            "The bytes, streamed by the app from its own disk. Model files " +
+            "are not in the web root, so this route is the only way to them.\n\n" +
             "Scoped like the ticket: someone else's model is `404`. A download " +
             "by anyone other than the uploader is written to the audit trail.",
           parameters: [storyIdParam],
@@ -989,7 +987,7 @@ export async function buildOpenApiDocument() {
             },
             "401": { description: "No session." },
             "404": { description: "No such ticket, or not one you may see." },
-            "502": { description: "Object storage did not answer." },
+            "502": { description: "The file could not be read from disk." },
           },
         },
       },

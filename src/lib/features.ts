@@ -225,7 +225,7 @@ export async function createFeature(actor: Actor, input: unknown) {
 /**
  * The requester withdraws their own, while nobody has acted on it —
  * `Requested` or `Declined`. Mirrors withdrawing a print, minus the file:
- * there is nothing in object storage to remove. Comments and notifications
+ * there is nothing on disk to remove. Comments and notifications
  * cascade at the database.
  */
 export async function withdrawFeature(actor: Actor, id: number) {

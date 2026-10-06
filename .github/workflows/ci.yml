@@ -16,9 +16,8 @@
 #   trivy    — filesystem scan; HIGH/CRITICAL fail the run.
 #
 # `verify` deliberately uses docker compose rather than GitHub `services:`.
-# Two reasons: `services:` cannot override a container's command, which MinIO
-# needs, and running the same command a developer runs means the compose files
-# themselves are under test. A broken overlay fails here rather than on the NAS.
+# Running the same command a developer runs means the compose files themselves
+# are under test. A broken overlay fails here rather than on the NAS.
 name: CI
 
 on:
@@ -111,7 +110,6 @@ jobs:
           {
             echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)"
             echo "DB_PASSWORD=$(openssl rand -hex 24)"
-            echo "S3_SECRET_KEY=$(openssl rand -hex 24)"
             echo "ADMIN_EMAIL=ci-admin@example.test"
             echo "ADMIN_NAME=Ruben Haas"
           } >> .env.docker

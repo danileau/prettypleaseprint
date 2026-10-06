@@ -12,17 +12,16 @@ import { openModel } from "@/lib/storage";
 /**
  * The bytes of one model, for the viewer.
  *
- * Streamed through the app rather than handed out as a signed URL straight to
- * object storage. That is not the more elegant option, it is the only correct
- * one for this deployment: docker-compose.prod.yml publishes no port for
- * MinIO, so a browser cannot reach it at all — a signed URL would resolve to
- * nothing. Proxying also keeps `connect-src 'self'` intact, which means the
- * viewer needs no CSP relaxation.
+ * Streamed through the app from `MODELS_ROOT`. There is nothing else it could
+ * do — the files are not in the web root and there is no storage service to
+ * hand out a URL for — and it keeps `connect-src 'self'` intact, which means
+ * the viewer needs no CSP relaxation.
  *
  * The trade is real: every viewer load moves the whole file through Next. At
- * 50 MB and a handful of people that is fine. If this ever faces a wider
- * audience, expose storage behind the same reverse proxy, hand out
- * `signedModelUrl`, and widen `connect-src` to that origin.
+ * 250 MB and a handful of people that is fine. If this ever faces a wider
+ * audience, serve the uploads directory from the reverse proxy and widen
+ * `connect-src` to that origin — carrying the `storyScope` check below with
+ * it, because that check is what makes a model private.
  *
  * Scoped with `storyScope`, the same fragment the story page composes, so a
  * client asking for someone else's model gets 404 — not 403, which would

@@ -33,9 +33,8 @@ export function buildCsp(nonce: string, isProd: boolean): string {
     "font-src 'self'",
     "img-src 'self' data: blob:",
     // This app talks to its own origin only. No analytics, CDN or beacons.
-    // When model-file upload lands, the object-storage origin has to be added
-    // here (and to img-src if thumbnails are served from it) — a signed S3
-    // URL is cross-origin and this directive will otherwise block the fetch.
+    // Model files are streamed by /api/models/[id], so the viewer needs
+    // nothing wider than this.
     "connect-src 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
