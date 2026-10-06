@@ -52,6 +52,34 @@ export const PASSWORD_MAX = 128;
 export const SESSION_IDLE_SECONDS = 60 * 20;
 
 /**
+ * How long a member's device stays signed in: four hundred days.
+ *
+ * Members have no password. Opening an invitation — or a device link the
+ * printer owner hands over — and typing a name signs that browser in, and the
+ * browser is the credential from then on. Four hundred days because it is the
+ * longest a browser will keep a cookie at all (Chrome caps `Max-Age` there),
+ * so asking for more would be a number nothing honours.
+ *
+ * Fixed, not sliding: `expiresIn` stays twenty minutes for the printer owner,
+ * and Better Auth only slides a session once it is within that of expiring.
+ * A device session simply lasts its four hundred days and then asks for a new
+ * link. See `src/lib/device-sessions.ts`.
+ */
+export const DEVICE_SESSION_SECONDS = 60 * 60 * 24 * 400;
+
+/**
+ * Marks a browser whose session is a member's device session, so that
+ * `src/middleware.ts` leaves its cookie's `Max-Age` alone instead of cutting
+ * it to twenty minutes. Holds a digest of that session's token rather than a
+ * flag, so a marker left behind cannot spare a later sign-in on the same
+ * browser — the printer owner's, say — from the twenty-minute rule.
+ */
+export const DEVICE_MARKER_COOKIE = "ppp.device";
+
+/** How long a device link the printer owner mints stays usable. */
+export const DEVICE_LINK_TTL_MINUTES = 30;
+
+/**
  * The session cookie, under both the names it can have.
  *
  * `advanced.cookiePrefix` makes it `ppp.session_token`, and Better Auth adds

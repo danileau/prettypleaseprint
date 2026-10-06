@@ -1,5 +1,6 @@
 /**
- * End-to-end check of invite-only registration and username/password sign-in.
+ * End-to-end check of invite-only registration, members signing in by device,
+ * and the printer owner's username/password sign-in.
  *
  *   docker compose up -d db mailpit
  *   npm run build && npm start          # or npm run dev
@@ -18,6 +19,8 @@ import { PrismaClient } from "@prisma/client";
 import { db } from "../src/lib/db";
 import { createInvite, mailConfigured } from "../src/lib/invites";
 import { issuePasswordSetupUrl } from "../src/lib/password-reset";
+import { issueDeviceLinkUrl } from "../src/lib/device-link";
+import { DEVICE_SESSION_SECONDS, SESSION_IDLE_SECONDS } from "../src/lib/auth-rules";
 import { TEST_PASSWORD, ensureCredentials, signInWithPassword } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
@@ -38,6 +41,8 @@ const clearRateLimit = () => db.$executeRawUnsafe('DELETE FROM "rateLimit"');
 
 class Browser {
   private jar = new Map<string, string>();
+  /** The `Max-Age` each cookie was last written with, if it had one. */
+  readonly maxAge = new Map<string, number>();
 
   get cookieNames(): string[] {
     return [...this.jar.keys()];
@@ -50,6 +55,8 @@ class Browser {
       if (eq < 0) continue;
       const name = pair!.slice(0, eq).trim();
       const value = pair!.slice(eq + 1).trim();
+      const age = /;\s*Max-Age=(\d+)/i.exec(line)?.[1];
+      if (age) this.maxAge.set(name, Number(age));
       // A real browser drops Secure cookies on plain HTTP; over loopback we
       // keep them so a production build can still be smoke-tested locally.
       if (value === "" || line.includes("Max-Age=0")) this.jar.delete(name);
@@ -114,6 +121,17 @@ const unescapeHtml = (s: string) =>
    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 
 const signedIn = (b: Browser) => b.cookieNames.some((c) => c.includes("session_token"));
+const sessionCookie = (b: Browser) => b.cookieNames.find((c) => c.includes("session_token"));
+
+/** Who a browser is signed in as, according to the server. */
+async function whoIs(b: Browser): Promise<string | null> {
+  const body = await (await b.raw(`${APP}/api/auth/get-session`)).text();
+  try {
+    return (JSON.parse(body) as { user?: { email?: string } } | null)?.user?.email ?? null;
+  } catch {
+    return null;
+  }
+}
 
 // --- mailpit ---------------------------------------------------------------
 
@@ -133,6 +151,7 @@ async function mailLink(to: string, pattern: RegExp): Promise<string | null> {
 
 const CLAIM_LINK = /http:\/\/[^\s"'<]+\/invite\/[^\s"'<]+/;
 const SET_PASSWORD_LINK = /http:\/\/[^\s"'<]+\/set-password\?token=[^\s"'<]+/;
+const DEVICE_LINK = /http:\/\/[^\s"'<]+\/device\/[^\s"'<]+/;
 
 /** Registration, as the sign-up endpoint sees it. */
 function signUp(browser: Browser, body: Record<string, unknown>) {
@@ -243,16 +262,11 @@ async function main() {
   const claimPage = await (await ayla.go(claimUrl)).text();
   check("the claim page renders", claimPage.includes("will print things for you"));
   check("it shows the address the invite is bound to", claimPage.includes(AYLA));
-  check("it asks for a username and a password",
-        claimPage.includes('name="username"') && claimPage.includes('name="password"'));
+  check("it asks for a name and nothing else — no username, no password",
+        claimPage.includes('name="name"') &&
+        !claimPage.includes('name="username"') && !claimPage.includes('name="password"'));
 
-  // Typed with a capital, on purpose: it should be accepted, folded for the
-  // identifier and kept as typed for display.
-  const claimed = await ayla.submit(claimUrl, claimPage, {
-    name: "Ayla Berg",
-    username: "Ayla",
-    password: TEST_PASSWORD,
-  });
+  const claimed = await ayla.submit(claimUrl, claimPage, { name: "Ayla Berg" });
   check("registering redirects onward", claimed.status >= 300 && claimed.status < 400,
         `status ${claimed.status}`);
   check("and signs her in there and then", signedIn(ayla),
@@ -276,16 +290,49 @@ async function main() {
         account.invitedById === admin.id &&
         account.emailVerified === true,
         JSON.stringify({ role: account?.role, initials: account?.initials }));
-  check("the username she chose is stored, folded to lower case",
-        account?.username === "ayla" && account.displayUsername === "Ayla",
-        JSON.stringify({ username: account?.username,
-                         displayUsername: account?.displayUsername }));
   check("the name she chose beat the one the admin guessed",
         account?.name === "Ayla Berg", account?.name);
   check("the invite is marked accepted",
         (await db.invite.findFirst({ where: { email: AYLA } }))?.acceptedAt !== null);
-  check("a password was actually stored, and not in the clear",
-        await passwordIsHashed(account!.id), "the account has no usable credential");
+  check("she has no password and no username — the device is her credential",
+        account?.username === null &&
+        (await db.account.count({ where: { userId: account.id } })) === 0,
+        JSON.stringify({ username: account?.username }));
+
+  // The device session: four hundred days in the row, and the same in the
+  // cookie, or the browser would forget her long before the server did.
+  const aylaSessions = await db.session.findMany({ where: { userId: account!.id } });
+  const daysLeft = (aylaSessions[0]?.expiresAt.getTime() ?? 0) - Date.now();
+  check("her session lasts four hundred days, not twenty minutes",
+        aylaSessions.length === 1 &&
+        Math.abs(daysLeft / 1000 - DEVICE_SESSION_SECONDS) < 300,
+        `${(daysLeft / 86_400_000).toFixed(2)} days`);
+  check("and the cookie was written to last as long",
+        ayla.maxAge.get(sessionCookie(ayla) ?? "") === DEVICE_SESSION_SECONDS,
+        String(ayla.maxAge.get(sessionCookie(ayla) ?? "")));
+  check("with the marker that tells middleware which session it is",
+        ayla.cookieNames.includes("ppp.device"));
+
+  // Middleware cuts every other session cookie to twenty minutes on a page
+  // view. Doing that to hers would sign her out of a device she has no
+  // password to get back into.
+  ayla.maxAge.clear();
+  await ayla.go(`${APP}/board`);
+  check("browsing a page does not cut her cookie to twenty minutes",
+        ayla.maxAge.get(sessionCookie(ayla) ?? "") !== SESSION_IDLE_SECONDS,
+        String(ayla.maxAge.get(sessionCookie(ayla) ?? "")));
+
+  // The endpoints behind all of this are server-only. Nothing a stranger can
+  // post to should have appeared under /api/auth.
+  for (const path of ["register-member-device", "sign-in-member-device"]) {
+    const res = await new Browser().raw(`${APP}/api/auth/${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "x@nowhere.test", name: "X", userId: account!.id }),
+    });
+    check(`/api/auth/${path} is not reachable over HTTP`, res.status === 404,
+          `status ${res.status}`);
+  }
 
   // ------------------------------------------------------------------------
   section("4. the invitation link is single-use");
@@ -293,19 +340,22 @@ async function main() {
   check("a second visit is refused", replay.includes("has been used"));
 
   // ------------------------------------------------------------------------
-  section("5. signing in with a username and a password");
+  section("5. the printer owner signs in with a username and a password");
   await clearRateLimit();
   const returning = new Browser();
-  const good = await signInWithPassword(returning, APP, "ayla");
+  const good = await signInWithPassword(returning, APP, "ruben");
   check("the right password is accepted", good.status === 200, `status ${good.status}`);
   check("and a session cookie is set", signedIn(returning));
+  check("for twenty minutes — the owner has no device session",
+        returning.maxAge.get(sessionCookie(returning) ?? "") === SESSION_IDLE_SECONDS,
+        String(returning.maxAge.get(sessionCookie(returning) ?? "")));
 
   const mixedCase = new Browser();
-  await signInWithPassword(mixedCase, APP, "AyLa");
+  await signInWithPassword(mixedCase, APP, "RuBen");
   check("the username is matched case-insensitively", signedIn(mixedCase));
 
   const wrongPassword = new Browser();
-  const bad = await signInWithPassword(wrongPassword, APP, "ayla", "not-the-password-x9");
+  const bad = await signInWithPassword(wrongPassword, APP, "ruben", "not-the-password-x9");
   check("a wrong password is refused", bad.status === 401, `status ${bad.status}`);
   check("and no session is handed out", !signedIn(wrongPassword));
 
@@ -317,58 +367,59 @@ async function main() {
         `${noSuchUser.status} ${missingBody} vs ${bad.status} ${badBody}`);
 
   // ------------------------------------------------------------------------
-  section("6. a username is claimed once");
+  section("6. a name is claimed once");
+  // With no username and no password, the name is the only thing telling two
+  // members apart — so a second person cannot simply type somebody's name.
   const DUP = "dup@office.example";
   await createInvite({ email: DUP, invitedById: admin.id });
-  await clearRateLimit();
-  const dup = await signUp(new Browser(), {
-    email: DUP, name: "Dup Licate", username: "AYLA", password: TEST_PASSWORD,
-  });
-  check("a username somebody already has is refused", dup.status === 400,
-        `status ${dup.status}`);
-  check("even spelled differently — the comparison is case-insensitive",
-        (await dup.clone().text()).toUpperCase().includes("ALREADY"),
-        (await dup.clone().text()).slice(0, 120));
-  check("and no account was created",
-        (await db.user.count({ where: { email: DUP } })) === 0);
-
-  // ------------------------------------------------------------------------
-  section("7. a breached password is refused");
-  await clearRateLimit();
-  const breached = await signUp(new Browser(), {
-    email: DUP, name: "Dup Licate", username: "duplicate", password: "Password123!",
-  });
-  const breachedBody = await breached.clone().text();
-  check("a password from a known breach corpus does not get through",
-        breached.status === 400 && /breach|compromis/i.test(breachedBody),
-        `status ${breached.status} ${breachedBody.slice(0, 120)}`);
-  check("and still no account",
-        (await db.user.count({ where: { email: DUP } })) === 0);
-
-  // The same invite still works with a password that is not in the corpus,
-  // which is what makes the refusal a refusal rather than a broken flow.
-  // Through the link, because that is the only way an account opens: the two
-  // refusals above are the endpoint's own validation and fire before the gate,
-  // but a sign-up that would succeed has to be the redemption of an invite.
-  const survivor = new Browser();
   const dupLink = await mailLink(DUP, CLAIM_LINK);
   if (!dupLink) throw new Error("no claim link for the duplicate invite");
-  const dupPage = await (await survivor.go(dupLink)).text();
-  const ok = await survivor.submit(dupLink, dupPage, {
-    name: "Dup Licate", username: "duplicate", password: TEST_PASSWORD,
-  });
-  check("a password that is not breached goes straight through",
+
+  const impostor = new Browser();
+  const dupPage = await (await impostor.go(dupLink)).text();
+  const taken = await impostor.submit(dupLink, dupPage, { name: "AYLA BERG" });
+  const takenBody = await taken.clone().text();
+  check("a name somebody already has is refused, whatever its case",
+        takenBody.includes("already goes by that name"),
+        `status ${taken.status} ${takenBody.slice(0, 120)}`);
+  check("and no account was created, and no session handed out",
+        (await db.user.count({ where: { email: DUP } })) === 0 && !signedIn(impostor));
+
+  // The same invite still works with a name of their own, which is what makes
+  // the refusal a refusal rather than a broken flow.
+  const survivor = new Browser();
+  const dupAgain = await (await survivor.go(dupLink)).text();
+  const ok = await survivor.submit(dupLink, dupAgain, { name: "Dup Licate" });
+  check("a name nobody has goes straight through",
         ok.status >= 300 && ok.status < 400 && signedIn(survivor) &&
         (await db.user.count({ where: { email: DUP } })) === 1,
         `status ${ok.status}`);
   await db.user.deleteMany({ where: { email: DUP } });
 
   // ------------------------------------------------------------------------
+  section("7. a breached password is refused");
+  // The sign-up endpoint still exists, and its own validation runs before the
+  // invite gate — so a corpus password is refused there whatever else is true.
+  const BREACH = "breach@office.example";
+  await createInvite({ email: BREACH, invitedById: admin.id });
+  await clearRateLimit();
+  const breached = await signUp(new Browser(), {
+    email: BREACH, name: "Bree Ched", username: "breached", password: "Password123!",
+  });
+  const breachedBody = await breached.clone().text();
+  check("a password from a known breach corpus does not get through",
+        breached.status === 400 && /breach|compromis/i.test(breachedBody),
+        `status ${breached.status} ${breachedBody.slice(0, 120)}`);
+  check("and no account",
+        (await db.user.count({ where: { email: BREACH } })) === 0);
+  await db.invite.deleteMany({ where: { email: BREACH } });
+
+  // ------------------------------------------------------------------------
   section("8. guessing is rate limited");
   await clearRateLimit();
   let limited = false;
   for (let i = 0; i < 25 && !limited; i++) {
-    const r = await signInWithPassword(new Browser(), APP, "ayla", `guess-${i}-nope`);
+    const r = await signInWithPassword(new Browser(), APP, "ruben", `guess-${i}-nope`);
     if (r.status === 429) limited = true;
   }
   check("repeated wrong passwords hit the limiter", limited,
@@ -428,16 +479,113 @@ async function main() {
         (await db.user.count({ where: { email: BOB } })) === 0);
 
   // ------------------------------------------------------------------------
-  section("11. the admin can reset a forgotten password");
+  section("11. the admin signs a member in on another device");
   await fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
   const guestList = await (await ruben.go(`${APP}/admin/invites`)).text();
-  check("members are listed with a recovery control",
-        guestList.includes("Ayla Berg") && guestList.includes("Forgotten password?"));
+  check("members are listed with a device-link control",
+        guestList.includes("Ayla Berg") && guestList.includes("Link a device"));
+  check("and no password reset for a member who has no password",
+        !guestList.includes("Forgotten password?"));
 
-  const resetForm = formContaining(guestList, `value="${account!.id}"`);
+  // The device-link form is the first one carrying her id; access is second.
+  const linkForm = formContaining(guestList, `value="${account!.id}"`);
+  check("the control targets the right member", linkForm !== null);
+  const linkSent = await ruben.submit(`${APP}/admin/invites`, linkForm ?? "", {
+    userId: account!.id,
+  });
+  check("minting it is accepted", linkSent.status < 400, `status ${linkSent.status}`);
+  check("it is audited as a request, by the admin who made it",
+        (await db.auditEvent.count({
+          where: { action: "device.link_requested", actorId: admin.id, subject: AYLA },
+        })) === 1);
+  check("with mail working, the link is not handed back to the admin",
+        !DEVICE_LINK.test(await linkSent.clone().text()),
+        "the admin was shown a link that had already been emailed");
+
+  const deviceUrl = await mailLink(AYLA, DEVICE_LINK);
+  check("a device-link email arrived", deviceUrl !== null, String(deviceUrl));
+  if (!deviceUrl) throw new Error("no device link; cannot continue");
+
+  const phone = new Browser();
+  const devicePage = await (await phone.go(deviceUrl)).text();
+  // React separates adjacent text with `<!-- -->` in server-rendered HTML.
+  check("the link says whose it is",
+        devicePage.replace(/<!-- -->/g, "").includes("Hello again, Ayla"));
+  check("and opening it signs nobody in — a link preview cannot spend it",
+        !signedIn(phone));
+
+  const linked = await phone.submit(deviceUrl, devicePage, {});
+  check("pressing the button signs the new device in",
+        linked.status >= 300 && linked.status < 400 && (await whoIs(phone)) === AYLA,
+        `status ${linked.status}`);
+  check("on a device session of its own",
+        phone.maxAge.get(sessionCookie(phone) ?? "") === DEVICE_SESSION_SECONDS);
+  check("it is audited as used",
+        (await db.auditEvent.count({ where: { action: "device.linked", subject: AYLA } })) === 1);
+  check("her first device is still signed in", (await whoIs(ayla)) === AYLA);
+
+  const replayed = await (await new Browser().go(deviceUrl)).text();
+  check("the link is spent once it has been used", replayed.includes("spent"));
+
+  // A device link is the ability to become somebody, so it stays out of
+  // circulation in the database too.
+  const deviceToken = decodeURIComponent(new URL(deviceUrl).pathname.split("/").pop()!);
+  const strayLink = await issueDeviceLinkUrl(account!.id);
+  const strayToken = decodeURIComponent(new URL(strayLink).pathname.split("/").pop()!);
+  const deviceRows = await db.verification.findMany();
+  check("no verification row holds a raw device token",
+        deviceRows.every((v) => !v.identifier.includes(strayToken) &&
+                                !v.value.includes(strayToken) &&
+                                !v.identifier.includes(deviceToken)));
+
+  // ------------------------------------------------------------------------
+  section("11b. revoking access ends every device, and every unused link");
+  const accessList = await (await ruben.go(`${APP}/admin/invites`)).text();
+  const accessForm = (accessList.match(/<form\b[\s\S]*?<\/form>/g) ?? [])
+    .find((f) => f.includes(`value="${account!.id}"`) && f.includes('name="revoke"')) ?? "";
+  const revoked = await ruben.submit(`${APP}/admin/invites`, accessForm, {
+    userId: account!.id,
+    revoke: "true",
+  });
+  check("revoking is accepted", revoked.status < 400, `status ${revoked.status}`);
+  check("both of her devices are signed out",
+        (await whoIs(ayla)) === null && (await whoIs(phone)) === null);
+  const strayPage = await (await new Browser().go(strayLink)).text();
+  check("and a link minted before the revocation no longer works",
+        strayPage.includes("spent"));
+
+  await db.user.update({
+    where: { id: account!.id },
+    data: { banned: false, banReason: null, banExpires: null },
+  });
+
+  // ------------------------------------------------------------------------
+  section("11c. a member who still has a password can have it reset");
+  // Accounts that registered before sign-in went passwordless keep their
+  // password, and the guest list keeps the reset control for them alone.
+  const LENA = "lena@office.example";
+  const lena = await db.user.create({
+    data: { email: LENA, name: "Lena Old", initials: "LE", role: "client",
+            emailVerified: true, invitedById: admin.id },
+  });
+  await ensureCredentials(APP, lena.id, "lena");
+  await clearRateLimit();
+  const lenaBrowser = new Browser();
+  await signInWithPassword(lenaBrowser, APP, "lena");
+  check("her password still signs her in", signedIn(lenaBrowser));
+  check("a password stored for her is a digest, not the password",
+        await passwordIsHashed(lena.id));
+
+  await fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
+  const legacyList = await (await ruben.go(`${APP}/admin/invites`)).text();
+  check("she is listed with the reset control",
+        legacyList.includes("Lena Old") && legacyList.includes("Forgotten password?"));
+
+  const resetForm = (legacyList.match(/<form\b[\s\S]*?<\/form>/g) ?? [])
+    .filter((f) => f.includes(`value="${lena.id}"`))[1] ?? null;
   check("the control targets the right member", resetForm !== null);
   const reset = await ruben.submit(`${APP}/admin/invites`, resetForm ?? "", {
-    userId: account!.id,
+    userId: lena.id,
   });
   check("triggering it is accepted", reset.status < 400, `status ${reset.status}`);
   check("it is audited as a request, by the admin who made it",
@@ -452,7 +600,7 @@ async function main() {
         !SET_PASSWORD_LINK.test(resetBody),
         "the admin was shown a link that had already been emailed");
 
-  const setUrl = await mailLink(AYLA, SET_PASSWORD_LINK);
+  const setUrl = await mailLink(LENA, SET_PASSWORD_LINK);
   check("a set-password email arrived", setUrl !== null, String(setUrl));
   if (!setUrl) throw new Error("no set-password link; cannot continue");
 
@@ -479,15 +627,15 @@ async function main() {
         `status ${done.status}`);
   check("and it is audited as completed",
         (await db.auditEvent.count({
-          where: { action: "password.reset_completed", subject: AYLA },
+          where: { action: "password.reset_completed", subject: LENA },
         })) === 1);
 
   await clearRateLimit();
-  const oldTry = await signInWithPassword(new Browser(), APP, "ayla", TEST_PASSWORD);
+  const oldTry = await signInWithPassword(new Browser(), APP, "lena", TEST_PASSWORD);
   check("the old password stops working", oldTry.status === 401, `status ${oldTry.status}`);
 
   const newBrowser = new Browser();
-  const newTry = await signInWithPassword(newBrowser, APP, "ayla", NEW_PASSWORD);
+  const newTry = await signInWithPassword(newBrowser, APP, "lena", NEW_PASSWORD);
   check("the new one works", newTry.status === 200 && signedIn(newBrowser),
         `status ${newTry.status}`);
 
@@ -496,7 +644,7 @@ async function main() {
         "a used set-password link still opened the form");
 
   check("her earlier session was revoked with the password",
-        (await (await ayla.raw(`${APP}/api/auth/get-session`)).text()).length < 5,
+        (await (await lenaBrowser.raw(`${APP}/api/auth/get-session`)).text()).length < 5,
         "a session opened with the old password outlived it");
 
   // ------------------------------------------------------------------------

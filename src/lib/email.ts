@@ -194,6 +194,38 @@ export function inviteEmail(opts: {
   };
 }
 
+export function deviceLinkEmail(opts: {
+  to: string;
+  url: string;
+  expiresInMinutes: number;
+}): Mail {
+  return {
+    to: opts.to,
+    subject: "Sign in on another device",
+    text:
+      `Whoever runs the printer sent you a link to sign one more device in to Pretty Please Print.\n\n` +
+      `Open it on that device: ${opts.url}\n\n` +
+      `The link works once and expires in ${opts.expiresInMinutes} minutes. ` +
+      `If you did not ask for it, say so before you use it.`,
+    html: shell(
+      "ONE MORE DEVICE &middot; ONE USE",
+      `<h1 style="margin:0 0 14px;font-family:${SLAB};font-size:29px;line-height:1.1;color:${INK}">Sign in on another device</h1>
+       <p style="margin:0 0 20px">
+         Open this on the phone or computer you want to use. It signs that
+         device in as you, and it stays signed in &mdash; no password.
+       </p>
+       ${button(opts.url, "Sign this device in")}
+       <p style="margin:20px 0 0;padding:9px 13px;background:${SUN};border:2px solid ${INK};border-radius:999px;display:inline-block;font-family:${MONO};font-size:11px;font-weight:bold;letter-spacing:1px;color:${INK}">
+         ONE USE &middot; EXPIRES IN ${opts.expiresInMinutes} MINUTES
+       </p>
+       <p style="margin:18px 0 0;font-family:${SANS};font-size:13.5px;color:${INK_2}">
+         Didn&rsquo;t ask for this? Have a word with them before you use it.
+       </p>
+       ${fallback(opts.url)}`,
+    ),
+  };
+}
+
 export function passwordResetEmail(opts: {
   to: string;
   url: string;

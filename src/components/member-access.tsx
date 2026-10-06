@@ -69,8 +69,9 @@ export function MemberAccess({
           <p className="m-0 mb-[8px] text-[13.5px] leading-[1.45] text-ink-2">
             {suspended ? (
               <>
-                {name} cannot sign in. Restoring lets them back in with the
-                password or passkey they already had — nothing was deleted.
+                {name} cannot sign in. Revoking signed out every device they
+                had, so after restoring, send them a device link to get back
+                in — nothing else was deleted.
               </>
             ) : (
               <>

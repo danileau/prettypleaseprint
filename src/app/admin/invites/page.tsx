@@ -5,10 +5,12 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
 import { INVITE_TTL_DAYS } from "@/lib/invites";
 import { RESET_TTL_MINUTES } from "@/lib/password-reset";
+import { DEVICE_LINK_TTL_MINUTES } from "@/lib/device-link";
 import { AppHeader } from "@/components/app-header";
 import { Kicker, StatusChip } from "@/components/ui";
 import { InviteForm } from "./invite-form";
 import { ResetPassword } from "@/components/reset-password";
+import { DeviceLink } from "@/components/device-link";
 import { MemberAccess } from "@/components/member-access";
 import { resendInviteAction, revokeInviteAction } from "./actions";
 
@@ -62,7 +64,16 @@ export default async function InvitesPage() {
     db.user.findMany({
       where: { role: "client" },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, email: true, initials: true, banned: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        initials: true,
+        banned: true,
+        // Members who registered before sign-in went passwordless still have
+        // one, and still need a way to reset it.
+        accounts: { where: { providerId: "credential" }, select: { id: true } },
+      },
     }),
   ]);
   const members = memberList.length;
@@ -126,11 +137,18 @@ export default async function InvitesPage() {
                     >
                       Their prints
                     </Link>
-                    <ResetPassword
+                    <DeviceLink
                       userId={m.id}
                       name={m.name.split(" ")[0] ?? m.name}
-                      expiresInMinutes={RESET_TTL_MINUTES}
+                      expiresInMinutes={DEVICE_LINK_TTL_MINUTES}
                     />
+                    {m.accounts.length > 0 && (
+                      <ResetPassword
+                        userId={m.id}
+                        name={m.name.split(" ")[0] ?? m.name}
+                        expiresInMinutes={RESET_TTL_MINUTES}
+                      />
+                    )}
                     <MemberAccess
                       userId={m.id}
                       name={m.name.split(" ")[0] ?? m.name}

@@ -7,7 +7,12 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
 import { requireFreshAuth } from "@/lib/reauth";
 import { record } from "@/lib/audit";
-import { passwordResetEmail, sendMail } from "@/lib/email";
+import { deviceLinkEmail, passwordResetEmail, sendMail } from "@/lib/email";
+import {
+  DEVICE_LINK_TTL_MINUTES,
+  issueDeviceLinkUrl,
+  revokeDeviceLinks,
+} from "@/lib/device-link";
 import {
   createInvite,
   InviteError,
@@ -186,6 +191,71 @@ export async function resetPasswordAction(
 }
 
 /**
+ * "I have a new phone", or "I cleared my browser and now it does not know me."
+ *
+ * Members have no password, so getting one more device signed in means the
+ * printer owner minting a single-use link for it. Unlike a reset link this one
+ * signs whoever opens it in as that member — which is exactly why it sits
+ * behind the same re-authentication as a reset, revokes any earlier one, and
+ * is audited both here and when it is spent.
+ *
+ * Earlier devices stay signed in. Taking a device away is what "Revoke
+ * access?" is for.
+ */
+export async function deviceLinkAction(
+  _prev: InviteFormState,
+  formData: FormData,
+): Promise<InviteFormState> {
+  const admin = await requireAdmin();
+  await requireFreshAuth("/admin/invites");
+  const userId = String(formData.get("userId") ?? "");
+
+  const target = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, name: true, role: true, banned: true },
+  });
+  if (!target) return { error: "No such member." };
+  if (target.role !== "client") {
+    return { error: "Device links are for members. You sign in with your password." };
+  }
+  if (target.banned) {
+    return { error: "Their access is revoked. Restore it first." };
+  }
+
+  let url: string;
+  try {
+    await revokeDeviceLinks(target.id);
+    url = await issueDeviceLinkUrl(target.id);
+  } catch (error) {
+    console.error("device link failed", error);
+    return { error: "That link could not be created. Try again." };
+  }
+
+  let delivered = false;
+  try {
+    delivered = await sendMail(
+      deviceLinkEmail({ to: target.email, url, expiresInMinutes: DEVICE_LINK_TTL_MINUTES }),
+    );
+  } catch (error) {
+    console.error("device link mail failed; handing the link over instead", error);
+  }
+
+  await record({
+    action: "device.link_requested",
+    actor: admin,
+    subject: target.email,
+    detail: {
+      forName: target.name,
+      validMinutes: DEVICE_LINK_TTL_MINUTES,
+      delivery: delivered ? "email" : "handover",
+    },
+  });
+
+  revalidatePath("/admin/invites");
+  return delivered ? { sent: target.email } : { sent: target.email, handoverUrl: url };
+}
+
+/**
  * Revoke, or restore, a member's access.
  *
  * Suspension rather than deletion, deliberately. `Story.uploaderId` cascades,
@@ -235,6 +305,8 @@ export async function setMemberAccessAction(
     // Shut the door they are already through, not only the one they would
     // come back to.
     await db.session.deleteMany({ where: { userId: target.id } });
+    // And the one somebody may be holding for a device not yet signed in.
+    await revokeDeviceLinks(target.id);
   }
 
   await record({

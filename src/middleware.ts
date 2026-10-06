@@ -1,7 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 import { buildCsp, newNonce } from "@/lib/csp";
-import { SESSION_COOKIE_NAMES, SESSION_IDLE_SECONDS } from "@/lib/auth-rules";
+import {
+  DEVICE_MARKER_COOKIE,
+  SESSION_COOKIE_NAMES,
+  SESSION_IDLE_SECONDS,
+} from "@/lib/auth-rules";
+import { deviceMarkerFor, tokenFromSessionCookie } from "@/lib/device-marker";
 
 /**
  * Two jobs, both cheap enough to run on every request.
@@ -23,16 +28,16 @@ import { SESSION_COOKIE_NAMES, SESSION_IDLE_SECONDS } from "@/lib/auth-rules";
 /**
  * Pages anyone may reach without a session.
  *
- * `/set-password` is on the list for the same reason `/invite` is: the whole
+ * `/set-password` and `/device` are on the list for the same reason `/invite` is: the whole
  * point of the link is that somebody who cannot get in can use it. It grants
  * nothing on its own — the token is checked by the page and again by the
  * action behind it.
  */
-const PUBLIC_PREFIXES = ["/signin", "/invite", "/set-password"];
+const PUBLIC_PREFIXES = ["/signin", "/invite", "/set-password", "/device"];
 
 const isProd = process.env.NODE_ENV === "production";
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   const nonce = newNonce();
@@ -133,7 +138,7 @@ export function middleware(request: NextRequest) {
   if (isApi || isPublic || hasCookie) {
     const res = withCsp(NextResponse.next({ request: { headers: requestHeaders } }));
     // Route handlers set their own cookies; a page render cannot. See below.
-    if (!isApi) restampSession(request, res);
+    if (!isApi) await restampSession(request, res);
     return res;
   }
 
@@ -167,11 +172,21 @@ export function middleware(request: NextRequest) {
  * `/api/*` is deliberately excluded. Those responses can and do set the cookie
  * themselves — and re-stamping there would resurrect the one that
  * `/api/auth/sign-out` had just deleted.
+ *
+ * A member's device session is left alone. It lasts four hundred days, its
+ * cookie was written with that `Max-Age`, and cutting it to twenty minutes
+ * here would sign the member out of a device they have no password to get
+ * back into. `ppp.device` says which session that is — by digest, so a marker
+ * left over from a member cannot spare a later sign-in on the same browser.
  */
-function restampSession(request: NextRequest, response: NextResponse): void {
+async function restampSession(request: NextRequest, response: NextResponse): Promise<void> {
   for (const name of SESSION_COOKIE_NAMES) {
     const cookie = request.cookies.get(name);
     if (!cookie) continue;
+    const marker = request.cookies.get(DEVICE_MARKER_COOKIE)?.value;
+    if (marker && marker === (await deviceMarkerFor(tokenFromSessionCookie(cookie.value)))) {
+      return;
+    }
     response.cookies.set({
       name,
       value: cookie.value,
