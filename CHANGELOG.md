@@ -22,6 +22,13 @@ Notable changes. Every entry names a released version; deployments pin
   copied again to get a newer one. The pull-request template lists all ten
   suites, the wizard tests and the rollback check for a migration.
 
+### Fixed
+
+- **`source-map-js` 1.2.1 → 1.2.2**, for CVE-2026-93749 (HIGH): a malformed
+  indexed source map could hang whatever parsed it. It arrives through PostCSS
+  and Tailwind, which run when the stylesheet is built, and the Trivy gate
+  fails on it. Lockfile only.
+
 ## v0.3.0
 
 2026-10-04.
