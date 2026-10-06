@@ -484,6 +484,55 @@ root. It is only removal that does.
 Take the snapshot first, and do this last. Nothing else in the migration is
 irreversible; this is.
 
+### Setting up mail
+
+Optional — see [Mail is optional](authentication.md#mail-is-optional--genuinely)
+for what the app does without it. With it, invitations and password resets are
+emailed rather than handed over, and people get their notifications in their
+inbox as well as in the app unless they switch that off.
+
+Put the SMTP account in `.env.docker`:
+
+```sh
+MAIL_FROM="Pretty Please Print <print@yourdomain.example>"
+SMTP_URL="smtps://user:pass@smtp.yourprovider.example:465"
+```
+
+- **`smtps://…:465`** connects over TLS from the first byte. **`smtp://…:587`**
+  connects in the clear and upgrades with STARTTLS when the server offers it,
+  which every real submission server does. Use whichever your provider names.
+- **URL-encode the username and the password.** They sit inside a URL, so an
+  `@` in a username is `%40`, and `#`, `/`, `:`, `?` and `%` in a password
+  must be encoded too. An unencoded `@` is the usual reason a correct password
+  is "rejected" — the host name is being read out of the middle of it.
+- **`MAIL_FROM` has to be an address that account may send as.** Most providers
+  refuse or rewrite anything else, and a domain you do not control will fail
+  SPF at the recipient and land in spam.
+- **Gmail, Microsoft 365 and similar need an app password**, not the account
+  password, and usually two-step verification to create one.
+- Remove the `mailpit` address the example file ships with; it only exists
+  inside the local test stack.
+
+Restart the app, sign in as the owner, open **Mail**, and press **Send me a
+test message**. It goes to the owner's own address and nowhere else, and the
+page reports what the server said — `Invalid login`, a refused connection, a
+timeout — rather than leaving you to find it in the logs. It never shows the
+connection string. If the page says it was sent and nothing arrives, look in
+spam before looking at the settings: that is a reputation problem
+(`MAIL_FROM`, SPF, DKIM), not a connection one.
+
+The same page shows each message the app sends, with stand-in data, so you can
+read what goes out under your name before anybody receives it.
+
+Two things that are not failures:
+
+- **Somebody is not getting notification emails.** They may have switched them
+  off on their profile, or their access may have been revoked — a suspended
+  account is sent nothing.
+- **A notification email failed and nothing looked wrong.** By design: it is a
+  copy of something already in the Activity panel, so a failed send is logged
+  (`[mail] a notification could not be emailed`) and the action carries on.
+
 ### Importing from a link
 
 Off by default. Add this to `.env.docker` and restart the app:

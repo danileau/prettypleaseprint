@@ -69,6 +69,11 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   left the rail (delivered, done, declined), filterable by status, material and
   when, with **Print again** on every row. It is where you go to re-run an old
   job.
+- **Hear about it by email, if you like** — where the host has set up mail,
+  whatever lands in your Activity panel is also sent to your inbox: a new
+  request, a ticket moving, a comment. Each person can switch it off on their
+  profile. The printer owner has a **Mail** page that sends a test message and
+  shows every email the app sends, as it is sent.
 - **Talk on the ticket** — a conversation thread per request, so "can you do it
   in teal" lives with the model rather than in a chat app.
 - **Owner-managed benefits** — the "what's in it for you" tips are the printer
@@ -180,9 +185,9 @@ with commentary is [`.env.docker.example`](.env.docker.example).
 | `PASSKEY_RP_NAME` | | Shown in the browser's passkey prompt. |
 | `ADMIN_EMAIL` / `ADMIN_NAME` | **yes** | The single admin, created on first start. |
 | `DATA_ROOT` | | Where the database and uploads live on disk. Default `./data`. |
-| `SMTP_URL` | | SMTP transport. **Leave unset and the app still works** — links are shown to the admin to hand over. |
+| `SMTP_URL` | | SMTP transport, e.g. `smtps://user:pass@host:465`. **Leave unset and the app still works** — links are shown to the admin to hand over and notifications stay in the app. Test it from the owner's **Mail** page. |
 | `RESEND_API_KEY` | | Alternative to `SMTP_URL`; takes precedence. |
-| `MAIL_FROM` | | Envelope sender. |
+| `MAIL_FROM` | | The address mail is sent as. Must be one your mail account may use. See [Setting up mail](docs/deployment.md#setting-up-mail). |
 | `TRUST_PROXY_HEADERS` | | Which header carries the client address: `false` (trust nothing, the default), `true` (left-most `X-Forwarded-For`), or `cloudflare` (`CF-Connecting-IP`). See [the reasoning](docs/deployment.md#why-trust_proxy_headers-is-a-separate-switch). |
 | `HIBP_DISABLED` | | `true` disables the breach check. Only for a host with no outbound internet — it fails closed, so without it nobody could register. |
 | `IMPORT_SOURCES` | | `printables` lets a request start from a Printables link instead of an upload. **Off when unset.** Needs outbound HTTPS, and a misspelt value stops the app. See [Importing from a link](docs/deployment.md#importing-from-a-link). |

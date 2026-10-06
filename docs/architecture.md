@@ -437,9 +437,12 @@ side:
 
 ## What is deliberately not built
 
-- **Email/Slack notification delivery.** `Notification` rows and the `notify()`
-  helper exist and the Activity panel reads them; only the in-app record is
-  written so far.
+- **Slack, or any chat, for notifications.** They go to the Activity panel and,
+  where mail is configured and the person has not switched it off, to their
+  inbox — `notify()` is the one place both are decided. Nothing posts to chat.
+- **Editing the emails from the app.** The owner can see every message as it
+  is sent, at `/admin/mail`; the wording and the look live in
+  `src/lib/email.ts`.
 - **A designed whole-board empty state.** There is a minimal one that says what
   is true rather than showing a blank page, but the handoff asks for a design
   decision here — treat it as a placeholder.
@@ -462,7 +465,7 @@ src/lib/
   invites.ts             invite lifecycle, and the claim an account is opened under
   password-reset.ts      minting, reading and restoring set-password links
   tokens.ts              CSPRNG tokens, digests, initials
-  email.ts               Resend → SMTP → nothing, plus the templates
+  email.ts               Resend → SMTP → nothing; every message the app sends, and its previews
   audit.ts               the append-only trail
   dashboard.ts           the three panels above the audit log
   stories.ts             every operation on a print ticket — the rules, once

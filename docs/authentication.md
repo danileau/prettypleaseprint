@@ -58,15 +58,23 @@ All three disappear the moment a passkey exists.
 ### Mail is optional — genuinely
 
 **Nothing in the running system needs a mail server.** People sign in with a
-password, and notifications are in-app, written by `notify()` and read by the
-Activity panel. Mail is called in exactly three places, and every one of them
-is delivering a *link*: sending an invitation, resending one, and sending a
-password reset.
+password, and notifications are in the Activity panel, written by `notify()`.
+Mail does two jobs, and the app is whole without either. It delivers a *link* —
+an invitation, a resent one, a password reset. And it sends a *copy* of each
+notification to anybody who has not switched that off on their profile.
 
-With `SMTP_URL` or `RESEND_API_KEY` set, those links are emailed. With neither,
-the admin gets the link on screen to hand over directly, and the app boots
-normally rather than refusing to start. Same token, same single use, same
-expiry either way.
+With `SMTP_URL` or `RESEND_API_KEY` set, both happen. With neither, the admin
+gets each link on screen to hand over directly, notifications stay in the
+panel, and the app boots normally rather than refusing to start. Same token,
+same single use, same expiry either way.
+
+A notification email is sent without being waited for: the row in the Activity
+panel is the notification, and somebody accepting a print should not wait on a
+mail server to be told so, nor have the action fail because one is having a
+bad afternoon. A failed send is logged and nothing else. The owner's **Mail**
+page (`/admin/mail`) is where to find out whether mail is actually arriving —
+it sends a test message and reports the server's own answer — and it shows
+every message the app can send, as it is sent.
 
 For a group that shares an office, handing a link over is arguably the safer
 channel: a token in an inbox sits there indefinitely and can be forwarded,

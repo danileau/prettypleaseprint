@@ -1,3 +1,5 @@
+import { mailConfigured } from "@/lib/email";
+import { setNotifyByEmail } from "@/app/actions/notifications";
 import Link from "next/link";
 
 import { db } from "@/lib/db";
@@ -42,6 +44,11 @@ export default async function ProfilePage() {
   const owner = await printerName();
   const isAdmin = user.role === "admin";
   const scope = storyScope(user);
+  // Only worth asking where there is mail to send. Without a transport the
+  // switch would be a promise the deployment cannot keep.
+  const mail = mailConfigured()
+    ? await db.user.findUnique({ where: { id: user.id }, select: { notifyByEmail: true } })
+    : null;
 
   const [stories, finished, beers, favourite, waiting, bytes] = await Promise.all([
     db.story.findMany({
@@ -192,6 +199,34 @@ export default async function ProfilePage() {
           Declined orders are listed here too — the rail only carries what is
           still moving.
         </p>
+
+        {mail && (
+          <section
+            id="email"
+            aria-labelledby="email-heading"
+            className="mt-[35.2px] max-w-[780px] rounded-panel border-[3px] border-ink bg-porcelain p-[22px] shadow-stamp"
+          >
+            <h2 id="email-heading" className="m-0 mb-[6px] font-display text-[22px] text-ink">
+              Notifications by email
+            </h2>
+            <p className="m-0 mb-[13.2px] text-[15px] leading-[1.5] text-ink-2">
+              {mail.notifyByEmail
+                ? `On. Whatever lands in your Activity panel is also sent to ${user.email}.`
+                : "Off. Notifications are in your Activity panel and nowhere else."}
+            </p>
+            {/* One button that says what it will do, rather than a checkbox
+                and a save: there is exactly one thing to change here. */}
+            <form action={setNotifyByEmail}>
+              {!mail.notifyByEmail && <input type="hidden" name="notifyByEmail" value="on" />}
+              <button
+                type="submit"
+                className="stamp cursor-pointer rounded-chip border-[3px] border-ink bg-porcelain px-[20px] py-[11px] text-[15px] font-semibold text-ink hover:bg-cream-2"
+              >
+                {mail.notifyByEmail ? "Stop emailing me" : "Email them to me too"}
+              </button>
+            </form>
+          </section>
+        )}
       </main>
     </>
   );

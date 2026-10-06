@@ -772,6 +772,131 @@ async function main() {
   const feed = await (await client.go(`${APP}/board`)).text();
   check("their Activity count is not zero", /Activity[\s\S]{0,200}[1-9]/.test(feed));
 
+  // ------------------------------------------------------------------
+  // Mail. Everything above is true with or without it; this is the copy of a
+  // notification that goes to an inbox, and the owner's page for seeing what
+  // is sent. Read back out of Mailpit, so a pass means a message was really
+  // accepted by an SMTP server, not that a function was called.
+  section("a notification is also an email");
+
+  const MAILPIT = process.env.MAILPIT_URL ?? "http://localhost:8025";
+  type Caught = { ID: string; To: { Address: string }[]; Subject: string };
+  const inbox = async (to: string): Promise<Caught[]> => {
+    const list = await (await fetch(`${MAILPIT}/api/v1/messages?limit=200`)).json();
+    return (list.messages as Caught[]).filter((m) => m.To.some((t) => t.Address === to));
+  };
+  /** Mail is sent without being awaited, so it is waited for here instead. */
+  const arrives = async (to: string, subject: RegExp, ms = 8000) => {
+    for (const end = Date.now() + ms; Date.now() < end; ) {
+      const hit = (await inbox(to)).find((m) => subject.test(m.Subject));
+      if (hit) return (await (await fetch(`${MAILPIT}/api/v1/message/${hit.ID}`)).json()) as { HTML: string; Text: string; Subject: string };
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return null;
+  };
+  const emptyInbox = () => fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
+  const json = (body: unknown): RequestInit => ({
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+
+  let mailUp = false;
+  try { mailUp = (await fetch(`${MAILPIT}/api/v1/messages?limit=1`)).ok; } catch { /* reported below */ }
+  if (!mailUp) {
+    throw new Error(`Mailpit is not answering at ${MAILPIT} — raise the stack with --profile mailcatcher.`);
+  }
+
+  await emptyInbox();
+  const mailed = await makeStory(ayla.id, `<b>Bracket</b> & "clip"`);
+  const accept = await ruben.raw(`${APP}/api/stories/${mailed.id}/advance`, json({}));
+  check("the owner accepts a ticket", accept.status === 200, `status ${accept.status}`);
+  const moved = await arrives(ayla.email, /Accepted/);
+  check("and the requester is emailed about it", moved !== null, "nothing arrived for the requester");
+  check("the subject carries the ticket's reference", moved?.Subject.startsWith(`PPP-${100 + mailed.id}:`) === true, moved?.Subject);
+  check("the message links straight to the ticket",
+        moved?.HTML.includes(`${APP}/story/${mailed.id}`) === true && moved?.Text.includes(`${APP}/story/${mailed.id}`) === true);
+  check("and says where to switch these off, in both versions",
+        moved?.HTML.includes(`${APP}/me#email`) === true && moved?.Text.includes(`${APP}/me#email`) === true);
+  check("a title is text in an email, never markup",
+        moved?.HTML.includes("&lt;b&gt;Bracket&lt;/b&gt;") === true && !moved?.HTML.includes("<b>Bracket</b>"),
+        "the title reached the HTML unescaped");
+  check("the Activity panel has it too — the email is a copy, not the record",
+        (await db.notification.count({ where: { recipientId: ayla.id, storyId: mailed.id } })) === 1);
+
+  const said = await client.raw(`${APP}/api/stories/${mailed.id}/comments`, json({ body: "Could it be teal?" }));
+  check("the requester comments", said.status === 201 || said.status === 200, `status ${said.status}`);
+  check("and the owner is emailed, at the owner's address",
+        (await arrives(admin.email, new RegExp(`PPP-${100 + mailed.id}`))) !== null);
+  check("nobody is emailed about their own action",
+        !(await inbox(ayla.email)).some((m) => /teal|comment/i.test(m.Subject)));
+
+  section("a person can switch their own off");
+
+  let profile = await (await client.go(`${APP}/me`)).text();
+  check("the profile says they are on", rendered(profile).includes("Notifications by email") && profile.includes("Stop emailing me"));
+  await client.submit(`${APP}/me`, profile, formIndexContaining(profile, "Stop emailing me"), {});
+  check("one press turns them off", (await db.user.findUnique({ where: { id: ayla.id } }))?.notifyByEmail === false);
+  check("and the change is on the trail",
+        (await db.auditEvent.count({ where: { action: "user.mail_preference_changed", subject: ayla.email } })) === 1);
+  check("it did not touch anybody else's", (await db.user.findUnique({ where: { id: admin.id } }))?.notifyByEmail === true);
+
+  await emptyInbox();
+  await ruben.raw(`${APP}/api/stories/${mailed.id}/advance`, json({}));
+  check("the next notification still reaches the Activity panel",
+        (await db.notification.count({ where: { recipientId: ayla.id, storyId: mailed.id } })) === 2);
+  check("but no email follows it", (await arrives(ayla.email, /./, 2500)) === null);
+
+  profile = await (await client.go(`${APP}/me`)).text();
+  check("the profile now offers to turn them back on", profile.includes("Email them to me too"));
+  await client.submit(`${APP}/me`, profile, formIndexContaining(profile, "Email them to me too"), {});
+  check("and does", (await db.user.findUnique({ where: { id: ayla.id } }))?.notifyByEmail === true);
+
+  await db.user.update({ where: { id: ayla.id }, data: { banned: true } });
+  await emptyInbox();
+  await ruben.raw(`${APP}/api/stories/${mailed.id}/advance`, json({}));
+  check("somebody whose access was revoked is sent nothing more", (await arrives(ayla.email, /./, 2500)) === null);
+  await db.user.update({ where: { id: ayla.id }, data: { banned: false } });
+
+  section("the owner can see what is sent, and whether it arrives");
+
+  const mailPage = await ruben.go(`${APP}/admin/mail`);
+  const mailHtml = await mailPage.text();
+  check("the Mail page says mail is on, and through what",
+        mailPage.status === 200 && rendered(mailHtml).includes("Mail is switched on") && mailHtml.includes('data-mail-transport="smtp"'));
+  check("without showing the connection string, which can carry a password", !mailHtml.includes("smtp://") && !mailHtml.includes("smtps://"));
+  check("a client cannot see it", (await client.go(`${APP}/admin/mail`)).status === 404);
+
+  for (const [name, marker] of [
+    ["invitation", "Claim your seat"], ["password-reset", "Choose a password"],
+    ["notification", "Switch them off"], ["test", "Mail is getting through"],
+  ] as const) {
+    const shown = await ruben.go(`${APP}/admin/mail/preview/${name}`);
+    const body = await shown.text();
+    check(`the ${name} email can be seen as it is sent`,
+          shown.status === 200 && (shown.headers.get("content-type") ?? "").includes("text/html") && body.includes(marker),
+          `status ${shown.status}`);
+    const plain = await ruben.go(`${APP}/admin/mail/preview/${name}?as=text`);
+    check("…and in plain text",
+          (plain.headers.get("content-type") ?? "").includes("text/plain") && (await plain.text()).startsWith("Subject: "));
+  }
+  check("the samples are samples — no preview carries a link into this instance",
+        !(await (await ruben.go(`${APP}/admin/mail/preview/invitation`)).text()).includes(APP));
+  for (const name of ["nope", "__proto__", "constructor", "toString"]) {
+    const r = await ruben.go(`${APP}/admin/mail/preview/${name}`);
+    check(`a preview called "${name}" does not exist`, r.status === 404, `status ${r.status}`);
+  }
+  check("a client cannot see a preview", (await client.go(`${APP}/admin/mail/preview/invitation`)).status === 404);
+  check("nor can somebody signed out", [401, 404, 307].includes((await new Browser().raw(`${APP}/admin/mail/preview/invitation`)).status));
+
+  await emptyInbox();
+  const sent = await ruben.submit(`${APP}/admin/mail`, mailHtml, formIndexContaining(mailHtml, "Send me a test message"), {});
+  check("the test message is sent, and the page says to whom",
+        decodeURIComponent((sent.headers.get("location") ?? "").replace(/\+/g, " ")).includes(`Sent to ${admin.email}`),
+        `${sent.status} ${sent.headers.get("location")}`);
+  const test = await arrives(admin.email, /Test message/);
+  check("it arrives, at the owner's own address", test !== null && test.HTML.includes("Mail is getting through"));
+  check("and nowhere else", (await (await fetch(`${MAILPIT}/api/v1/messages?limit=50`)).json()).messages.length === 1);
+  check("sending it is on the trail", (await db.auditEvent.count({ where: { action: "mail.test_sent", subject: admin.email } })) === 1);
+
   console.info(
     `\n${passed} checks passed, ${failures.length} failed` +
       (failures.length ? `:\n  - ${failures.join("\n  - ")}` : ""),
