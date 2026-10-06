@@ -424,7 +424,7 @@ async function main() {
   // unforgeable and that it cannot be pointed somewhere it was not minted for.
   // ---------------------------------------------------------------------
   // Minted off a story with real bytes behind it. `mallorysStory` is a bare row
-  // with an invented storage key, so a fetch of it 502s at the object store
+  // with an invented storage key, so a fetch of it 502s for want of a file
   // long after the credential has done its job — which would test nothing.
   const realStory = spoofed!;
   const ticket = await (await apiAdmin.raw(APP + `/story/${realStory.id}`)).text();

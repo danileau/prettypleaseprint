@@ -317,7 +317,7 @@ model Story {
   flagged    Boolean @default(false)
   flagReason String?
 
-  // --- uploaded asset. Bytes live in object storage, never the web root. ---
+  // --- uploaded asset. Bytes live under MODELS_ROOT, never the web root. ---
   filename   String
   fileSize   Int
   mimeType   String

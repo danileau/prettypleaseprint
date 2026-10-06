@@ -530,7 +530,7 @@ export async function clearFlag(actor: Actor, id: number) {
  * conversation and the audit trail's subject — is no longer the requester's
  * call to make. They can ask.
  *
- * The stored file goes with it. Leaving 50 MB of geometry in object storage
+ * The stored file goes with it. Leaving 50 MB of geometry on the disk
  * for a request nobody can see any more is a slow leak and, for somebody who
  * withdrew a model on purpose, arguably not what they asked for. Comments and
  * notifications cascade at the database.

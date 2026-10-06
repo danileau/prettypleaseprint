@@ -22,6 +22,22 @@ Notable changes. Every entry names a released version; deployments pin
   copied again to get a newer one. The pull-request template lists all ten
   suites, the wizard tests and the rollback check for a migration.
 
+### Fixed
+
+- **The last places that still described an object store.** MinIO left in
+  v0.2.0, and a handful of comments, two documents and the API's own
+  descriptions went on talking about it. The OpenAPI document said a model was
+  proxied because "object storage publishes no port" and that a `502` meant
+  "object storage did not answer"; both now say what happens, which is a file
+  on disk that could not be written or read. The README's feature list, the
+  schema and the route that serves models say the same. CI stops generating an
+  `S3_SECRET_KEY` that nothing has read since.
+
+  Two open items in the [security audit](docs/security-audit.md) are brought
+  up to date with it: signed model URLs are closed by removal rather than
+  pending, and the reason recorded for `Cross-Origin-Embedder-Policy:
+  credentialless` no longer names a storage origin that does not exist.
+
 ## v0.3.0
 
 2026-10-04.

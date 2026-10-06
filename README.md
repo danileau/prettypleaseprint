@@ -31,8 +31,8 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   existence without a pending invitation, enforced in a single hook that every
   authentication method goes through.
 - **Upload a model** — `.stl` or `.3mf`, validated against its actual bytes
-  rather than its filename, measured for its bounding box, stored in object
-  storage and never in the web root.
+  rather than its filename, measured for its bounding box, stored on disk
+  and never in the web root.
 - **Follow it on a board** — Requested → Accepted → Printing → Delivery, one
   step at a time, forwards only. Or Declined, with a reason. Marking it **Done**
   takes it off the board while keeping it in *My orders*, so the rail carries

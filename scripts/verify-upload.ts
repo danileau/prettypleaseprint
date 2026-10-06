@@ -5,7 +5,7 @@
  *   npm run verify:upload
  *
  * Drives the real HTTP surface with real sessions and real files, and checks
- * what landed in Postgres and in object storage afterwards.
+ * what landed in Postgres and on disk afterwards.
  *
  * DESTRUCTIVE: wipes users, stories and invites. Development database only.
  */
