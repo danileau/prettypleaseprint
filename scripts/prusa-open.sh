@@ -16,7 +16,9 @@
 #
 # Config lives at $PPP_SLICER_CONF (default ~/.config/ppp/slicer.conf) and sets:
 #   PPP_BASE          the instance, e.g. https://print.example         (required)
-#   PPP_SLICER        the slicer binary            (default: prusa-slicer)
+#   PPP_SLICER_PROFILE which slicer: prusa, orca, elegoo, bambu, cura (default: prusa)
+#   PPP_SLICER        the slicer command, split on spaces  (default: found, for prusa)
+#   PPP_SLICER_PATH   or the slicer's path, taken whole — for a path with spaces
 #   PPP_DOWNLOAD_DIR  where fetched models land    (default: ~/.cache/ppp/models)
 #   PPP_TOKEN         DEPRECATED — see below                          (optional)
 #
@@ -32,9 +34,10 @@
 # delete it from the config and click the button again.
 #
 # Failures are made loud rather than swallowed: a protocol handler has no
-# terminal, so every error goes to a log AND a desktop notification (when
-# notify-send exists), because a click that silently does nothing is the worst
-# possible outcome — indistinguishable from "not installed".
+# terminal, so every error goes to a log AND to the screen (a notification on
+# Linux and macOS, a message box on Windows), because a click that silently
+# does nothing is the worst possible outcome — indistinguishable from "not
+# installed".
 
 set -euo pipefail
 
@@ -44,16 +47,37 @@ LOG="$LOG_DIR/slicer.log"
 mkdir -p "$LOG_DIR"
 
 # --- loud failure -----------------------------------------------------------
-# Log with a timestamp, pop a desktop notification if we can, and leave a copy
+# Log with a timestamp, put the failure on screen if we can, and leave a copy
 # on stderr for the case where this was run from a terminal to debug it.
 note() {
   printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >>"$LOG"
 }
+# notify-send is Linux's. macOS has osascript and Git Bash on Windows has
+# PowerShell, so those say it instead — a notification on macOS, a message box
+# on Windows. 0x1010 is an error icon (0x10) on a system-modal box (0x1000),
+# which is what keeps it in front of the browser that was clicked in; an
+# ordinary one opens behind it, where nobody sees it. The message can
+# quote the clicked URL, which any web page can write, so it never becomes part
+# of the code they run: osascript gets it as an argument, PowerShell from the
+# environment.
+alert() {
+  local title="Open in ${SLICER_NAME:-PrusaSlicer} failed"
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send -u critical "$title" "$1" || true
+  elif command -v osascript >/dev/null 2>&1; then
+    osascript -e 'on run argv' \
+      -e 'display notification (item 2 of argv) with title (item 1 of argv)' \
+      -e 'end run' "$title" "$1" >/dev/null 2>&1 || true
+  elif command -v powershell.exe >/dev/null 2>&1; then
+    # shellcheck disable=SC2016 # PowerShell's $variables, not bash's
+    PPP_ALERT_TITLE="$title" PPP_ALERT_TEXT="$1" powershell.exe -NoProfile -NonInteractive -Command \
+      '[void](New-Object -ComObject WScript.Shell).Popup($env:PPP_ALERT_TEXT, 0, $env:PPP_ALERT_TITLE, 0x1010)' \
+      >/dev/null 2>&1 </dev/null || true
+  fi
+}
 fail() {
   note "ERROR: $1"
-  if command -v notify-send >/dev/null 2>&1; then
-    notify-send -u critical "Open in PrusaSlicer failed" "$1" || true
-  fi
+  alert "$1"
   printf 'prusa-open: %s\n' "$1" >&2
   exit 1
 }
@@ -77,8 +101,30 @@ fi
 # shellcheck disable=SC1090
 . "$CONF"
 
-: "${PPP_BASE:?PPP_BASE is not set in $CONF}"
+# Through `fail`, not `${PPP_BASE:?}`: that one exits on stderr alone, which a
+# protocol handler does not have — no log line, nothing on screen.
+[ -n "${PPP_BASE:-}" ] || fail "PPP_BASE is not set in $CONF — set it to the address of your instance"
 DOWNLOAD_DIR="${PPP_DOWNLOAD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/ppp/models}"
+
+# --- which slicer -----------------------------------------------------------
+# The profile decides two things: what the slicer is called in a message, and
+# what it is handed besides the file. Only PrusaSlicer has --single-instance;
+# the OrcaSlicer family (OrcaSlicer, ElegooSlicer, Bambu Studio) and Cura take
+# the file on its own and keep "one window" as a preference of their own. An
+# unknown name is refused by name rather than treated as Prusa — a misspelt
+# profile quietly getting Prusa's arguments is the kind of guess this script
+# does not make. SLICER_ARGS may be empty, hence the ${…+…} form where it is
+# expanded: an empty array under `set -u` is an error in the bash macOS ships.
+profile="${PPP_SLICER_PROFILE:-prusa}"
+SLICER_ARGS=()
+case "$profile" in
+  prusa)  SLICER_NAME="PrusaSlicer"; SLICER_ARGS=(--single-instance) ;;
+  orca)   SLICER_NAME="OrcaSlicer" ;;
+  elegoo) SLICER_NAME="ElegooSlicer" ;;
+  bambu)  SLICER_NAME="Bambu Studio" ;;
+  cura)   SLICER_NAME="UltiMaker Cura" ;;
+  *) fail "PPP_SLICER_PROFILE=$profile in $CONF is not a slicer this helper knows. Known: prusa, orca, elegoo, bambu, cura." ;;
+esac
 
 # --- locate the slicer ------------------------------------------------------
 # There is no one name for "PrusaSlicer on Linux": a distro package is
@@ -89,10 +135,22 @@ DOWNLOAD_DIR="${PPP_DOWNLOAD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/ppp/models}"
 # PPP_SLICER may therefore be a bare name, a full path to an AppImage, or a
 # multi-word command like "flatpak run com.prusa3d.PrusaSlicer" — it is split
 # on whitespace into a command + args. Left unset, the cases above are probed
-# in turn. (A path containing spaces is the one thing this cannot express; put
-# the AppImage somewhere without them.)
-if [ -n "${PPP_SLICER:-}" ]; then
+# in turn. A path containing spaces cannot be said that way, and on Windows
+# and macOS that is every slicer — `C:\Program Files\…`, `/Applications/
+# Original Prusa Drivers/…` — so PPP_SLICER_PATH takes one path whole. Setting
+# both is refused: there is no telling which was meant.
+#
+# Only PrusaSlicer is looked for. The other profiles have no probe, because a
+# list of where they might be installed would be guesses this was never run
+# against; their error says which setting to fill in instead.
+[ -z "${PPP_SLICER:-}" ] || [ -z "${PPP_SLICER_PATH:-}" ] ||
+  fail "$CONF sets both PPP_SLICER and PPP_SLICER_PATH — keep one"
+if [ -n "${PPP_SLICER_PATH:-}" ]; then
+  SLICER_CMD=("$PPP_SLICER_PATH")
+elif [ -n "${PPP_SLICER:-}" ]; then
   read -r -a SLICER_CMD <<<"$PPP_SLICER"
+elif [ "$profile" != prusa ]; then
+  fail "where is $SLICER_NAME? Set PPP_SLICER_PATH in $CONF to its executable (a path with spaces is fine), or PPP_SLICER to a command on PATH."
 else
   SLICER_CMD=()
   # 1. a binary on PATH, under the names distros and builds actually use.
@@ -118,7 +176,7 @@ else
 fi
 
 [ "${#SLICER_CMD[@]}" -gt 0 ] || fail \
-  "could not find PrusaSlicer. Set PPP_SLICER in $CONF — a binary name, the full path to an AppImage, or 'flatpak run com.prusa3d.PrusaSlicer'."
+  "could not find PrusaSlicer. Set PPP_SLICER in $CONF — a binary name, the full path to an AppImage, or 'flatpak run com.prusa3d.PrusaSlicer' — or PPP_SLICER_PATH to a path with spaces in it."
 
 # --- parse the link ---------------------------------------------------------
 # Accept ppp://slice/<id>, with or without a trailing slash. The id is the ONLY
@@ -158,7 +216,7 @@ command -v curl >/dev/null 2>&1 || fail "curl is not installed"
 # can execute (an AppImage). Everything after it is arguments to that.
 slicer_head="${SLICER_CMD[0]}"
 command -v "$slicer_head" >/dev/null 2>&1 || [ -x "$slicer_head" ] ||
-  fail "slicer '$slicer_head' is not runnable — fix PPP_SLICER in $CONF (a name on PATH, an AppImage path, or 'flatpak run com.prusa3d.PrusaSlicer')"
+  fail "slicer '$slicer_head' is not runnable — fix PPP_SLICER or PPP_SLICER_PATH in $CONF (a name on PATH, an executable's path, or 'flatpak run com.prusa3d.PrusaSlicer')"
 
 # --- fetch ------------------------------------------------------------------
 tmp="$(mktemp -d)"
@@ -227,8 +285,35 @@ mv "$body" "$out"
 note "saved $out"
 
 # --- open -------------------------------------------------------------------
-# --single-instance so a second click loads the model into the window already
-# open rather than starting a race between two PrusaSlicers over the same file.
+# For PrusaSlicer, --single-instance (in SLICER_ARGS) so a second click loads
+# the model into the window already open rather than starting a race between
+# two PrusaSlicers over the same file.
+#
+# The slicer has to outlive this script, and how to arrange that depends on
+# what this bash has. setsid, where it exists, puts it in a session of its own.
+# Git for Windows and macOS ship without it, and there `setsid … &` failed in
+# the background, where `set -e` never sees it: the log said "handed off" and
+# nothing opened — the one outcome this script is written to prevent. So:
+#   - Git Bash on Windows runs the handler in a hidden terminal, and a
+#     backgrounded child dies with that terminal before the slicer has
+#     started. The slicer runs in the foreground instead and this script waits
+#     for it; a PPP_SLICER that launches through `cmd //c start` returns at once.
+#   - Anywhere else without setsid, nohup and & — the portable way to leave a
+#     process running after its parent has gone.
 note "opening with: ${SLICER_CMD[*]}"
-setsid "${SLICER_CMD[@]}" --single-instance "$out" >>"$LOG" 2>&1 &
+if command -v setsid >/dev/null 2>&1; then
+  setsid "${SLICER_CMD[@]}" ${SLICER_ARGS[@]+"${SLICER_ARGS[@]}"} "$out" >>"$LOG" 2>&1 &
+else
+  case "$(uname -s)" in
+    MINGW* | MSYS* | CYGWIN*)
+      note "no setsid here — running the slicer in the foreground"
+      "${SLICER_CMD[@]}" ${SLICER_ARGS[@]+"${SLICER_ARGS[@]}"} "$out" >>"$LOG" 2>&1 ||
+        fail "the slicer exited with status $? — its own output is in $LOG"
+      ;;
+    *)
+      note "no setsid here — detaching the slicer with nohup"
+      nohup "${SLICER_CMD[@]}" ${SLICER_ARGS[@]+"${SLICER_ARGS[@]}"} "$out" >>"$LOG" 2>&1 &
+      ;;
+  esac
+fi
 note "handed off story $id"
