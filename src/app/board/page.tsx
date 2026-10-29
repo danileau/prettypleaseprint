@@ -93,7 +93,6 @@ export default async function BoardPage({
                 <section
                   key={status}
                   className="overflow-hidden rounded-panel border-[3px] border-ink bg-cream-2"
-                  style={{ ["--tear-color" as string]: "#f6e7ce" }}
                 >
                   <div
                     className={`layers flex items-center justify-between border-b-[3px] border-ink ${rail.bar} px-[13.2px] py-[8px]`}

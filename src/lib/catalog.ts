@@ -32,18 +32,6 @@ export const DEFAULT_TIP = TIPS[0];
 /** Shortcut quantities. A typed number is accepted too — see `QuantitySchema`. */
 export const QUANTITY_PRESETS = [1, 2, 3, 4, 6] as const;
 
-export const STATUS_CHIP: Record<
-  string,
-  { bg: string; fg: string }
-> = {
-  Requested: { bg: "#eaecee", fg: "#4d565e" },
-  Accepted: { bg: "#dde3ec", fg: "#2c3a4d" },
-  Printing: { bg: "#f7ecd4", fg: "#79541a" },
-  Done: { bg: "#d9ebe9", fg: "#0b4340" },
-  Delivery: { bg: "#e2e6ea", fg: "#1b2126" },
-  Declined: { bg: "#e2e6ea", fg: "#6b747c" },
-};
-
 /**
  * How much a print matters to the person asking. The same three steps a
  * feature request uses (`FEATURE_PRIORITIES`, below) and drawn with the same

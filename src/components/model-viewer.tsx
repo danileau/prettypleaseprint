@@ -102,8 +102,21 @@ export function ModelViewer({
         const width = el.clientWidth || 480;
         const height = el.clientHeight || 380;
 
+        // Every colour in the scene is read from the theme's CSS variables
+        // rather than written out here, so whatever redefines them repaints the
+        // viewer too. The lights have tokens of their own (--color-scene-*):
+        // they are light, not paint, and a dark theme darkening the counter
+        // should not darken the lamp. A variable that is not defined is an
+        // error the viewer shows, not a black scene.
+        const styles = getComputedStyle(el);
+        const token = (name: string) => {
+          const value = styles.getPropertyValue(`--color-${name}`).trim();
+          if (!value) throw new Error(`The theme does not define --color-${name}.`);
+          return new THREE.Color(value);
+        };
+
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color("#f6e7ce"); // cream-2, the counter
+        scene.background = token("cream-2"); // the counter
 
         const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 2000);
 
@@ -112,11 +125,11 @@ export function ModelViewer({
         renderer.setSize(width, height);
         el.replaceChildren(renderer.domElement);
 
-        scene.add(new THREE.HemisphereLight("#ffffff", "#6b747c", 1.1));
-        const key = new THREE.DirectionalLight("#ffffff", 1.5);
+        scene.add(new THREE.HemisphereLight(token("scene-light"), token("scene-ground"), 1.1));
+        const key = new THREE.DirectionalLight(token("scene-light"), 1.5);
         key.position.set(3, 5, 4);
         scene.add(key);
-        const rim = new THREE.DirectionalLight("#dfe6ee", 0.6);
+        const rim = new THREE.DirectionalLight(token("scene-rim"), 0.6);
         rim.position.set(-4, 1, -3);
         scene.add(rim);
 
@@ -172,7 +185,7 @@ export function ModelViewer({
             new THREE.LineSegments(
               new THREE.EdgesGeometry(geometry, 28),
               new THREE.LineBasicMaterial({
-                color: "#221a14",
+                color: token("ink"),
                 transparent: true,
                 opacity: 0.16,
               }),
@@ -188,7 +201,7 @@ export function ModelViewer({
         scene.add(pivot);
 
         // The build plate, in the app's ink rather than the prototype's grey.
-        const grid = new THREE.GridHelper(largest * 2.4, 18, "#221a14", "#c9b48c");
+        const grid = new THREE.GridHelper(largest * 2.4, 18, token("ink"), token("scene-grid"));
         (grid.material as { opacity: number; transparent: boolean }).opacity = 0.35;
         (grid.material as { opacity: number; transparent: boolean }).transparent = true;
         scene.add(grid);

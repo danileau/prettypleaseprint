@@ -40,6 +40,20 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Changed
 
+- **Every colour the app draws with is a theme variable** (#105, step one; no
+  visible change). The 3D viewer's background, lights, edges and build plate,
+  the ink-at-an-alpha of the layer lines, the plate grid, the starburst and
+  `--color-rule`, and the shadow behind a "whatever" swatch's `?` were written
+  out where they were used; they now come from `globals.css` — the viewer
+  reads them with `getComputedStyle`, and says so if one is missing. The
+  viewer's lamps get tokens of their own, so a darker counter would not mean a
+  darker lamp. Tokens only code reads sit in an `@theme static` block, because
+  Tailwind drops theme variables no class uses. `STATUS_CHIP`, twelve hard-coded
+  colours nothing had imported since the diner redesign, is gone, and so is a
+  per-column `--tear-color` that restated its own default. E-mails keep their
+  literal colours: a mail client has no CSS variables. Screenshots of every
+  page before and after differ by at most 1/255 on the faint lines.
+
 - **Opening a ticket from a model's bytes lives in one place.** It was the body
   of the upload route while that was the only way a model arrived;
   `src/lib/intake.ts` now holds it and the upload and the import both call it.
