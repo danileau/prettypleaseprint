@@ -1,0 +1,201 @@
+#!/usr/bin/env bash
+#
+# Tests for scripts/prusa-open.sh.          bash scripts/tests/prusa-open.test.sh
+#
+# The helper runs on somebody's desktop: it fetches a model over HTTP and
+# starts a slicer. Neither is allowed to be real here. Each case runs the real
+# script with HOME, its config, its log and its download directory inside one
+# temp directory, and `curl`, the slicer, `setsid`, `nohup` and `uname`
+# replaced by stubs that write what they were asked to a log.
+#
+# PATH is exactly two directories — the stubs a case wants, and symlinks to an
+# allow-list of real tools. /usr/bin and /bin are NOT on it, so whether this
+# machine has setsid decides nothing: a case has it only if it puts the stub
+# there. A stub that is asked for something it was not told to expect logs
+# UNEXPECTED and exits 99, and the last case fails if that ever happened.
+#
+# PPP_TEST_SCRIPT points the suite at another copy of the script, which is how
+# a deliberately broken one is shown to fail.
+
+set -uo pipefail
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+HELPER="${PPP_TEST_SCRIPT:-$REPO_ROOT/scripts/prusa-open.sh}"
+
+BASE="$(mktemp -d "${TMPDIR:-/tmp}/ppp-slicer-test.XXXXXX")"
+trap 'rm -rf "$BASE"' EXIT
+
+# ----- the PATH directories -----------------------------------------------------
+ALLOW="bash env sed tr grep date mkdir mktemp rm mv cat head tail printf find
+  basename dirname stat chmod sleep touch"
+mkdir -p "$BASE/bin" "$BASE/stubs"
+for tool in $ALLOW; do
+  p="$(type -P "$tool")" || { echo "cannot run: $tool is not installed" >&2; exit 1; }
+  ln -s "$p" "$BASE/bin/$tool"
+done
+
+# curl: answers from files in $STUB/state — the status code, the headers, the
+# body — exactly the way the helper calls it (-o body -D headers -w code).
+cat >"$BASE/stubs/curl" <<'STUB'
+#!/usr/bin/env bash
+printf 'curl %s\n' "$*" >>"$STUB/log"
+body="" hdr=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) body="$2"; shift ;;
+    -D) hdr="$2"; shift ;;
+  esac
+  shift
+done
+[ -n "$body" ] && [ -n "$hdr" ] || { echo "UNEXPECTED curl call" >>"$STUB/log"; exit 99; }
+cat "$STUB/state/body" >"$body"
+printf 'HTTP/1.1 %s\r\ncontent-disposition: attachment; filename="%s"\r\n\r\n' \
+  "$(cat "$STUB/state/code")" "$(cat "$STUB/state/filename")" >"$hdr"
+cat "$STUB/state/code"
+STUB
+
+# The slicer: records its arguments, takes a moment like a real one, then says
+# it is done — so a case can tell whether the helper waited for it.
+cat >"$BASE/stubs/slicer" <<'STUB'
+#!/usr/bin/env bash
+printf 'slicer %s\n' "$*" >>"$STUB/log"
+sleep 0.3
+printf 'slicer done\n' >>"$STUB/log"
+exit "$(cat "$STUB/state/slicer-rc" 2>/dev/null || echo 0)"
+STUB
+
+for tool in setsid nohup; do
+  cat >"$BASE/stubs/$tool" <<STUB
+#!/usr/bin/env bash
+printf '$tool %s\n' "\$*" >>"\$STUB/log"
+exec "\$@"
+STUB
+done
+
+cat >"$BASE/stubs/uname" <<'STUB'
+#!/usr/bin/env bash
+[ "${1:-}" = "-s" ] || { echo "UNEXPECTED uname $*" >>"$STUB/log"; exit 99; }
+cat "$STUB/state/uname"
+STUB
+chmod +x "$BASE"/stubs/*
+
+# ----- one sandbox per case -----------------------------------------------------
+# with=…  the stubs this case puts on PATH besides curl, the slicer and uname.
+new_sandbox() {
+  T="$(mktemp -d "$BASE/case.XXXXXX")"
+  mkdir -p "$T/home/.config/ppp" "$T/path" "$T/stub/state"
+  : >"$T/stub/log"
+  for tool in curl slicer uname "$@"; do ln -s "$BASE/stubs/$tool" "$T/path/$tool"; done
+  printf 'PPP_BASE="https://print.invalid"\nPPP_SLICER="slicer"\n' >"$T/home/.config/ppp/slicer.conf"
+  printf '200' >"$T/stub/state/code"
+  printf 'Linux\n' >"$T/stub/state/uname"
+  printf 'clip.stl' >"$T/stub/state/filename"
+  printf 'solid clip\nendsolid clip\n' >"$T/stub/state/body"
+}
+open_link() {
+  OUT="$(
+    env -i HOME="$T/home" PATH="$T/path:$BASE/bin" STUB="$T/stub" TMPDIR="$T" \
+      bash "$HELPER" "$1" 2>&1 </dev/null
+  )"
+  RC=$?
+  HLOG="$(cat "$T/home/.local/state/ppp/slicer.log" 2>/dev/null)"
+}
+saved_model() { find "$T/home/.cache/ppp/models" -type f 2>/dev/null | head -1; }
+settle() { sleep 0.6; } # long enough for a detached slicer stub to finish
+
+# ----- assertions ---------------------------------------------------------------
+PASSED=0; FAILED=0; CASE=""; CASE_OK=1; DETAIL=""; OUT=""; HLOG=""
+t() { end_case; CASE="$1"; CASE_OK=1; DETAIL=""; }
+end_case() {
+  [ -n "$CASE" ] || return 0
+  cat "$T/stub/log" >>"$BASE/all-logs" 2>/dev/null
+  if [ "$CASE_OK" -eq 1 ]; then
+    PASSED=$((PASSED + 1)); echo "ok   $CASE"
+  else
+    FAILED=$((FAILED + 1)); echo "FAIL $CASE"; printf '%b' "$DETAIL"
+    echo "     --- helper log ---"; printf '%s\n' "$HLOG" | tail -8 | sed 's/^/     /'
+    echo "     --- helper stderr ---"; printf '%s\n' "$OUT" | tail -4 | sed 's/^/     /'
+  fi
+  CASE=""
+}
+no() { CASE_OK=0; DETAIL+="     - $1\n"; }
+rc() { [ "$RC" -eq "$1" ] || no "exit status $RC, wanted $1"; }
+called() { grep -Eq -- "$1" "$T/stub/log" || no "stub log lacks: $1"; }
+not_called() { if grep -Eq -- "$1" "$T/stub/log"; then no "stub log has: $1"; fi; }
+noted() { case "$HLOG" in *"$1"*) ;; *) no "helper log lacks: $1" ;; esac; }
+not_noted() { case "$HLOG" in *"$1"*) no "helper log has: $1" ;; esac; }
+eq() { [ "$2" = "$3" ] || no "$1: got '$2', wanted '$3'"; }
+
+LINK='ppp://slice/4?t=abc.DEF-_1'
+
+# ============================================================================
+# how the slicer is started
+# ============================================================================
+t "with setsid: the slicer is detached with it, --single-instance and the saved file"
+new_sandbox setsid
+open_link "$LINK"; settle
+rc 0; called '^setsid slicer --single-instance .*/PPP-104-clip\.stl$'; not_called '^nohup '
+noted "handed off story 4"; eq "the saved model" "$(basename "$(saved_model)")" "PPP-104-clip.stl"
+
+t "Git Bash without setsid: the slicer runs in the foreground, and has finished when the helper returns"
+new_sandbox; printf 'MINGW64_NT-10.0-26200\n' >"$T/stub/state/uname"
+open_link "$LINK"
+rc 0; called '^slicer --single-instance .*/PPP-104-clip\.stl$'; called '^slicer done$'
+not_called '^(setsid|nohup) '; noted "running the slicer in the foreground"; noted "handed off story 4"
+
+t "Git Bash: a slicer that fails in the foreground is a loud failure, not 'handed off'"
+new_sandbox; printf 'MSYS_NT-10.0\n' >"$T/stub/state/uname"; printf '3' >"$T/stub/state/slicer-rc"
+open_link "$LINK"
+rc 1; noted "ERROR: the slicer exited with status 3"; not_noted "handed off"
+
+t "macOS without setsid: the slicer is detached with nohup"
+new_sandbox nohup; printf 'Darwin\n' >"$T/stub/state/uname"
+open_link "$LINK"; settle
+rc 0; called '^nohup slicer --single-instance .*/PPP-104-clip\.stl$'; called '^slicer done$'
+noted "detaching the slicer with nohup"; noted "handed off story 4"
+
+# ============================================================================
+# what this change must not have moved
+# ============================================================================
+t "a link that is not a model id opens nothing and fetches nothing"
+new_sandbox setsid
+open_link 'ppp://slice/4;rm?t=x'
+rc 1; noted "not a model link"; not_called '^curl '; not_called '^(setsid|slicer) '
+
+t "an expired link is said in words, and no slicer starts"
+new_sandbox setsid; printf '401' >"$T/stub/state/code"
+open_link "$LINK"
+rc 1; noted "that link has expired (HTTP 401)"; not_called '^(setsid|slicer) '
+
+# ============================================================================
+# the checkout itself
+# ============================================================================
+t "every shell script in the repository is LF, and .gitattributes keeps it so"
+bad="$(cd "$REPO_ROOT" && grep -lI $'\r' scripts/*.sh scripts/tests/*.sh .githooks/pre-commit 2>/dev/null)"
+eq "scripts with CRLF" "$bad" ""
+if command -v git >/dev/null 2>&1 && git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  for f in scripts/prusa-open.sh scripts/tests/prusa-open.test.sh .githooks/pre-commit; do
+    eq "eol attribute of $f" "$(git -C "$REPO_ROOT" check-attr eol -- "$f" | sed 's/.*: //')" "lf"
+  done
+fi
+
+t "the scripts people run directly are still executable in the index"
+# A file rewritten by an editor on another OS comes back 0644, and git records
+# that as a change like any other — the installer's own instruction,
+# ./scripts/install-slicer-handler.sh, then fails with "permission denied".
+if command -v git >/dev/null 2>&1 && git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  for f in scripts/prusa-open.sh scripts/install-slicer-handler.sh; do
+    eq "index mode of $f" "$(git -C "$REPO_ROOT" ls-files -s -- "$f" | cut -d' ' -f1)" "100755"
+  done
+fi
+
+t "across every case: no stub was asked for something it did not expect"
+[ -s "$BASE/all-logs" ] || no "no stub log was collected"
+eq "unexpected stub calls" "$(grep -c 'UNEXPECTED' "$BASE/all-logs")" "0"
+end_case
+
+echo
+echo "prusa-open: $PASSED passed, $FAILED failed"
+[ "$FAILED" -eq 0 ]

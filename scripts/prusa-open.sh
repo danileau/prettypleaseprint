@@ -229,6 +229,32 @@ note "saved $out"
 # --- open -------------------------------------------------------------------
 # --single-instance so a second click loads the model into the window already
 # open rather than starting a race between two PrusaSlicers over the same file.
+#
+# The slicer has to outlive this script, and how to arrange that depends on
+# what this bash has. setsid, where it exists, puts it in a session of its own.
+# Git for Windows and macOS ship without it, and there `setsid … &` failed in
+# the background, where `set -e` never sees it: the log said "handed off" and
+# nothing opened — the one outcome this script is written to prevent. So:
+#   - Git Bash on Windows runs the handler in a hidden terminal, and a
+#     backgrounded child dies with that terminal before the slicer has
+#     started. The slicer runs in the foreground instead and this script waits
+#     for it; a PPP_SLICER that launches through `cmd //c start` returns at once.
+#   - Anywhere else without setsid, nohup and & — the portable way to leave a
+#     process running after its parent has gone.
 note "opening with: ${SLICER_CMD[*]}"
-setsid "${SLICER_CMD[@]}" --single-instance "$out" >>"$LOG" 2>&1 &
+if command -v setsid >/dev/null 2>&1; then
+  setsid "${SLICER_CMD[@]}" --single-instance "$out" >>"$LOG" 2>&1 &
+else
+  case "$(uname -s)" in
+    MINGW* | MSYS* | CYGWIN*)
+      note "no setsid here — running the slicer in the foreground"
+      "${SLICER_CMD[@]}" --single-instance "$out" >>"$LOG" 2>&1 ||
+        fail "the slicer exited with status $? — its own output is in $LOG"
+      ;;
+    *)
+      note "no setsid here — detaching the slicer with nohup"
+      nohup "${SLICER_CMD[@]}" --single-instance "$out" >>"$LOG" 2>&1 &
+      ;;
+  esac
+fi
 note "handed off story $id"
