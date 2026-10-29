@@ -98,12 +98,15 @@ Set `PPP_SLICER` only when that misses, in whichever form matches your install:
 PPP_SLICER="prusa-slicer"                             # a binary name
 PPP_SLICER="$HOME/Applications/PrusaSlicer-2.9.0.AppImage"  # an AppImage
 PPP_SLICER="flatpak run com.prusa3d.PrusaSlicer"      # a Flatpak
-PPP_SLICER="orca-slicer"                              # or any other slicer
 ```
 
-A multi-word command (the Flatpak form) is split on spaces and run as-is, so
-a path that itself contains spaces is the one thing this cannot express — put
-the AppImage somewhere without them.
+A multi-word command (the Flatpak form) is split on spaces and run as-is, so it
+cannot name a path that itself contains spaces. For that there is
+`PPP_SLICER_PATH`, taken whole — set one or the other, not both:
+
+```sh
+PPP_SLICER_PATH="/Applications/Original Prusa Drivers/PrusaSlicer.app/Contents/MacOS/PrusaSlicer"
+```
 
 **Flatpak note:** the slicer must be allowed to read the downloaded file. The
 default `PPP_DOWNLOAD_DIR` is under `~/.cache`, which a Flatpak with home access
@@ -176,14 +179,58 @@ indistinguishable from one that was never wired up. Common lines:
 | `the credential in that link is malformed` | The URL was edited or truncated in transit. Re-click from the ticket. |
 | `story N … not one this account may see (HTTP 404)` | That ticket is not yours, or does not exist. |
 | `could not find PrusaSlicer` | Auto-detect missed it. Set `PPP_SLICER` — see *Finding the slicer* above. |
-| `slicer '…' is not runnable` | `PPP_SLICER` points at something that is not a command or an executable file. |
+| `where is OrcaSlicer?` (or another slicer) | Only PrusaSlicer is looked for. Set `PPP_SLICER_PATH` or `PPP_SLICER` — see *OrcaSlicer, and other slicers*. |
+| `PPP_SLICER_PROFILE=… is not a slicer this helper knows` | A misspelt profile. The message lists the ones there are. |
+| `sets both PPP_SLICER and PPP_SLICER_PATH` | Keep one: `PPP_SLICER_PATH` for a path with spaces, `PPP_SLICER` for anything else. |
+| `slicer '…' is not runnable` | `PPP_SLICER` or `PPP_SLICER_PATH` points at something that is not a command or an executable file. |
 | loads then says *empty file* / *loading failed* | The bytes did arrive; the slicer could not read them (a truncated or non-model file). Check the ticket's file. |
 | `WARNING: … is group/world-readable` | Only raised while the file still holds a `PPP_TOKEN`. Delete the line, or `chmod 600 ~/.config/ppp/slicer.conf`. |
 
-## macOS and Windows
+## Windows
 
-The installer is Linux/XDG only. The helper script itself is portable (`bash` +
-`curl`); only the scheme registration differs.
+It needs [Git for Windows](https://gitforwindows.org), which brings the
+`bash`, `curl` and `mintty` the helper runs on. Then, from a checkout:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-slicer-handler.ps1
+```
+
+It is the twin of the Linux installer, all under your own profile and without
+admin rights: it copies the helper to `~\.local\bin\ppp-open` with LF line
+endings, registers `ppp://` under `HKCU\Software\Classes\ppp`, and creates
+`~\.config\ppp\slicer.conf` if there is none. Fill that in — on Windows every
+slicer sits under `C:\Program Files`, so use `PPP_SLICER_PATH`:
+
+```sh
+PPP_BASE="https://print.example"
+PPP_SLICER_PROFILE=elegoo
+PPP_SLICER_PATH="/c/Program Files/ElegooSlicer/elegoo-slicer.exe"
+```
+
+After a `git pull`, run it again to update the copy. `-Uninstall` removes the
+copy and the registration and leaves `slicer.conf` alone. The log is
+`~\.local\state\ppp\slicer.log`.
+
+The registered command is
+
+```
+"C:\Program Files\Git\usr\bin\mintty.exe" -w hide -e /usr/bin/bash -l "/c/Users/you/.local/bin/ppp-open" "%1"
+```
+
+— `mintty -w hide` because a console program registered directly flashes a
+window on every click, and `-l` so that bash's `PATH` has `curl`. Because the
+terminal is hidden and goes away, Git Bash, which has no `setsid`, runs the
+slicer in the foreground: a backgrounded child would die with it. A checkout
+keeps the scripts' LF line endings whatever `core.autocrlf` says —
+`.gitattributes` sees to that, because bash will not run them with CRLF.
+
+Tested on Windows 11 with Git for Windows 2.52 and ElegooSlicer. The same
+command, registered by hand, has been clicked from a Chromium browser (Opera GX).
+
+## macOS
+
+The installer is Linux and Windows only. The helper script itself is portable
+(`bash` + `curl`); only the scheme registration differs.
 
 **macOS** — register `ppp://` with a tiny app wrapper. In *Script Editor*, save
 an application that runs:
@@ -194,29 +241,42 @@ on open location this_URL
 end open location
 ```
 
-and add `CFBundleURLSchemes` = `ppp` to its `Info.plist`. Set `PPP_SLICER` to
+and add `CFBundleURLSchemes` = `ppp` to its `Info.plist`. Set `PPP_SLICER_PATH`
+— not `PPP_SLICER`, which is split on the spaces in the path — to
 `/Applications/Original Prusa Drivers/PrusaSlicer.app/Contents/MacOS/PrusaSlicer`.
 
-**Windows** — the helper needs a `bash` (Git Bash / WSL). Register the scheme
-with a `.reg` file:
+macOS has no `setsid`, which the helper uses on Linux to let the slicer
+outlive it; there it detaches the slicer with `nohup` instead.
 
-```reg
-Windows Registry Editor Version 5.00
-[HKEY_CLASSES_ROOT\ppp]
-@="URL:Pretty Please Print"
-"URL Protocol"=""
-[HKEY_CLASSES_ROOT\ppp\shell\open\command]
-@="\"C:\\Program Files\\Git\\bin\\bash.exe\" \"C:/path/to/prusa-open.sh\" \"%1\""
-```
-
-Both are untested here and offered as starting points — the Linux path is the
-supported one, matching the app's own "one printer, one office" shape.
+This is untested here and offered as a starting point.
 
 ## OrcaSlicer, and other slicers
 
-The helper opens whatever `PPP_SLICER` points at — it is not tied to Prusa.
-OrcaSlicer, for instance, opens `.stl`/`.3mf` from the command line the same
-way, so `PPP_SLICER="orca-slicer"` (or the AppImage path) works unchanged.
+The helper is not tied to Prusa. Say which slicer it is with
+`PPP_SLICER_PROFILE`, and where it is with `PPP_SLICER_PATH` (or `PPP_SLICER`):
+
+```sh
+PPP_SLICER_PROFILE=elegoo
+PPP_SLICER_PATH="/c/Program Files/ElegooSlicer/elegoo-slicer.exe"
+```
+
+| profile | slicer | what it is handed |
+| --- | --- | --- |
+| `prusa` (default) | PrusaSlicer | `--single-instance` and the file |
+| `orca` | OrcaSlicer | the file |
+| `elegoo` | ElegooSlicer | the file |
+| `bambu` | Bambu Studio | the file |
+| `cura` | UltiMaker Cura | the file |
+
+The profile decides two things: the name in a message, and the arguments.
+`--single-instance` is PrusaSlicer's own; the OrcaSlicer family keeps "one
+window" as a preference inside the slicer, so its profiles pass the file alone.
+Only PrusaSlicer is looked for when no location is set — for the others the
+helper asks for `PPP_SLICER_PATH` rather than guess where they were installed.
+A profile it does not know is refused by name.
+
+Tested by hand: PrusaSlicer on Linux, and ElegooSlicer on Windows 11. The other
+rows have not been clicked through yet — a report either way is welcome.
 
 OrcaSlicer also has its own `orcaslicer://open?file=` scheme, and unlike
 PrusaSlicer it is not obviously locked to an allowlist — if a future version

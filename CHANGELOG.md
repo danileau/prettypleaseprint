@@ -38,6 +38,26 @@ Notable changes. Every entry names a released version; deployments pin
   upload. `npm run verify:import` is the eleventh suite, and runs against a
   stand-in for Printables so that the far end can be made to misbehave.
 
+- **Open in PrusaSlicer installs on Windows.** `scripts/install-slicer-handler.ps1`
+  is the Linux installer's twin: per user and without admin rights, it copies
+  the helper to `~\.local\bin\ppp-open` with LF line endings, registers
+  `ppp://` under `HKCU` to run it through a hidden `mintty`, and lays down a
+  `slicer.conf`. It needs Git for Windows and says so when it is missing;
+  `-Uninstall` undoes it. The `.reg` file the docs offered before wrote to
+  `HKEY_CLASSES_ROOT`, which needs admin, and ran `bash.exe` directly, which
+  flashes a console on every click. Tested on Windows 11.
+
+- **The slicer helper knows slicers other than PrusaSlicer.** It used to hand
+  every slicer PrusaSlicer's `--single-instance`, and it could not reach one
+  installed under a path with a space — which on Windows and macOS is all of
+  them, the macOS example in the docs included. `PPP_SLICER_PROFILE` (`prusa`,
+  the default, then `orca`, `elegoo`, `bambu`, `cura`) says which slicer it is,
+  and with it what the slicer is called in a message and whether it gets
+  `--single-instance`. `PPP_SLICER_PATH` takes one path whole. An unknown
+  profile, both settings at once, or a non-Prusa profile with no location set
+  are each refused by name; nothing is guessed. A config that sets neither
+  behaves exactly as before.
+
 ### Changed
 
 - **Opening a ticket from a model's bytes lives in one place.** It was the body
@@ -82,6 +102,21 @@ Notable changes. Every entry names a released version; deployments pin
   indexed source map could hang whatever parsed it. It arrives through PostCSS
   and Tailwind, which run when the stylesheet is built, and the Trivy gate
   fails on it. Lockfile only.
+
+- **Open in PrusaSlicer did nothing where there is no `setsid`**, and said it
+  had worked. The helper launched the slicer with `setsid … &`; Git for
+  Windows and macOS have no `setsid`, the failure happened in the background,
+  and the log read "handed off" with nothing open. Without `setsid` it now
+  runs the slicer in the foreground under Git Bash, where the handler's hidden
+  terminal takes a backgrounded child down with it, and detaches it with
+  `nohup` anywhere else. A slicer that fails in the foreground is reported
+  like every other failure. `scripts/tests/prusa-open.test.sh` covers the
+  three ways in, and the helper had no test before.
+
+- **A Windows checkout broke the shell scripts.** Git for Windows checks text
+  out with CRLF by default, and bash refuses a script whose first command is
+  `set -euo pipefail\r`. `.gitattributes` now keeps `*.sh` and the git hook
+  LF on every platform.
 
 ## v0.3.0
 
