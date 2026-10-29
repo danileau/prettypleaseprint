@@ -83,6 +83,28 @@ Notable changes. Every entry names a released version; deployments pin
   and Tailwind, which run when the stylesheet is built, and the Trivy gate
   fails on it. Lockfile only.
 
+- **Open in PrusaSlicer did nothing where there is no `setsid`**, and said it
+  had worked. The helper launched the slicer with `setsid … &`; Git for
+  Windows and macOS have no `setsid`, the failure happened in the background,
+  and the log read "handed off" with nothing open. Without `setsid` it now
+  runs the slicer in the foreground under Git Bash, where the handler's hidden
+  terminal takes a backgrounded child down with it, and detaches it with
+  `nohup` anywhere else. A slicer that fails in the foreground is reported
+  like every other failure. `scripts/tests/prusa-open.test.sh` covers the
+  three ways in, and the helper had no test before.
+
+- **A Windows checkout broke the shell scripts.** Git for Windows checks text
+  out with CRLF by default, and bash refuses a script whose first command is
+  `set -euo pipefail\r`. `.gitattributes` now keeps `*.sh` and the git hook
+  LF on every platform.
+
+- **The slicer helper exited without a word when a response had no
+  `Content-Disposition`.** The filename is read from that header with a
+  `grep`; under `pipefail` a grep that finds nothing failed the assignment and
+  `set -e` ended the script, so the `model-<id>.stl` fallback written for that
+  case was never reached and the log stopped at "fetching". The app always
+  sends the header; a proxy that strips it is what would have hit this.
+
 ## v0.3.0
 
 2026-10-04.
