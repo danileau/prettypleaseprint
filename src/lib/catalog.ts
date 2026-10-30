@@ -81,11 +81,12 @@ export const WishSchema = z.object({
   // files a request — it comes out `medium`, which is what it would have meant.
   priority: z.enum(STORY_PRIORITIES, "That is not a priority.").optional().default(DEFAULT_STORY_PRIORITY),
   // The tip is no longer a compile-time enum — it is an owner-managed list.
-  // This module is shared with the client bundle and cannot read the database,
+  // This module is shared with the client bundle and cannot read the database,`
   // so it only checks the shape; the upload route validates the value against
   // the current *active* benefits (see src/app/api/upload/route.ts).
   tip: z.string().trim().min(1, "Pick what's in it for them.").max(80, "That tip is oddly long."),
   note: z.string().trim().max(2000, "That note is very long.").optional().default(""),
+  modelPageUrl: z.string().trim().max(2000, "The model page URL is very long.").url({ protocol: /^https?$/, message: "The model page link is invalid." }).or(z.literal("")).optional().default(""),
   // Optional free-text print settings (FRR-103 option A). Shown to the owner so
   // slicer specifics live on the ticket rather than in a chat thread.
   printSettings: z

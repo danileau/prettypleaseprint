@@ -43,6 +43,7 @@ export type Again = {
   priority: StoryPriorityName;
   tip: string;
   note: string;
+  modelPageUrl: string;
   printSettings: string;
 };
 
@@ -172,6 +173,7 @@ export function UploadForm({
     again && (tipStillOffered || benefits.length === 0) ? again.tip : defaultTip,
   );
   const [note, setNote] = useState(again?.note ?? "");
+  const [modelPageUrl, setModelPageUrl] = useState(again?.modelPageUrl ?? "");
   const [printSettings, setPrintSettings] = useState(again?.printSettings ?? "");
 
   /**
@@ -262,7 +264,7 @@ export function UploadForm({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          url, fileId, title, material, colorName: color, quantity, priority, tip, note, printSettings,
+          url, fileId, title, material, colorName: color, quantity, priority, tip, note, modelPageUrl, printSettings,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -293,7 +295,7 @@ export function UploadForm({
       const res = await fetch(`/api/stories/${source.id}/requeue`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title, material, colorName: color, quantity, priority, tip, note, printSettings }),
+        body: JSON.stringify({ title, material, colorName: color, quantity, priority, tip, note, modelPageUrl, printSettings }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -326,6 +328,7 @@ export function UploadForm({
     body.set("priority", priority);
     body.set("tip", tip);
     body.set("note", note);
+    body.set("modelPageUrl", modelPageUrl);
     body.set("printSettings", printSettings);
 
     // XHR rather than fetch: it is still the only way to observe upload
@@ -568,7 +571,7 @@ export function UploadForm({
         </div>
       )}
 
-      {/* ---- title + material ---- */}
+      {/* ---- title + url ---- */}
       <div className="mt-[26.4px] grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-[22px]">
         <div>
           <Label htmlFor="title">What is it?</Label>
@@ -581,6 +584,20 @@ export function UploadForm({
             className="w-full rounded-card border-[3px] border-ink bg-porcelain px-[15px] py-[12px] text-[16px] text-ink placeholder:text-ink-3"
           />
         </div>
+        <div>
+          <Label htmlFor="modelPageUrl">Link to model page (optional)</Label>
+          <input
+            id="modelPageUrl"
+            value={modelPageUrl}
+            onChange={(e) => setModelPageUrl(e.target.value)}
+            maxLength={2000}
+            placeholder="https://example.com/thing"
+            className="w-full rounded-card border-[3px] border-ink bg-porcelain px-[15px] py-[12px] text-[16px] text-ink placeholder:text-ink-3"
+          />
+        </div>
+      </div>
+
+      <div className="mt-[22px] max-w-[420px]">
         <div>
           <Label htmlFor="material">Material you&rsquo;d like</Label>
           <Segmented

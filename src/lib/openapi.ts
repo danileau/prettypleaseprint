@@ -167,6 +167,7 @@ const STORY_SCHEMA = {
     commentCount: { type: "integer" },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
+    modelPageUrl: { type: "string" }
   },
 } as const;
 
