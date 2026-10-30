@@ -591,7 +591,7 @@ export function UploadForm({
             value={modelPageUrl}
             onChange={(e) => setModelPageUrl(e.target.value)}
             maxLength={2000}
-            placeholder="https://example.com/thing"
+            placeholder="https://www.thingiverse.com/thing..."
             className="w-full rounded-card border-[3px] border-ink bg-porcelain px-[15px] py-[12px] text-[16px] text-ink placeholder:text-ink-3"
           />
         </div>
