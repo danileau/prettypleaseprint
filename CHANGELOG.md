@@ -65,6 +65,19 @@ settings-page and first-run work now open as #103 to #106. And to
   are each refused by name; nothing is guessed. A config that sets neither
   behaves exactly as before.
 
+- **The release notes credit the people who contributed to the release.**
+  The release wizard ends the notes it publishes with *Contributors to this
+  release*: the `@login` of the author of every pull request whose merge
+  commit lies between the previous release's tag and the release commit, each
+  once, leaving out the repository's owner, whoever is cutting the release,
+  and bots. GitHub shows the avatar of everyone a release mentions. The list
+  is in the preview the notes are edited in, and in `--dry-run`. It is worked
+  out with `gh`; when it cannot be — `gh` fails, or the previous tag is not an
+  ancestor of the release (a hotfix tagged on a side branch) — the wizard says
+  so and publishes without it, because a missing thank-you is no reason to
+  hold a release back. See
+  [Cutting a release](docs/development.md#cutting-a-release).
+
 ### Changed
 
 - **Every colour the app draws with is a theme variable** (#111, @Hogun974;
