@@ -531,7 +531,6 @@ scripts/
   deploy-wizard.sh       on the host: pick an image, read the upgrade notes, verify, deploy, roll back
   release-wizard.sh      in a checkout: a release from the changelog to the published images
   full-test.sh           the whole local run: gates, a fresh stack, every suite
-  update-contributors.ts regenerates src/lib/contributors.ts from main's history
   tests/                 the three shell scripts above and the slicer helper, tested in sandboxes
   verify-models.ts       validator vs. hostile fixtures
   verify-auth.ts         registration, sign-in and password reset
@@ -550,6 +549,7 @@ scripts/
   use-container-env.ts   points the host-side suites at the running stack
   vendor-swagger.ts      copies Swagger UI into public/docs at build time
   export-storage.ts      the one-shot copy of models out of the old object store
+  update-contributors.ts regenerates src/lib/contributors.ts from main's history
   prusa-open.sh          the "Open in PrusaSlicer" helper: fetches the model, opens the slicer
   install-slicer-handler.sh, .ps1   registers ppp:// for it, on Linux and on Windows
   screenshot.ts          the main screens to PNG

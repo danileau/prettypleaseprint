@@ -45,6 +45,23 @@ settings-page and first-run work now open as #103 to #106. And to
   upload. `npm run verify:import` is the eleventh suite, and runs against a
   stand-in for Printables so that the far end can be made to misbehave.
 
+- **An About page says what the app is and who made it.** `/about`, linked
+  from the footer as *About · credits*, gives the licence, the address of the
+  source this instance runs, and everyone with a commit on `main` by GitHub
+  login, each linked to their profile: the maintainer first, then the
+  contributors. Like the rest of the app it needs a sign-in. The names come
+  from a committed file, `src/lib/contributors.ts`, which
+  `npm run contributors` regenerates from main's history; the image is built
+  without `.git`, so the page has no history to read. The file holds logins,
+  display names and the month of each person's first commit, never an
+  address, and a re-run changes it only when somebody new has landed a commit
+  or a name has changed on GitHub. It is all-time and refreshed by hand, where
+  the release notes' *Contributors to this release* is per release and worked
+  out by the wizard;
+  [Crediting contributors](docs/development.md#crediting-contributors) has
+  both. `verify:queue` checks that the page turns away a signed-out visitor
+  and a forged session, and credits everyone in the file.
+
 - **Open in PrusaSlicer installs on Windows** (#109, @Hogun974). `scripts/install-slicer-handler.ps1`
   is the Linux installer's twin: per user and without admin rights, it copies
   the helper to `~\.local\bin\ppp-open` with LF line endings, registers
@@ -64,16 +81,6 @@ settings-page and first-run work now open as #103 to #106. And to
   profile, both settings at once, or a non-Prusa profile with no location set
   are each refused by name; nothing is guessed. A config that sets neither
   behaves exactly as before.
-- **An About page says what the app is and who made it.** `/about`, linked
-  from the footer next to the source offer, gives the licence, the address of
-  the source this instance runs, and every GitHub account with code on `main`
-  — the maintainer first, then contributors, each linked to their profile.
-  It is behind sign-in like every other page. The list is a committed file,
-  `src/lib/contributors.ts`, regenerated from main's history by
-  `npm run contributors`, because the image is built without `.git` and has no
-  history to read. It holds logins, display names and the month of each
-  person's first commit — never an address — and re-running it changes
-  nothing until somebody new lands a commit.
 
 ### Changed
 
