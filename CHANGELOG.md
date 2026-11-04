@@ -38,7 +38,32 @@ Notable changes. Every entry names a released version; deployments pin
   upload. `npm run verify:import` is the eleventh suite, and runs against a
   stand-in for Printables so that the far end can be made to misbehave.
 
+- **The slicer helper knows slicers other than PrusaSlicer.** It used to hand
+  every slicer PrusaSlicer's `--single-instance`, and it could not reach one
+  installed under a path with a space — which on Windows and macOS is all of
+  them, the macOS example in the docs included. `PPP_SLICER_PROFILE` (`prusa`,
+  the default, then `orca`, `elegoo`, `bambu`, `cura`) says which slicer it is,
+  and with it what the slicer is called in a message and whether it gets
+  `--single-instance`. `PPP_SLICER_PATH` takes one path whole. An unknown
+  profile, both settings at once, or a non-Prusa profile with no location set
+  are each refused by name; nothing is guessed. A config that sets neither
+  behaves exactly as before.
+
 ### Changed
+
+- **Every colour the app draws with is a theme variable** (#105, step one; no
+  visible change). The 3D viewer's background, lights, edges and build plate,
+  the ink-at-an-alpha of the layer lines, the plate grid, the starburst and
+  `--color-rule`, and the shadow behind a "whatever" swatch's `?` were written
+  out where they were used; they now come from `globals.css` — the viewer
+  reads them with `getComputedStyle`, and says so if one is missing. The
+  viewer's lamps get tokens of their own, so a darker counter would not mean a
+  darker lamp. Tokens only code reads sit in an `@theme static` block, because
+  Tailwind drops theme variables no class uses. `STATUS_CHIP`, twelve hard-coded
+  colours nothing had imported since the diner redesign, is gone, and so is a
+  per-column `--tear-color` that restated its own default. E-mails keep their
+  literal colours: a mail client has no CSS variables. Screenshots of every
+  page before and after differ by at most 1/255 on the faint lines.
 
 - **Opening a ticket from a model's bytes lives in one place.** It was the body
   of the upload route while that was the only way a model arrived;
@@ -82,6 +107,21 @@ Notable changes. Every entry names a released version; deployments pin
   indexed source map could hang whatever parsed it. It arrives through PostCSS
   and Tailwind, which run when the stylesheet is built, and the Trivy gate
   fails on it. Lockfile only.
+
+- **Open in PrusaSlicer did nothing where there is no `setsid`**, and said it
+  had worked. The helper launched the slicer with `setsid … &`; Git for
+  Windows and macOS have no `setsid`, the failure happened in the background,
+  and the log read "handed off" with nothing open. Without `setsid` it now
+  runs the slicer in the foreground under Git Bash, where the handler's hidden
+  terminal takes a backgrounded child down with it, and detaches it with
+  `nohup` anywhere else. A slicer that fails in the foreground is reported
+  like every other failure. `scripts/tests/prusa-open.test.sh` covers the
+  three ways in, and the helper had no test before.
+
+- **A Windows checkout broke the shell scripts.** Git for Windows checks text
+  out with CRLF by default, and bash refuses a script whose first command is
+  `set -euo pipefail\r`. `.gitattributes` now keeps `*.sh` and the git hook
+  LF on every platform.
 
 ## v0.3.0
 

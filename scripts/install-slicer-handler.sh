@@ -116,8 +116,14 @@ PPP_BASE="https://print.example"
 #   PPP_SLICER="prusa-slicer"                              # a binary name
 #   PPP_SLICER="$HOME/Applications/PrusaSlicer-2.9.0.AppImage"   # an AppImage
 #   PPP_SLICER="flatpak run com.prusa3d.PrusaSlicer"      # a Flatpak
-#   PPP_SLICER="orca-slicer"                              # any slicer works
-# (A path containing spaces is the one form this cannot express.)
+# PPP_SLICER is split on spaces; for a path that has spaces in it, use
+# PPP_SLICER_PATH instead, which is taken whole. Set one or the other.
+
+# Optional. Which slicer: prusa (the default), orca, elegoo, bambu or cura. It
+# decides the arguments — only PrusaSlicer is handed --single-instance — and
+# only PrusaSlicer is looked for: any other needs PPP_SLICER or PPP_SLICER_PATH.
+#   PPP_SLICER_PROFILE=orca
+#   PPP_SLICER="orca-slicer"
 
 # Optional. Where fetched models are cached (pruned after a day).
 # PPP_DOWNLOAD_DIR="$HOME/.cache/ppp/models"
