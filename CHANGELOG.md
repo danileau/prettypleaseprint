@@ -45,6 +45,23 @@ settings-page and first-run work now open as #103 to #106. And to
   upload. `npm run verify:import` is the eleventh suite, and runs against a
   stand-in for Printables so that the far end can be made to misbehave.
 
+- **An About page says what the app is and who made it.** `/about`, linked
+  from the footer as *About · credits*, gives the licence, the address of the
+  source this instance runs, and everyone with a commit on `main` by GitHub
+  login, each linked to their profile: the maintainer first, then the
+  contributors. Like the rest of the app it needs a sign-in. The names come
+  from a committed file, `src/lib/contributors.ts`, which
+  `npm run contributors` regenerates from main's history; the image is built
+  without `.git`, so the page has no history to read. The file holds logins,
+  display names and the month of each person's first commit, never an
+  address, and a re-run changes it only when somebody new has landed a commit
+  or a name has changed on GitHub. It is all-time and refreshed by hand, where
+  the release notes' *Contributors to this release* is per release and worked
+  out by the wizard;
+  [Crediting contributors](docs/development.md#crediting-contributors) has
+  both. `verify:queue` checks that the page turns away a signed-out visitor
+  and a forged session, and credits everyone in the file.
+
 - **Open in PrusaSlicer installs on Windows** (#109, @Hogun974). `scripts/install-slicer-handler.ps1`
   is the Linux installer's twin: per user and without admin rights, it copies
   the helper to `~\.local\bin\ppp-open` with LF line endings, registers
@@ -64,6 +81,19 @@ settings-page and first-run work now open as #103 to #106. And to
   profile, both settings at once, or a non-Prusa profile with no location set
   are each refused by name; nothing is guessed. A config that sets neither
   behaves exactly as before.
+
+- **The release notes credit the people who contributed to the release.**
+  The release wizard ends the notes it publishes with *Contributors to this
+  release*: the `@login` of the author of every pull request whose merge
+  commit lies between the previous release's tag and the release commit, each
+  once, leaving out the repository's owner, whoever is cutting the release,
+  and bots. GitHub shows the avatar of everyone a release mentions. The list
+  is in the preview the notes are edited in, and in `--dry-run`. It is worked
+  out with `gh`; when it cannot be — `gh` fails, or the previous tag is not an
+  ancestor of the release (a hotfix tagged on a side branch) — the wizard says
+  so and publishes without it, because a missing thank-you is no reason to
+  hold a release back. See
+  [Cutting a release](docs/development.md#cutting-a-release).
 
 - **The plumbing for translation, with nothing visible changing** (#103). The
   app still speaks English only, word for word; a language can now arrive as a
