@@ -5,11 +5,37 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.4.0
+
+2026-11-04.
+
 With thanks to **@Hogun974**, who wrote six of the changes below: the slicer
 helper on Windows and macOS, slicers other than PrusaSlicer, and the theme
 variables every colour now comes from. They also proposed the translation,
 settings-page and first-run work now open as #103 to #106. And to
 **@chrisbirie**, whose request (#91) became importing from a Printables link.
+
+### Upgrading from v0.3.0
+
+- **A security fix you should deploy for.** Next.js goes to 15.5.28 for
+  GHSA-2464-fhr4-w9xw (critical, remote code execution) and the advisories
+  around it; see *Fixed* below.
+- **2 database migrations run by themselves**, in the `migrate` container:
+  `20261006120000_story_source_url`, `20261104120000_user_preferred_locale`.
+  Each adds one nullable column and nothing else. Each was tested old → new →
+  old on one database with the published image, so the deploy wizard's
+  automatic rollback still lands on a working app.
+- **Nothing to set.** Importing from a Printables link stays off until you set
+  `IMPORT_SOURCES="printables"`; read
+  [Importing from a link](docs/deployment.md#importing-from-a-link) first.
+  Nobody sees a change in language: every string is still English, now read
+  from one message file.
+- **People who use *Open in PrusaSlicer*** on Windows can replace the old
+  `.reg` file with `scripts/install-slicer-handler.ps1`, and anyone on another
+  slicer can set `PPP_SLICER_PROFILE`. A helper config that sets neither works
+  exactly as before.
 
 ### Added
 
