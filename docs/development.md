@@ -253,14 +253,16 @@ Four rules the wizard holds to, and that a release by hand should too:
 The wizard also ends the notes with *Contributors to this release*: the
 `@login` of everyone whose pull request was merged into `main` between the
 previous release's tag and the release commit, sorted and each once, leaving
-out the repository's owner and bots. A pull request counts when its merge
-commit is in that range, not when its merge date is, so nothing merged just
-before the last tag slips in. It appears in the preview, where it can be
-edited like the rest, and in `--dry-run`. If `gh` cannot answer, the wizard
-warns and publishes without it. By hand, the same list is
-`gh pr list --state merged --base main --search "merged:>=<date of the last tag>" --json number,author,mergeCommit`,
+out the repository's owner, whoever is cutting the release, and bots. A pull
+request counts when its merge commit is in that range, not when its merge date
+is, so nothing merged just before the last tag slips in. It appears in the
+preview, where it can be edited like the rest, and in `--dry-run`. If `gh`
+cannot answer, or the last tag is not behind the release commit (a hotfix
+tagged on a side branch), the wizard warns and publishes without it. By hand,
+the same list is
+`gh pr list --state merged --base main --search "merged:>=<the day before the last tag's commit date, UTC>" --limit 1000 --json number,author,mergeCommit`,
 kept to the pull requests whose merge commit `git rev-list vLAST..<merge commit>`
-prints.
+prints. Without `--limit`, `gh` stops at 30 and says nothing.
 
 A version is prepared once. If anything already carries it — a tag, a
 `release-X.Y.Z` branch, a pull request in any state, or `main` itself — the

@@ -34,9 +34,9 @@
 #      summary, the Upgrading section, and a link to the rest. The Upgrading
 #      heading matters — the deploy wizard shows it to whoever upgrades. Then
 #      "Contributors to this release": by @login, the authors of the pull
-#      requests merged since the last release, less the owner and bots, so
-#      GitHub shows their faces on it. Found out through gh; if that fails it
-#      is a warning, and the notes go out without it.
+#      requests merged since the last release, less the owner, whoever runs
+#      this, and bots, so GitHub shows their faces on it. Found out through
+#      gh; if that fails it is a warning, and the notes go out without it.
 #
 # There is no state file. Where a release has got to is read from git and
 # GitHub every time, so `--continue` works from another clone, after a reboot,
@@ -379,14 +379,20 @@ def cmd_day_before():
     t = datetime.datetime.fromtimestamp(int(sys.stdin.read().strip()), datetime.timezone.utc)
     print((t.date() - datetime.timedelta(days=1)).isoformat())
 
-def cmd_contributors(owner, commits_path):
+def cmd_count():
+    print(len(json.load(sys.stdin)))
+
+def cmd_contributors(exclude, commits_path):
     # A pull request counts when its merge commit is one of the commits the
     # release adds, which is exact for a squash, a rebase and a merge commit
-    # alike; its merge date would not be, on either side of the tag. The owner
-    # is left out because a release is theirs anyway, and bots and deleted
-    # accounts because there is nobody to thank. A login is remote input that
-    # ends up in a terminal and in a published page, so anything that is not
-    # shaped like a GitHub login is dropped rather than printed.
+    # alike; its merge date would not be, on either side of the tag. The
+    # logins in <exclude> (comma-separated: the owner, and whoever is cutting
+    # the release) are left out because a release is theirs anyway, and bots
+    # and deleted accounts because there is nobody to thank. A login is remote
+    # input that ends up in a terminal and in a published page, so anything
+    # that is not shaped like a GitHub login is dropped rather than printed —
+    # the whole of it: re.match with "$" would let a trailing newline through.
+    exclude = {x.lower() for x in exclude.split(",") if x} | {"ghost"}
     commits = set(read(commits_path).split())
     seen = {}
     for p in json.load(sys.stdin):
@@ -395,15 +401,18 @@ def cmd_contributors(owner, commits_path):
         author = p.get("author") or {}
         login = author.get("login") or ""
         if (author.get("is_bot") or login.endswith("[bot]") or login.startswith("app/")
-                or login.lower() in (owner.lower(), "ghost")
-                or not re.match(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$", login)):
+                or login.lower() in exclude
+                or not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", login)):
             continue
         # GitHub logins are not case-sensitive, so neither is the de-duplication.
         seen.setdefault(login.lower(), login)
+    # Plain words first. The deploy wizard treats a line that begins with
+    # "upgrading" behind any punctuation as an upgrade note it failed to parse,
+    # and "@upgradingfan, …" would be one.
     if seen:
-        print(", ".join("@" + seen[k] for k in sorted(seen)))
+        print("With thanks to: " + ", ".join("@" + seen[k] for k in sorted(seen)))
 
-cmd =sys.argv[1].replace("-", "_")
+cmd = sys.argv[1].replace("-", "_")
 globals()["cmd_" + cmd](*sys.argv[2:])
 PYEOF
 py() { python3 -c "$PY" "$@"; }
@@ -492,10 +501,10 @@ release_state() {
 # warning, never a release that stops. Called directly, not in $(…), so the
 # reason survives, and so every step checks its own failure — set -e does not
 # reach inside a function called as a condition.
-CONTRIBUTORS=""; CONTRIBUTORS_WHY=""
+CONTRIBUTORS=""; CONTRIBUTORS_WHY=""; CONTRIBUTORS_CAPPED=0
 contributors() {
-  local prev from since json
-  CONTRIBUTORS=""; CONTRIBUTORS_WHY=""
+  local prev from since json exclude me
+  CONTRIBUTORS=""; CONTRIBUTORS_WHY=""; CONTRIBUTORS_CAPPED=0
   prev="$(previous_tag)" || { CONTRIBUTORS_WHY="could not list the tags on $REMOTE"; return 1; }
   [ -n "$prev" ] || { CONTRIBUTORS_WHY="there is no release before $TAG"; return 1; }
   from="$(git rev-parse -q --verify "refs/tags/$prev^{commit}" || true)"
@@ -503,6 +512,13 @@ contributors() {
   if [ -z "$from" ] || ! git cat-file -e "$from^{commit}" 2>/dev/null; then
     CONTRIBUTORS_WHY="$prev is not in this clone"; return 1
   fi
+  # The highest version below this one is not always behind it: a hotfix
+  # tagged on a side branch (v0.3.1 off v0.3.0, then v0.4.0 from main) is
+  # not. The range from it would leave out everything merged since v0.3.0,
+  # and the date window would start too late — a list short of names with
+  # nothing to say so. Saying so is better.
+  git merge-base --is-ancestor "$from" "$1" 2>/dev/null \
+    || { CONTRIBUTORS_WHY="$prev is not an ancestor of $(short "$(git rev-parse -q --verify "$1^{commit}" || echo "$1")"), so the range since it would be wrong"; return 1; }
   git rev-list "$from..$1" >"$TMP/release-commits" 2>/dev/null \
     || { CONTRIBUTORS_WHY="could not list the commits from $prev to $(short "$1")"; return 1; }
   since="$(git show -s --format=%ct "$from" | py day-before 2>/dev/null)" \
@@ -513,9 +529,19 @@ contributors() {
   json="$(gh pr list --repo "$REPO" --state merged --base main --search "merged:>=$since" \
     --limit 1000 --json number,author,mergeCommit 2>/dev/null)" \
     || { CONTRIBUTORS_WHY="gh could not list the pull requests merged since $prev"; return 1; }
+  # A full page is GitHub's search giving up, not a release with exactly that
+  # many pull requests: the oldest are missing. Still worth a list, with a
+  # warning that it may be short.
+  [ "$(printf '%s' "$json" | py count 2>/dev/null)" != "1000" ] || CONTRIBUTORS_CAPPED=1
   # The owner is the account in owner/name: what gh said this repository is,
-  # or PPP_REPO, and never a name written into this script.
-  CONTRIBUTORS="$(printf '%s' "$json" | py contributors "${REPO%%/*}" "$TMP/release-commits" 2>/dev/null)" \
+  # or PPP_REPO, and never a name written into this script. For a repository
+  # an organisation owns, that is the organisation and nobody's login, so the
+  # person cutting the release is left out too — they are thanking the others.
+  # Best effort: if gh cannot say who that is, the owner alone is left out.
+  exclude="${REPO%%/*}"
+  me="$(gh api user 2>/dev/null | py field login 2>/dev/null || true)"
+  [ -z "$me" ] || exclude="$exclude,$me"
+  CONTRIBUTORS="$(printf '%s' "$json" | py contributors "$exclude" "$TMP/release-commits" 2>/dev/null)" \
     || { CONTRIBUTORS=""; CONTRIBUTORS_WHY="could not read gh's pull request list"; return 1; }
 }
 
@@ -530,6 +556,8 @@ credit_contributors() {
     warn "no contributors list in the notes: $CONTRIBUTORS_WHY. Publishing does not need one; add it by hand when editing the notes if you want it."
     return 0
   fi
+  [ "$CONTRIBUTORS_CAPPED" -eq 0 ] \
+    || warn "gh returned 1000 pull requests, the most its search gives: the contributors list may be missing the earliest ones — check it when editing the notes"
   [ -n "$CONTRIBUTORS" ] || return 0
   printf '\n%s\n\n%s\n' "### Contributors to this release" "$CONTRIBUTORS" >>"$2"
 }
@@ -885,12 +913,22 @@ dry_run_plan() {
   echo "DRY-RUN would wait for the release-images run of $TAG and for every image at :$TAG"
   echo "DRY-RUN would run: gh release create $TAG --verify-tag --title <title> --notes-file <notes> --repo $REPO"
   # The merge commit does not exist yet, so the list is of what main holds
-  # now; the merge adds only the release pull request itself. Asking gh is
-  # read-only, so a dry run asks rather than guesses.
+  # now; the merge adds only the release pull request itself. Main as the
+  # remote has it, not HEAD: a dry run is allowed on a stale main or another
+  # branch, and says so above, but its list should not be wrong for it. The
+  # label names the ref it was worked out from. Asking gh is read-only, so a
+  # dry run asks rather than guesses.
+  local at="HEAD" where="HEAD" main_tip
+  main_tip="$(remote_ref refs/heads/main 2>/dev/null || true)"
+  if [ -n "$main_tip" ] && git cat-file -e "$main_tip^{commit}" 2>/dev/null; then
+    at="$main_tip"; where="$REMOTE/main"
+  elif git rev-parse -q --verify "refs/remotes/$REMOTE/main" >/dev/null; then
+    at="refs/remotes/$REMOTE/main"; where="$REMOTE/main as this clone last fetched it"
+  fi
   : >"$TMP/dry-credits"
-  credit_contributors HEAD "$TMP/dry-credits"
+  credit_contributors "$at" "$TMP/dry-credits"
   if [ -s "$TMP/dry-credits" ]; then
-    echo "DRY-RUN the notes would end with, as main stands now:"
+    echo "DRY-RUN the notes would end with, as $where ($(short "$(git rev-parse "$at")")) stands now:"
     sed 's/^/DRY-RUN   /' "$TMP/dry-credits"
   elif [ -z "$CONTRIBUTORS_WHY" ]; then
     echo "DRY-RUN the notes would credit nobody: every pull request since the last release is the owner's or a bot's"

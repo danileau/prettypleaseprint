@@ -50,6 +50,9 @@ arg() { # arg --flag "$@" — the value after --flag
 case "${1:-} ${2:-}" in
   "auth status") [ ! -e "$S/no-auth" ] || exit 1; exit 0 ;;
   "repo view") cat "$S/repo.json"; exit 0 ;;
+  "api user")
+    [ ! -e "$S/api-user-fail" ] || { echo "HTTP 401: Bad credentials" >&2; exit 1; }
+    cat "$S/api-user.json"; exit 0 ;;
   "pr list")
     case " $* " in
       *" --head "*) if [ -f "$S/pr-list.json" ]; then cat "$S/pr-list.json"; else echo "[]"; fi ;;
@@ -222,6 +225,7 @@ new_sandbox() {
   mkdir -p "$T/stub/state" "$T/home" "$T/tmp"
   : >"$T/stub/log"
   echo '{"nameWithOwner":"octo/widgets"}' >"$T/stub/state/repo.json"
+  echo '{"login":"a-developer","id":1}' >"$T/stub/state/api-user.json"
   printf '%s\n' ghcr.io/octo/ppp-app:v0.2.0 ghcr.io/octo/ppp-migrate:v0.2.0 \
     ghcr.io/octo/ppp-storage-migrate:v0.2.0 >"$T/stub/state/images"
   echo '[{"status":"completed","conclusion":"success","url":"https://github.invalid/runs/1","createdAt":"2026-11-01T10:00:00Z"}]' \
@@ -801,37 +805,46 @@ empty_commits() {
   git -C "$T/work" push -q origin main
   MAIN0="$(git -C "$T/remote.git" rev-parse main)"
 }
-# merged_prs '<json with @MERGE@>' — what gh lists as merged into main. The
-# release pull request's own merge commit only exists once the owner merges, so
-# @MERGE@ is filled in then, by the same poll that merges.
+# merged_prs '<json with @MERGE@ and @LATER@>' [merge-pr args] — what gh lists
+# as merged into main. The release pull request's own merge commit only exists
+# once the owner merges, so @MERGE@ is filled in then, by the same poll that
+# merges; @LATER@ is the tip of main after it, which is a commit merged after
+# the release when merge-pr is told "later".
 merged_prs() {
   printf '%s\n' "$1" >"$T/stub/pr-merged.tpl"
-  on_sleep 'if [ "$1" -ge 2 ] && [ ! -e "$STUB/merged" ]; then touch "$STUB/merged"; "$HELPERS/merge-pr"
+  on_sleep 'if [ "$1" -ge 2 ] && [ ! -e "$STUB/merged" ]; then touch "$STUB/merged"; "$HELPERS/merge-pr" '"${2:-}"'
     oid="$(grep -o "\"mergeCommit\":{\"oid\":\"[0-9a-f]*\"" "$STUB/state/pr-list.json" | grep -o "[0-9a-f]\{40\}")"
-    sed "s/@MERGE@/$oid/" "$STUB/pr-merged.tpl" >"$STUB/state/pr-merged.json"; fi'
+    later="$(git --git-dir="$STUB/../remote.git" rev-parse main)"
+    sed "s/@MERGE@/$oid/; s/@LATER@/$later/" "$STUB/pr-merged.tpl" >"$STUB/state/pr-merged.json"; fi'
 }
 pr_json() { # pr_json <number> <merge oid> <login> [is_bot]
   printf '{"number":%s,"mergeCommit":{"oid":"%s"},"author":{"login":"%s","is_bot":%s}}' "$1" "$2" "$3" "${4:-false}"
 }
+credited() { grep '^With thanks to: ' "$T/stub/state/notes-captured" 2>/dev/null; }
 
-t "C1 the notes credit the authors by @login, sorted and once each; not the owner, bots, or pull requests outside the release"
-new_sandbox; empty_commits 6
+t "C1 the notes credit the authors by @login, sorted and once each; not the owner, the person releasing, bots, or pull requests outside the release"
+new_sandbox; empty_commits 7
 v010="$(git -C "$T/remote.git" rev-parse 'v0.1.0^{commit}')"
 merged_prs "[$(pr_json 2 "${C[1]}" zed), $(pr_json 11 "${C[2]}" alice), $(pr_json 12 "${C[3]}" app/dependabot true),
   $(pr_json 13 "${C[4]}" Bob), $(pr_json 14 "${C[5]}" ZED), $(pr_json 15 "${C[6]}" 'renovate[bot]'),
-  $(pr_json 1 "$v010" mallory), $(pr_json 7 @MERGE@ Octo),
-  {\"number\":16,\"mergeCommit\":null,\"author\":{\"login\":\"nomerge\",\"is_bot\":false}}]"
+  $(pr_json 17 "${C[7]}" 'a-developer'), $(pr_json 18 "${C[7]}" 'alice\nevil'), $(pr_json 19 "${C[7]}" 'carol\n'),
+  $(pr_json 1 "$v010" mallory), $(pr_json 7 @MERGE@ Octo), $(pr_json 8 @LATER@ latecomer),
+  {\"number\":16,\"mergeCommit\":null,\"author\":{\"login\":\"nomerge\",\"is_bot\":false}}]" later
 wiz "$HAPPY" 0.2.0
 rc 0
 eq "the last three lines of the notes" "$(tail -3 "$T/stub/state/notes-captured" 2>/dev/null)" \
-  $'### Contributors to this release\n\n@alice, @Bob, @zed'
-eq "the contributors line" "$(grep '^@' "$T/stub/state/notes-captured" 2>/dev/null)" "@alice, @Bob, @zed"
-out "### Contributors to this release"; out "@alice, @Bob, @zed"
-logged '^gh pr list --repo octo/widgets --state merged --base main --search merged:>=[0-9]{4}-[0-9]{2}-[0-9]{2} --limit 1000 --json number,author,mergeCommit$'
-no_out "no contributors list"
+  $'### Contributors to this release\n\nWith thanks to: @alice, @Bob, @zed'
+eq "the contributors line" "$(credited)" "With thanks to: @alice, @Bob, @zed"
+nok "a line that is not one of the three" grep -Eq '^(carol|evil|@)' "$T/stub/state/notes-captured"
+out "### Contributors to this release"; out "With thanks to: @alice, @Bob, @zed"
+no_out "latecomer"; no_out "no contributors list"; no_out "may be missing"
+logged '^gh api user$'
+day="$(python3 -c 'import datetime,sys; print((datetime.datetime.fromtimestamp(int(sys.argv[1]), datetime.timezone.utc).date() - datetime.timedelta(days=1)).isoformat())' \
+  "$(git -C "$T/remote.git" show -s --format=%ct "$v010")")"
+logged "^gh pr list --repo octo/widgets --state merged --base main --search merged:>=$day --limit 1000 --json number,author,mergeCommit\$"
 
 t "C1 the preview shows the list before the question whether to edit the notes"
-listed="$(printf '%s\n' "$OUT" | grep -n '^@alice, @Bob, @zed$' | cut -d: -f1)"
+listed="$(printf '%s\n' "$OUT" | grep -n '^With thanks to: @alice, @Bob, @zed$' | cut -d: -f1)"
 asked="$(printf '%s\n' "$OUT" | grep -n 'Edit the release notes before publishing' | cut -d: -f1)"
 [ "${listed:-0}" -gt 0 ] && [ "${listed:-0}" -lt "${asked:-0}" ] \
   || no "the list (line ${listed:-none}) does not come before the question (line ${asked:-none})"
@@ -852,13 +865,22 @@ logged 'release create v0\.2\.0'; ok "the release on the remote's tag" remote_ha
 nok "a contributors heading" grep -q 'Contributors' "$T/stub/state/notes-captured"
 ok "the notes are otherwise the usual ones" grep -q '^Everything, entry by entry: ' "$T/stub/state/notes-captured"
 
-t "C4 --dry-run shows who the notes would credit, and changes nothing"
-new_sandbox; empty_commits 1; before="$(snap)"
+t "C3 gh not saying who is releasing leaves only the owner out, and is no warning"
+new_sandbox; empty_commits 1; touch "$T/stub/state/api-user-fail"
+merged_prs "[$(pr_json 11 "${C[1]}" a-developer), $(pr_json 7 @MERGE@ octo)]"
+wiz "$HAPPY" 0.2.0
+rc 0; logged 'release create v0\.2\.0'; eq "the contributors line" "$(credited)" "With thanks to: @a-developer"
+no_out "no contributors list"
+
+t "C4 --dry-run shows who the notes would credit from the remote's main, not HEAD, and changes nothing"
+new_sandbox; empty_commits 1
+# HEAD is one commit short of main: the one pull request is not in it.
+git -C "$T/work" switch -q -c old HEAD~1; before="$(snap)"
 echo "[$(pr_json 11 "${C[1]}" zed), $(pr_json 12 "$(git -C "$T/remote.git" rev-parse 'v0.1.0^{commit}')" mallory)]" >"$T/stub/state/pr-merged.json"
 wiz '' --dry-run 0.2.0
-rc 0; eq "refs and files" "$(snap)" "$before"; not_logged 'create'
-out "DRY-RUN the notes would end with, as main stands now:"; out "DRY-RUN   ### Contributors to this release"
-out "DRY-RUN   @zed"; no_out "mallory"
+rc 1; out "WOULD REFUSE: on old"; eq "refs and files" "$(snap)" "$before"; not_logged 'create'
+out "DRY-RUN the notes would end with, as origin/main ($(git -C "$T/remote.git" rev-parse --short=7 main)) stands now:"
+out "DRY-RUN   ### Contributors to this release"; out "DRY-RUN   With thanks to: @zed"; no_out "mallory"
 
 t "C5 --continue, with the tag already pushed, still credits from the release before it"
 new_sandbox; empty_commits 1; : >"$T/stub/state/images"; EXTRA=(PPP_IMAGES_TIMEOUT=1)
@@ -869,7 +891,46 @@ printf '%s\n' ghcr.io/octo/ppp-app:v0.2.0 ghcr.io/octo/ppp-migrate:v0.2.0 ghcr.i
 git -C "$T/work" switch -q main
 wiz 'n\ny\n' --continue 0.2.0
 rc 0; logged 'release create v0\.2\.0'
-eq "the contributors line" "$(grep '^@' "$T/stub/state/notes-captured" 2>/dev/null)" "@zed"
+eq "the contributors line" "$(credited)" "With thanks to: @zed"
+
+t "C6 a hotfix tagged off the side is not the start of the range: warned about, and published without a list"
+new_sandbox; empty_commits 1
+( cd "$T/work" && git switch -q -c hotfix v0.1.0 && git commit -q --allow-empty -m "A hotfix (#9)" \
+  && git tag -a v0.1.1 -m v0.1.1 && git push -q origin v0.1.1 && git switch -q main )
+merged_prs "[$(pr_json 11 "${C[1]}" zed)]"
+# The hotfix's tag is the one the example tags would name; main still says
+# v0.1.0, so the wizard asks twice whether to go on without moving them.
+wiz 'y\ny\ny\nn\ny\ny\nn\ny\n' 0.2.0
+rc 0; logged 'release create v0\.2\.0'
+out "no contributors list in the notes: v0.1.1 is not an ancestor of"
+nok "a contributors heading" grep -q 'Contributors' "$T/stub/state/notes-captured"
+
+t "C7 a full page from gh's search is warned about as maybe short, and still credited"
+new_sandbox; empty_commits 1
+python3 - "$T/stub/state/pr-merged.json" "${C[1]}" <<'PYEOF'
+import json, sys
+prs = [{"number": 11, "mergeCommit": {"oid": sys.argv[2]}, "author": {"login": "zed", "is_bot": False}}]
+prs += [{"number": 100 + i, "mergeCommit": {"oid": "%040x" % i}, "author": {"login": "someone", "is_bot": False}} for i in range(999)]
+json.dump(prs, open(sys.argv[1], "w"))
+PYEOF
+wiz "$HAPPY" 0.2.0
+rc 0; out "gh returned 1000 pull requests, the most its search gives"; eq "the contributors line" "$(credited)" "With thanks to: @zed"
+
+t "C8 with an Upgrading section the contributors come after it, and neither wizard reads them as upgrade notes"
+new_sandbox; use_upgrading_changelog; empty_commits 2
+merged_prs "[$(pr_json 11 "${C[1]}" upgradingfan), $(pr_json 12 "${C[2]}" zed)]"
+wiz "$HAPPY" 0.2.0
+rc 0; logged 'release create v0\.2\.0'; no_out "the Upgrading section is gone"
+ok "the notes are the golden notes, then the contributors" cmp "$T/stub/state/notes-captured" \
+  <(cat "$FIX/notes-golden.txt"; printf '\n### Contributors to this release\n\nWith thanks to: @upgradingfan, @zed\n')
+# The deploy wizard's own pattern for "a line about upgrading it could not
+# parse", taken from it so that the two cannot drift: no line of the section
+# may match it, or every deploy across this release would say its notes could
+# not be read.
+mention="$(sed -n 's/^MENTION = re.compile(r"\(.*\)", re.I)$/\1/p' "$REPO_ROOT/scripts/deploy-wizard.sh")"
+[ -n "$mention" ] || no "the MENTION pattern was not found in deploy-wizard.sh"
+eq "lines of the section the deploy wizard reads as about upgrading" \
+  "$(sed -n '/^### Contributors to this release$/,$p' "$T/stub/state/notes-captured" | python3 -c 'import re,sys; p=re.compile(sys.argv[1], re.I); print(sum(1 for l in sys.stdin if p.match(l)))' "$mention")" "0"
 
 # ============================================================================
 # 25. --continue
@@ -1135,7 +1196,7 @@ printf '%s\n' ghcr.io/someone/ppp-app:v0.2.0 ghcr.io/someone/ppp-migrate:v0.2.0 
 wiz "$HAPPY" 0.2.0
 rc 0
 eq "gh calls without --repo SomeOne/fork" \
-  "$(grep '^gh ' "$T/stub/log" | grep -Ev '^gh (auth status|repo view)' | grep -vc -- '--repo SomeOne/fork')" "0"
+  "$(grep '^gh ' "$T/stub/log" | grep -Ev '^gh (auth status|repo view|api user$)' | grep -vc -- '--repo SomeOne/fork')" "0"
 eq "image references outside ghcr.io/someone/" \
   "$(grep '^docker buildx imagetools inspect' "$T/stub/log" | grep -vc ' ghcr.io/someone/ppp-')" "0"
 ok "the notes link to the fork" grep -qF 'https://github.com/SomeOne/fork/blob/v0.2.0/CHANGELOG.md' "$T/stub/state/notes-captured"
