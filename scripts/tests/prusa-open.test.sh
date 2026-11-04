@@ -51,8 +51,14 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$body" ] && [ -n "$hdr" ] || { echo "UNEXPECTED curl call" >>"$STUB/log"; exit 99; }
 cat "$STUB/state/body" >"$body"
-printf 'HTTP/1.1 %s\r\ncontent-disposition: attachment; filename="%s"\r\n\r\n' \
-  "$(cat "$STUB/state/code")" "$(cat "$STUB/state/filename")" >"$hdr"
+# No state/filename at all means no Content-Disposition header, as from a
+# proxy that strips it.
+{
+  printf 'HTTP/1.1 %s\r\n' "$(cat "$STUB/state/code")"
+  [ ! -e "$STUB/state/filename" ] ||
+    printf 'content-disposition: attachment; filename="%s"\r\n' "$(cat "$STUB/state/filename")"
+  printf '\r\n'
+} >"$hdr"
 cat "$STUB/state/code"
 STUB
 
@@ -79,6 +85,19 @@ cat >"$BASE/stubs/uname" <<'STUB'
 [ "${1:-}" = "-s" ] || { echo "UNEXPECTED uname $*" >>"$STUB/log"; exit 99; }
 cat "$STUB/state/uname"
 STUB
+
+# What puts a failure on screen, one per platform. Each records what it was
+# given, one line per argument; PowerShell's message arrives in the environment,
+# so its stub records that too.
+for tool in notify-send osascript powershell.exe; do
+  cat >"$BASE/stubs/$tool" <<STUB
+#!/usr/bin/env bash
+printf '$tool\n' >>"\$STUB/log"
+for a in "\$@"; do printf '  arg %s\n' "\$a" >>"\$STUB/log"; done
+[ -z "\${PPP_ALERT_TITLE:-}" ] || printf '  env title %s\n' "\$PPP_ALERT_TITLE" >>"\$STUB/log"
+[ -z "\${PPP_ALERT_TEXT:-}" ] || printf '  env text %s\n' "\$PPP_ALERT_TEXT" >>"\$STUB/log"
+STUB
+done
 chmod +x "$BASE"/stubs/*
 
 # ----- one sandbox per case -----------------------------------------------------
@@ -198,6 +217,49 @@ open_link "$LINK"
 rc 1; noted "sets both PPP_SLICER and PPP_SLICER_PATH"; not_called '^curl '
 
 # ============================================================================
+# a failure reaches the screen
+# ============================================================================
+t "Linux: a failure is a notify-send notification, and notify-send wins over the others"
+new_sandbox setsid notify-send osascript powershell.exe; printf '401' >"$T/stub/state/code"
+open_link "$LINK"
+rc 1; called '^notify-send$'; called '^  arg Open in PrusaSlicer failed$'
+called '^  arg that link has expired \(HTTP 401\)'; not_called '^(osascript|powershell\.exe)$'
+
+t "macOS: osascript, with the title and the message as arguments of their own"
+new_sandbox nohup osascript powershell.exe; conf 'PPP_SLICER_PROFILE=elegoo' 'PPP_SLICER="slicer"'
+printf '401' >"$T/stub/state/code"
+open_link "$LINK"
+rc 1; called '^osascript$'; called '^  arg Open in ElegooSlicer failed$'
+called '^  arg that link has expired'; not_called '^powershell\.exe$'
+# Nobody here has a Mac, so the AppleScript is pinned as written: item 1 is
+# the title, item 2 the message, in that order after the script.
+eq "osascript's arguments" "$(sed -n '/^osascript$/,$p' "$T/stub/log" | sed -n '2,7p' | cut -c1-60)" \
+"  arg -e
+  arg on run argv
+  arg -e
+  arg display notification (item 2 of argv) with title (item
+  arg -e
+  arg end run"
+eq "the two after it" "$(sed -n '/^  arg end run$/{n;p;n;p;}' "$T/stub/log" | cut -c1-38)" \
+"  arg Open in ElegooSlicer failed
+  arg that link has expired (HTTP 401)"
+
+t "Windows: a PowerShell message box, and a hostile link reaches it only through the environment"
+new_sandbox powershell.exe; printf 'MINGW64_NT-10.0\n' >"$T/stub/state/uname"
+# shellcheck disable=SC2016 # the $( … ) is the hostile text, meant literally
+open_link 'ppp://slice/4;$(touch pwned)";Start-Process calc;"?t=x'
+rc 1; called '^powershell\.exe$'; called '^  env title Open in PrusaSlicer failed$'
+called '^  env text not a model link: ppp://slice/4;\$\(touch pwned\)";Start-Process calc'
+# shellcheck disable=SC2016 # PowerShell's $variables, not bash's
+called '^  arg .*\.Popup\(\$env:PPP_ALERT_TEXT, 0, \$env:PPP_ALERT_TITLE, 0x1010\)$'
+not_called '^  arg .*(ppp://|pwned|calc)'; not_called '^(setsid|slicer) '
+
+t "no PPP_BASE: said in the log and on screen, not on stderr alone"
+new_sandbox setsid notify-send; printf 'PPP_SLICER="slicer"\n' >"$T/home/.config/ppp/slicer.conf"
+open_link "$LINK"
+rc 1; noted "ERROR: PPP_BASE is not set in"; called '^  arg PPP_BASE is not set in'; not_called '^curl '
+
+# ============================================================================
 # what this change must not have moved
 # ============================================================================
 t "a link that is not a model id opens nothing and fetches nothing"
@@ -209,6 +271,12 @@ t "an expired link is said in words, and no slicer starts"
 new_sandbox setsid; printf '401' >"$T/stub/state/code"
 open_link "$LINK"
 rc 1; noted "that link has expired (HTTP 401)"; not_called '^(setsid|slicer) '
+
+t "no Content-Disposition: the file is named model-<id>.stl and opened, not a silent exit"
+new_sandbox setsid; rm "$T/stub/state/filename"
+open_link "$LINK"; settle
+rc 0; eq "the saved model" "$(basename "$(saved_model)")" "PPP-104-model-4.stl"
+called '^setsid slicer --single-instance .*/PPP-104-model-4\.stl$'; noted "handed off story 4"
 
 # ============================================================================
 # the checkout itself

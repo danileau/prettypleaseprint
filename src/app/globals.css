@@ -49,7 +49,13 @@
   --color-chrome: #cdd4d9;
   --color-chrome-dk: #98a3ab;
 
-  --color-rule: rgba(34, 26, 20, 0.14);
+  /* Ink at an alpha, said as ink, so a theme that redefines ink carries it.
+     The build writes each color-mix() twice: a precomputed hex for browsers
+     without it, then the var() form inside @supports, which every current
+     browser takes. Rendered, it differs from the rgba() it replaces by at
+     most 1/255 on the faint lines that use it — computed at runtime rather
+     than at build time, it rounds differently. */
+  --color-rule: color-mix(in srgb, var(--color-ink) 14%, transparent);
 
   /* --- spacing keeps the handoff's 4.4px base; it worked --- */
   --spacing-1: 4.4px;
@@ -70,12 +76,31 @@
    */
   --shadow-stamp: 3px 3px 0 var(--color-ink);
   --shadow-stamp-lg: 5px 5px 0 var(--color-ink);
-  --shadow-soft: 0 2px 0 rgba(34, 26, 20, 0.16);
+  --shadow-soft: 0 2px 0 color-mix(in srgb, var(--color-ink) 16%, transparent);
 
   --font-display: var(--font-slab), Georgia, serif;
   --font-script: var(--font-script), var(--font-slab), cursive;
   --font-sans: var(--font-archivo), system-ui, sans-serif;
   --font-mono: var(--font-courier), ui-monospace, monospace;
+}
+
+/*
+ * Colours no class name uses, which Tailwind would therefore leave out of the
+ * stylesheet — it drops theme variables nothing refers to — but which code
+ * reads: the 3D viewer through getComputedStyle, the "whatever" swatch inside
+ * an arbitrary text-shadow. `static` keeps them in either way. With these, the
+ * palette above and below is the only place the app's colours are written
+ * down (emails aside: a mail client has no CSS variables).
+ */
+@theme static {
+  /* --- the viewer's lamps and bed: light, not paint --- */
+  --color-scene-light: #ffffff;
+  --color-scene-ground: #6b747c;
+  --color-scene-rim: #dfe6ee;
+  --color-scene-grid: #c9b48c;
+
+  /* --- what keeps a cream "?" legible on a swatch of any colour --- */
+  --color-shade: #1b2126;
 }
 
 @layer base {
@@ -122,8 +147,8 @@
 .layers {
   background-image: repeating-linear-gradient(
     180deg,
-    rgba(34, 26, 20, 0.09) 0px,
-    rgba(34, 26, 20, 0.09) 1px,
+    color-mix(in srgb, var(--color-ink) 9%, transparent) 0px,
+    color-mix(in srgb, var(--color-ink) 9%, transparent) 1px,
     transparent 1px,
     transparent 4px
   );
@@ -144,8 +169,8 @@
 /* The build plate: a faint grid under everything, like the print bed. */
 .plate {
   background-image:
-    linear-gradient(rgba(34, 26, 20, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(34, 26, 20, 0.045) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--color-ink) 4.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--color-ink) 4.5%, transparent) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 
@@ -153,7 +178,7 @@
 .starburst {
   background-image: repeating-conic-gradient(
     from 0deg at 50% 50%,
-    rgba(245, 178, 39, 0.18) 0deg 6deg,
+    color-mix(in srgb, var(--color-sun) 18%, transparent) 0deg 6deg,
     transparent 6deg 18deg
   );
 }
