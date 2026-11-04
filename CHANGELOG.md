@@ -112,6 +112,16 @@ settings-page and first-run work now open as #103 to #106. And to
 
 ### Changed
 
+- **The full test no longer refuses to run beside another ppp stack.** A
+  stack that is already up (yours, a try-out) holds the container names and
+  ports the test needs. `scripts/full-test.sh` now stops it and renames its
+  containers aside for the length of the run, never removing them or their
+  data. Afterwards it gives them their names back and starts again what was
+  running, on success, on failure and on Ctrl-C. A run that is killed outright
+  leaves the list in the git directory, and `--restore` finishes the job. A
+  port held by anything else is still a refusal, and so is a stack an earlier
+  run of the test left behind. The release wizard gets past the same check.
+
 - **Every colour the app draws with is a theme variable** (#111, @Hogun974;
   #105, step one; no visible change). The 3D viewer's background, lights, edges and build plate,
   the ink-at-an-alpha of the layer lines, the plate grid, the starburst and

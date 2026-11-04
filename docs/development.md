@@ -166,11 +166,19 @@ where a developer's machine has to be protected: the compose project is
 `full-test-local` rather than `latest`, `DATA_ROOT` is a throwaway directory
 outside the checkout, and the health wait is 120 seconds rather than 90.
 
-- **It refuses to start if a ppp stack exists on the machine**, running or
-  stopped. The compose file pins the container names, so only one stack can
-  exist, and the test would have to remove yours to raise its own. It will not:
-  take yours down first. It also refuses if port 3000, 5432, 1025 or 8025 is
-  taken. `--preflight` runs only these checks.
+- **It sets aside a ppp stack that is in the way, and puts it back.** The
+  compose file pins the container names, so only one stack can exist. If
+  yours is there, running or stopped, the test stops it and renames its
+  containers (`ppp-app` becomes `ppp-app-parked-by-full-test`) just before
+  raising its own, after the static gates. It never removes them, so volumes
+  and data stay as they were. After the teardown each one gets its name back,
+  and what was running is started again, the database before the app. If a run
+  is killed outright, the list waits in the git directory and `--restore`
+  finishes the job; until then the next run refuses.
+- **It refuses to start if something else is in the way**: port 3000, 5432,
+  1025, 8025 or 4010 held by anything but the stack it sets aside, or a stack
+  an earlier run of the test left behind (`--restore` removes that).
+  `--preflight` runs only these checks, and touches nothing.
 - **It raises its own compose project, `ppp-fulltest`**, never `ppp`, so the
   teardown cannot reach a project it did not create; and before the first suite
   it checks that the app container belongs to that project. The suites delete
@@ -180,7 +188,8 @@ outside the checkout, and the health wait is 120 seconds rather than 90.
   was not there before. The suites read `.env`, so for the length of the run
   those files describe the test stack. If the run is killed outright, the
   originals wait in the git directory and the next run says so: `--restore`
-  puts them back and removes the leftover containers.
+  puts them back, removes the leftover containers and puts back a stack it
+  had set aside.
 - **Interrupting it always ends in the teardown.** Ctrl-C in a terminal goes
   to the suite that is running as well as to the script, so the suite usually
   stops at once; a signal sent to the script alone (`kill <pid>`) is acted on
