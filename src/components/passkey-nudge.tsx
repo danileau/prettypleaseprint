@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 
 /**
  * The one prompt that gets people onto passkeys.
@@ -18,6 +19,7 @@ import Link from "next/link";
 const DISMISSED_KEY = "ppp.passkey-nudge-dismissed";
 
 export function PasskeyNudge() {
+  const t = useTranslations("header.nudge");
   const [show, setShow] = useState(false);
 
   useEffect(() => {
@@ -39,16 +41,15 @@ export function PasskeyNudge() {
       <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-[13.2px] px-[26.4px] py-[11px]">
         <p className="m-0 flex-1 text-[14.5px] leading-[1.4] text-ink">
           <strong className="font-display text-[15px]">
-            Tired of typing your password?
+            {t("title")}
           </strong>{" "}
-          Save a passkey and this device signs you in with a fingerprint —
-          nothing to remember, nothing to phish.
+          {t("body")}
         </p>
         <Link
           href="/welcome"
           className="stamp cursor-pointer rounded-chip border-[3px] border-ink bg-cherry-dk px-[17.6px] py-[7px] text-[13.5px] font-bold text-cream hover:bg-cherry"
         >
-          Set it up — 30 seconds
+          {t("setUp")}
         </Link>
         <button
           type="button"
@@ -62,7 +63,7 @@ export function PasskeyNudge() {
           }}
           className="cursor-pointer rounded-chip border-2 border-transparent px-[13.2px] py-[7px] text-[13.5px] font-bold text-ink-2 hover:border-ink hover:bg-porcelain"
         >
-          Not now
+          {t("notNow")}
         </button>
       </div>
     </div>

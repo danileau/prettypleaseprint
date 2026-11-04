@@ -25,8 +25,11 @@ npm run probe:security    # OWASP-mapped probes
 ```
 
 Plus the cheap gates: `npm run typecheck`, `npm run check:secrets -- --all`,
-`npm run check:links`. `scripts/full-test.sh` runs all of it the way CI does —
-gates, a fresh stack, every suite — and puts your env files back afterwards.
+`npm run check:links`, `npm run check:messages`. User-facing copy on the
+sign-in page and in the header lives in `messages/en.json`, not in the
+component — [Translation](docs/i18n.md) says how to add a key.
+`scripts/full-test.sh` runs all of it the way CI does — gates, a fresh stack,
+every suite — and puts your env files back afterwards.
 
 [docs/development.md](docs/development.md) gets you set up.
 

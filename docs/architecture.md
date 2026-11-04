@@ -486,6 +486,12 @@ src/lib/
   safe-redirect.ts       redirect targets, decided by a URL parser
   client-ip.ts           whose address the audit trail believes
   db.ts, runtime.ts      the Prisma client; build-phase detection
+src/i18n/                the request's language and its messages — see docs/i18n.md
+  locales.ts             the languages (English only), and the order a second one will be chosen in
+  request.ts             next-intl's per-request config: English, from en.json
+  server.ts              getClientMessages: one screen's groups, for its NextIntlClientProvider
+  client-groups.ts       which message groups each screen sends its client components
+messages/                en.json: the source of truth, and so far the only catalogue
 src/app/
   signin/  reauth/       sign-in; the re-authentication prompt
   invite/[token]/        the registration page and its server action

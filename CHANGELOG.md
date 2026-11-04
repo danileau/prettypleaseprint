@@ -49,6 +49,21 @@ Notable changes. Every entry names a released version; deployments pin
   are each refused by name; nothing is guessed. A config that sets neither
   behaves exactly as before.
 
+- **The plumbing for translation, with nothing visible changing** (#103). The
+  app still speaks English only, word for word; a language can now arrive as a
+  pull request of its own. The sign-in page and the header read their words
+  from `messages/en.json` through `next-intl`, with no locale in the URL, so no
+  link, redirect or bookmark changes, and every key is a type. Client
+  components are sent only their own screen's words, so a stranger's sign-in
+  page carries none of the header's and a client's page none of the owner's.
+  `User` gains a nullable `preferredLocale` column that nothing reads or writes
+  yet. `npm run check:messages`, in CI's `guard` job and the full test, holds a
+  translation against English — untranslated or stale keys warn, broken ones
+  fail — and fails a client component asking for words its screen does not
+  send. One new dependency, `next-intl` 4.14.9 (MIT); its build-time extras,
+  `@swc/core` and `@parcel/watcher`, do not reach the runtime image.
+  [Translation](docs/i18n.md) says how to add a key or a language.
+
 ### Changed
 
 - **Every colour the app draws with is a theme variable** (#105, step one; no
@@ -129,6 +144,12 @@ Notable changes. Every entry names a released version; deployments pin
   `set -e` ended the script, so the `model-<id>.stl` fallback written for that
   case was never reached and the log stopped at "fetching". The app always
   sends the header; a proxy that strips it is what would have hit this.
+
+- **An odd `?error=` broke the sign-in page.** `?error=__proto__` crashed it
+  with a 500, and `?error=toString` or `?error=constructor` showed an empty
+  warning box: the code was looked up in a plain object, prototype included.
+  The codes are now looked up as own properties only, so any code the page
+  does not know gets the generic sentence.
 
 ## v0.3.0
 
