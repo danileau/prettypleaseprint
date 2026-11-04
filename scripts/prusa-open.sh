@@ -263,8 +263,14 @@ esac
 # The download route sets Content-Disposition with the original filename; take
 # it from there. `basename` is the traversal guard — even a hostile header can
 # only name a file, never a path.
+#
+# A response without the header — a proxy that strips it — has to reach the
+# fallback below. Under `pipefail` a grep that finds nothing fails the whole
+# pipeline, the assignment with it, and `set -e` used to end the script right
+# here, with nothing in the log after "fetching". `|| true` is scoped to the
+# grep alone, so it covers "no such header" and nothing else.
 name="$(
-  grep -i '^content-disposition:' "$hdr" | tr -d '\r' |
+  { grep -i '^content-disposition:' "$hdr" || true; } | tr -d '\r' |
     sed -n 's/.*filename="\([^"]*\)".*/\1/p' | head -n1
 )"
 name="$(basename "${name:-model-$id.stl}")"

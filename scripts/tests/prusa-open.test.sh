@@ -51,8 +51,14 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$body" ] && [ -n "$hdr" ] || { echo "UNEXPECTED curl call" >>"$STUB/log"; exit 99; }
 cat "$STUB/state/body" >"$body"
-printf 'HTTP/1.1 %s\r\ncontent-disposition: attachment; filename="%s"\r\n\r\n' \
-  "$(cat "$STUB/state/code")" "$(cat "$STUB/state/filename")" >"$hdr"
+# No state/filename at all means no Content-Disposition header, as from a
+# proxy that strips it.
+{
+  printf 'HTTP/1.1 %s\r\n' "$(cat "$STUB/state/code")"
+  [ ! -e "$STUB/state/filename" ] ||
+    printf 'content-disposition: attachment; filename="%s"\r\n' "$(cat "$STUB/state/filename")"
+  printf '\r\n'
+} >"$hdr"
 cat "$STUB/state/code"
 STUB
 
@@ -265,6 +271,12 @@ t "an expired link is said in words, and no slicer starts"
 new_sandbox setsid; printf '401' >"$T/stub/state/code"
 open_link "$LINK"
 rc 1; noted "that link has expired (HTTP 401)"; not_called '^(setsid|slicer) '
+
+t "no Content-Disposition: the file is named model-<id>.stl and opened, not a silent exit"
+new_sandbox setsid; rm "$T/stub/state/filename"
+open_link "$LINK"; settle
+rc 0; eq "the saved model" "$(basename "$(saved_model)")" "PPP-104-model-4.stl"
+called '^setsid slicer --single-instance .*/PPP-104-model-4\.stl$'; noted "handed off story 4"
 
 # ============================================================================
 # the checkout itself

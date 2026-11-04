@@ -51,6 +51,20 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Changed
 
+- **Every colour the app draws with is a theme variable** (#105, step one; no
+  visible change). The 3D viewer's background, lights, edges and build plate,
+  the ink-at-an-alpha of the layer lines, the plate grid, the starburst and
+  `--color-rule`, and the shadow behind a "whatever" swatch's `?` were written
+  out where they were used; they now come from `globals.css` — the viewer
+  reads them with `getComputedStyle`, and says so if one is missing. The
+  viewer's lamps get tokens of their own, so a darker counter would not mean a
+  darker lamp. Tokens only code reads sit in an `@theme static` block, because
+  Tailwind drops theme variables no class uses. `STATUS_CHIP`, twelve hard-coded
+  colours nothing had imported since the diner redesign, is gone, and so is a
+  per-column `--tear-color` that restated its own default. E-mails keep their
+  literal colours: a mail client has no CSS variables. Screenshots of every
+  page before and after differ by at most 1/255 on the faint lines.
+
 - **Opening a ticket from a model's bytes lives in one place.** It was the body
   of the upload route while that was the only way a model arrived;
   `src/lib/intake.ts` now holds it and the upload and the import both call it.
@@ -108,6 +122,13 @@ Notable changes. Every entry names a released version; deployments pin
   out with CRLF by default, and bash refuses a script whose first command is
   `set -euo pipefail\r`. `.gitattributes` now keeps `*.sh` and the git hook
   LF on every platform.
+
+- **The slicer helper exited without a word when a response had no
+  `Content-Disposition`.** The filename is read from that header with a
+  `grep`; under `pipefail` a grep that finds nothing failed the assignment and
+  `set -e` ended the script, so the `model-<id>.stl` fallback written for that
+  case was never reached and the log stopped at "fetching". The app always
+  sends the header; a proxy that strips it is what would have hit this.
 
 - **A failed click on Windows or macOS said nothing on screen.** The slicer
   helper put its errors in a notification only through `notify-send`, which is
