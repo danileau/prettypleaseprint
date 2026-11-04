@@ -38,6 +38,17 @@ Notable changes. Every entry names a released version; deployments pin
   upload. `npm run verify:import` is the eleventh suite, and runs against a
   stand-in for Printables so that the far end can be made to misbehave.
 
+- **The slicer helper knows slicers other than PrusaSlicer.** It used to hand
+  every slicer PrusaSlicer's `--single-instance`, and it could not reach one
+  installed under a path with a space — which on Windows and macOS is all of
+  them, the macOS example in the docs included. `PPP_SLICER_PROFILE` (`prusa`,
+  the default, then `orca`, `elegoo`, `bambu`, `cura`) says which slicer it is,
+  and with it what the slicer is called in a message and whether it gets
+  `--single-instance`. `PPP_SLICER_PATH` takes one path whole. An unknown
+  profile, both settings at once, or a non-Prusa profile with no location set
+  are each refused by name; nothing is guessed. A config that sets neither
+  behaves exactly as before.
+
 ### Changed
 
 - **Every colour the app draws with is a theme variable** (#105, step one; no

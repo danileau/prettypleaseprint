@@ -157,6 +157,47 @@ rc 0; called '^nohup slicer --single-instance .*/PPP-104-clip\.stl$'; called '^s
 noted "detaching the slicer with nohup"; noted "handed off story 4"
 
 # ============================================================================
+# which slicer
+# ============================================================================
+# conf …  replaces the config with PPP_BASE and the given lines.
+conf() { { printf 'PPP_BASE="https://print.invalid"\n'; printf '%s\n' "$@"; } >"$T/home/.config/ppp/slicer.conf"; }
+# A slicer installed where Windows puts them: under a directory with a space.
+spaced_slicer() {
+  mkdir -p "$T/Program Files/ElegooSlicer"
+  cp "$BASE/stubs/slicer" "$T/Program Files/ElegooSlicer/elegoo-slicer.exe"
+  SPACED="$T/Program Files/ElegooSlicer/elegoo-slicer.exe"
+}
+
+t "elegoo, by a path with spaces: the slicer gets the file alone, without --single-instance"
+new_sandbox setsid; spaced_slicer
+conf 'PPP_SLICER_PROFILE=elegoo' "PPP_SLICER_PATH=\"$SPACED\""
+open_link "$LINK"; settle
+rc 0; called '^setsid .*/Program Files/ElegooSlicer/elegoo-slicer\.exe .*/PPP-104-clip\.stl$'
+called '^slicer .*/PPP-104-clip\.stl$'; not_called 'single-instance'; noted "handed off story 4"
+
+t "elegoo under Git Bash: the foreground run passes no empty argument and no --single-instance"
+new_sandbox; spaced_slicer; printf 'MINGW64_NT-10.0\n' >"$T/stub/state/uname"
+conf 'PPP_SLICER_PROFILE=elegoo' "PPP_SLICER_PATH=\"$SPACED\""
+open_link "$LINK"
+rc 0; called '^slicer /.*/PPP-104-clip\.stl$'; called '^slicer done$'; not_called 'single-instance'
+
+t "a profile nobody knows is refused by name, before anything is fetched"
+new_sandbox setsid; conf 'PPP_SLICER_PROFILE=prussa' 'PPP_SLICER="slicer"'
+open_link "$LINK"
+rc 1; noted "PPP_SLICER_PROFILE=prussa"; noted "Known: prusa, orca, elegoo, bambu, cura"
+not_called '^curl '; not_called '^(setsid|slicer) '
+
+t "orca with no location says which setting to fill in, rather than guessing"
+new_sandbox setsid; conf 'PPP_SLICER_PROFILE=orca'
+open_link "$LINK"
+rc 1; noted "where is OrcaSlicer? Set PPP_SLICER_PATH"; not_called '^curl '
+
+t "PPP_SLICER and PPP_SLICER_PATH together are refused"
+new_sandbox setsid; spaced_slicer; conf 'PPP_SLICER="slicer"' "PPP_SLICER_PATH=\"$SPACED\""
+open_link "$LINK"
+rc 1; noted "sets both PPP_SLICER and PPP_SLICER_PATH"; not_called '^curl '
+
+# ============================================================================
 # what this change must not have moved
 # ============================================================================
 t "a link that is not a model id opens nothing and fetches nothing"
