@@ -425,6 +425,7 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 | **[The API](docs/api.md)** | the JSON surface, bearer tokens, the OpenAPI document and the console at `/docs` |
 | **[Open in PrusaSlicer](docs/prusaslicer.md)** | the one-click "send to the slicer" bridge, the helper on Linux and Windows, other slicers, and why the deep link cannot be used |
 | **[Development](docs/development.md)** | stack, local setup, the verification suites, the full local run, CI, crediting contributors, cutting a release |
+| **[Translation](docs/i18n.md)** | how the catalogue works, adding a key, what the browser is sent, and adding a language |
 | **[Security audit](docs/security-audit.md)** | the OWASP Top 10 assessment, findings, and residual risk accepted |
 | **[Security policy](SECURITY.md)** | how to report a vulnerability |
 | **[Contributing](CONTRIBUTING.md)** | the eleven suites are the contract; what a good change looks like |

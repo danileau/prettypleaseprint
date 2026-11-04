@@ -1,0 +1,77 @@
+{
+  "authShell": {
+    "sign": "Open · come on in"
+  },
+  "signin": {
+    "kicker": "Members only · ask at the counter",
+    "title": "What’ll it be?",
+    "lead": "Use the passkey on this device, or your username and password.",
+    "passwordSet": "Password saved. Sign in with it.",
+    "errors": {
+      "inviteRequired": "That address has not been invited. Pretty Please Print is invite-only — ask whoever owns the printer for a link.",
+      "invalidToken": "That link is no longer valid. Ask the printer owner for a fresh one.",
+      "tokenExpired": "That link expired. Ask the printer owner for another.",
+      "suspended": "That account has been suspended. Ask whoever owns the printer.",
+      "other": "That sign-in attempt did not go through."
+    },
+    "form": {
+      "withPasskey": "Sign in with a passkey",
+      "or": "or",
+      "username": "Username",
+      "password": "Password",
+      "checking": "Checking…",
+      "submit": "Sign in",
+      "refused": "That username and password do not match. Try again.",
+      "tooManyAttempts": "Too many attempts. Wait a minute and try again.",
+      "passkeyRefused": "That passkey was not accepted. Use your password instead.",
+      "inviteOnly": "Pretty Please Print is invite-only — there is no sign-up. If you have not been invited yet, or you have forgotten your password, ask whoever owns the printer."
+    }
+  },
+  "header": {
+    "home": "Pretty Please Print, home",
+    "nav": {
+      "rail": "The rail",
+      "orderUp": "Order up",
+      "myOrders": "My orders",
+      "history": "History",
+      "featureRequests": "Feature requests",
+      "pass": "The pass",
+      "books": "The books",
+      "materials": "Materials",
+      "byPerson": "By person",
+      "benefits": "Benefits",
+      "guestList": "Guest list",
+      "audit": "Audit"
+    },
+    "activity": {
+      "button": "Activity",
+      "markAllRead": "Mark all read",
+      "empty": "Nothing yet.",
+      "unread": "unread"
+    },
+    "feedTitle": {
+      "owner": "New from the group",
+      "member": "Updates on your prints"
+    },
+    "account": {
+      "menuFor": "Account menu for {name}",
+      "withPassword": "Signing in with a password",
+      "passkeys": "{count, plural, one {# passkey on this account} other {# passkeys on this account}}",
+      "addFirst": "Add a passkey →",
+      "addAnother": "Add another →",
+      "docs": "API & docs →",
+      "docsHint": "Every endpoint, and a console to call them from.",
+      "signOut": "Sign out"
+    },
+    "role": {
+      "owner": "Printer owner",
+      "member": "Invited member"
+    },
+    "nudge": {
+      "title": "Tired of typing your password?",
+      "body": "Save a passkey and this device signs you in with a fingerprint — nothing to remember, nothing to phish.",
+      "setUp": "Set it up — 30 seconds",
+      "notNow": "Not now"
+    }
+  }
+}

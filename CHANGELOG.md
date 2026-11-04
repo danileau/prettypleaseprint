@@ -95,6 +95,21 @@ settings-page and first-run work now open as #103 to #106. And to
   hold a release back. See
   [Cutting a release](docs/development.md#cutting-a-release).
 
+- **The plumbing for translation, with nothing visible changing** (#103). The
+  app still speaks English only, word for word; a language can now arrive as a
+  pull request of its own. The sign-in page and the header read their words
+  from `messages/en.json` through `next-intl`, with no locale in the URL, so no
+  link, redirect or bookmark changes, and every key is a type. Client
+  components are sent only their own screen's words, so a stranger's sign-in
+  page carries none of the header's and a client's page none of the owner's.
+  `User` gains a nullable `preferredLocale` column that nothing reads or writes
+  yet. `npm run check:messages`, in CI's `guard` job and the full test, holds a
+  translation against English — untranslated or stale keys warn, broken ones
+  fail — and fails a client component asking for words its screen does not
+  send. One new dependency, `next-intl` 4.14.9 (MIT); its build-time extras,
+  `@swc/core` and `@parcel/watcher`, do not reach the runtime image.
+  [Translation](docs/i18n.md) says how to add a key or a language.
+
 ### Changed
 
 - **Every colour the app draws with is a theme variable** (#111, @Hogun974;
@@ -203,6 +218,12 @@ settings-page and first-run work now open as #103 to #106. And to
   message, which can quote the clicked link, reaches both as data and never as
   code. A config with no `PPP_BASE` is reported the same way; it used to exit
   on stderr alone, which a protocol handler does not have.
+
+- **An odd `?error=` broke the sign-in page.** `?error=__proto__` crashed it
+  with a 500, and `?error=toString` or `?error=constructor` showed an empty
+  warning box: the code was looked up in a plain object, prototype included.
+  The codes are now looked up as own properties only, so any code the page
+  does not know gets the generic sentence.
 
 ## v0.3.0
 

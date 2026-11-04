@@ -47,7 +47,16 @@ export function Kicker({ children }: { children: ReactNode }) {
  * The frame for every screen you reach before signing in. A menu board: dark
  * ground, one lit card, checkerboard along the bottom edge.
  */
-export function AuthShell({ children }: { children: ReactNode }) {
+export function AuthShell({
+  children,
+  // A prop rather than a lookup: this module is imported by client components
+  // and cannot read the request's language, and the screens that use the shell
+  // are translated one at a time. One that has been passes its own words.
+  sign = "Open · come on in",
+}: {
+  children: ReactNode;
+  sign?: string;
+}) {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center px-[26.4px] py-[35.2px]">
       <div className="mb-[26.4px]">
@@ -56,7 +65,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
       <div className="w-full max-w-[520px] overflow-hidden rounded-panel border-[3px] border-ink bg-porcelain shadow-stamp-lg">
         <div className="layers border-b-[3px] border-ink bg-aqua px-[26.4px] py-[13.2px]">
           <p className="m-0 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-ink">
-            Open · come on in
+            {sign}
           </p>
         </div>
         <div className="p-[35.2px]">{children}</div>

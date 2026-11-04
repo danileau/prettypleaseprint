@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { authClient } from "@/lib/auth-client";
 
 /**
@@ -12,15 +13,18 @@ export function UserMenu({
   name,
   initials,
   email,
-  role,
+  roleLabel,
   passkeyCount,
 }: {
   name: string;
   initials: string;
   email: string;
-  role: "client" | "admin";
+  /** "Printer owner" or "Invited member", picked on the server so the
+   *  other one is never sent to this person's browser. */
+  roleLabel: string;
   passkeyCount: number;
 }) {
+  const t = useTranslations("header.account");
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
 
@@ -45,7 +49,7 @@ export function UserMenu({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="true"
-        aria-label={`Account menu for ${name}`}
+        aria-label={t("menuFor", { name })}
         className="stamp flex h-[36px] w-[36px] cursor-pointer items-center justify-center rounded-full border-[3px] border-ink bg-aqua font-mono text-[12px] font-bold text-ink hover:bg-sun"
       >
         {initials}
@@ -56,21 +60,21 @@ export function UserMenu({
           <p className="m-0 font-display text-[17px] text-ink">{name}</p>
           <p className="m-0 mt-[2px] font-mono text-[11.5px] text-ink-3">{email}</p>
           <p className="m-0 mt-[8.8px] inline-block rounded-chip border-2 border-ink bg-cream-2 px-[8px] font-mono text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink">
-            {role === "admin" ? "Printer owner" : "Invited member"}
+            {roleLabel}
           </p>
           {/* How you sign in, and a way to change it. Without this the only
               passkey prompt in the whole app is the one at invite time. */}
           <div className="mt-[13.2px] border-t-2 border-dashed border-rule pt-[13.2px]">
             <p className="m-0 font-mono text-[11.5px] uppercase text-ink-3">
               {passkeyCount === 0
-                ? "Signing in with a password"
-                : `${passkeyCount} passkey${passkeyCount === 1 ? "" : "s"} on this account`}
+                ? t("withPassword")
+                : t("passkeys", { count: passkeyCount })}
             </p>
             <a
               href="/welcome"
               className="mt-[6px] inline-block font-bold text-[14px] text-cherry-dk underline underline-offset-2 hover:text-cherry"
             >
-              {passkeyCount === 0 ? "Add a passkey →" : "Add another →"}
+              {t(passkeyCount === 0 ? "addFirst" : "addAnother")}
             </a>
           </div>
 
@@ -84,10 +88,10 @@ export function UserMenu({
               href="/docs"
               className="font-bold text-[14px] text-cherry-dk underline underline-offset-2 hover:text-cherry"
             >
-              API &amp; docs →
+              {t("docs")}
             </a>
             <p className="m-0 mt-[2px] font-mono text-[11.5px] text-ink-3">
-              Every endpoint, and a console to call them from.
+              {t("docsHint")}
             </p>
           </div>
 
@@ -99,7 +103,7 @@ export function UserMenu({
             }}
             className="stamp mt-[13.2px] w-full cursor-pointer rounded-chip border-[3px] border-ink bg-cream-2 px-[17.6px] py-[9px] text-[14px] font-bold text-ink hover:bg-cherry-wash"
           >
-            Sign out
+            {t("signOut")}
           </button>
         </div>
       )}
