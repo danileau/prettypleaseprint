@@ -9,7 +9,7 @@
 | Framework | Next.js 15 (App Router), React 19, TypeScript |
 | Auth | [Better Auth](https://better-auth.com) 1.7 — username/password, passkeys, breach check, admin plugin |
 | Data | Prisma 6 → PostgreSQL 17 |
-| Styling | Tailwind v4, design tokens from the handoff as CSS variables |
+| Styling | Tailwind v4; every colour is a theme variable in `globals.css`, none written out where it is used (e-mails excepted: a mail client has no CSS variables) |
 | Local infra | Docker Compose: Postgres, Mailpit (mail). Model files go to `./data/uploads` — there is no storage service |
 
 Chosen to match the existing house style (`huere-siech` is Next 15 + Prisma,
@@ -77,7 +77,7 @@ as four gates that can be required by name in branch protection:
 
 | Gate | What it does |
 | --- | --- |
-| `guard` | typecheck, the secret scanner over every tracked file, the markdown link check, and the wizards' own tests (`scripts/tests/*.test.sh`, each in a sandbox with stubbed `docker`, `gh` and `curl`) |
+| `guard` | typecheck, the secret scanner over every tracked file, the markdown link check, and the shell scripts' own tests (`scripts/tests/*.test.sh`: the two wizards, the full local run and the slicer helper, each in a sandbox where `docker`, `gh`, `curl` or the slicer are stubs) |
 | `models` | the upload validator against hostile fixtures — no server needed |
 | `verify` | raises the real compose stack and runs all ten integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
 | `trivy` | filesystem scan for vulnerabilities, secrets and misconfiguration; HIGH/CRITICAL fail |
@@ -109,13 +109,16 @@ Checks that need no server, all of them in CI's `guard` job:
 npm run typecheck                  # tsc --noEmit
 npm run check:secrets -- --all     # credential shapes across every tracked file
 npm run check:links                # internal markdown links and heading anchors
-for t in scripts/tests/*.test.sh; do bash "$t"; done   # the three shell tools, sandboxed
+for t in scripts/tests/*.test.sh; do bash "$t"; done   # the shell scripts, sandboxed
 ```
 
-The last line is the tests for `deploy-wizard.sh`, `release-wizard.sh` and
-`full-test.sh`. Each runs its script in a temp directory against stub
-executables and a local bare repository, with a `PATH` that holds only those
-stubs and an allow-list, so it cannot reach your real `gh` or `docker`.
+The last line is the tests for `deploy-wizard.sh`, `release-wizard.sh`,
+`full-test.sh` and the slicer helper `prusa-open.sh`. Each runs its script in a
+temp directory against stub executables (and, for the wizards, a local bare
+repository), with a `PATH` that holds only those stubs and an allow-list, so it
+cannot reach your real `gh`, `docker` or slicer. The Windows installer,
+`install-slicer-handler.ps1`, has no automated test: CI has no PowerShell, so a
+change to it is read line by line and tried on a Windows machine.
 
 `check:links` exists because documentation links rot silently — no test, build
 or typecheck notices — and this repo has proved it twice: once when the

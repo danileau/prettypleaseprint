@@ -96,6 +96,16 @@ Notable changes. Every entry names a released version; deployments pin
   copied again to get a newer one. The pull-request template lists all ten
   suites, the wizard tests and the rollback check for a migration.
 
+- **The documentation caught up with the slicer helper's new reach.** The
+  README and the slicer guide no longer say the helper is for PrusaSlicer
+  only, and the guide's opening points at the Windows setup and the other
+  slicers. The architecture guide's file layout has the Windows installer and
+  the helper's own test, and its viewer section says where the colours now
+  come from. The development guide counts the helper among the sandboxed
+  script tests and says plainly that the PowerShell installer has none. The
+  [security audit](docs/security-audit.md#the-helper-off-linux) records how a
+  clicked link and a failure message stay data on Windows and macOS.
+
 ### Fixed
 
 - **The last places that still described an object store.** MinIO left in
@@ -111,6 +121,14 @@ Notable changes. Every entry names a released version; deployments pin
   up to date with it: signed model URLs are closed by removal rather than
   pending, and the reason recorded for `Cross-Origin-Embedder-Policy:
   credentialless` no longer names a storage origin that does not exist.
+
+- **Next.js 15.5.26 → 15.5.28** (#100), for the advisories published against
+  15.5.26: among them GHSA-2464-fhr4-w9xw (CRITICAL, remote code execution in
+  the image optimiser when SVG files are involved) and denial of service through
+  Server Actions, cache poisoning of static pages, and an information disclosure
+  in metadata image routes. Trivy fails on 15.5.26, and the daily security scan
+  had been red since 2026-10-23. The same group update moved Better Auth to
+  1.7.10 and React to 19.3.1, with newer nodemailer, resend and zod.
 
 - **`source-map-js` 1.2.1 → 1.2.2**, for CVE-2026-93749 (HIGH): a malformed
   indexed source map could hang whatever parsed it. It arrives through PostCSS

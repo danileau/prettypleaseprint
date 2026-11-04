@@ -97,14 +97,16 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   Swagger console at `/docs`. Same session, same scope, same audit trail as the
   UI; the rules live in one place, so the API cannot enforce less than the
   board does. See **[the API](docs/api.md)**.
-- **Open a model straight in PrusaSlicer** — one click on a ticket hands the
-  model to a slicer running on your own machine. A small helper the printer
+- **Open a model straight in the slicer** — one click on a ticket hands the
+  model to a slicer running on your own machine: PrusaSlicer by default, or
+  OrcaSlicer, ElegooSlicer, Bambu Studio or Cura. A small helper the printer
   owner installs once does the fetch, because PrusaSlicer's own deep link
-  refuses any host but Printables. The link carries its own short-lived
-  credential, so nothing secret sits in the helper's config.
+  refuses any host but Printables; it has an installer for Linux and one for
+  Windows. The link carries its own short-lived credential, so nothing secret
+  sits in the helper's config.
   See **[Open in PrusaSlicer](docs/prusaslicer.md)**.
 - **Or just take the file** — a plain download on every ticket, for a machine
-  without the helper, a phone, or a slicer that is not PrusaSlicer. Same
+  without the helper, a phone, or a slicer the helper does not know. Same
   permissions as the ticket, and recorded when the bytes go to somebody other
   than the person who uploaded them.
 
@@ -421,7 +423,7 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 | **[Materials and colours](docs/material-catalog.md)** | the owner-managed catalogue behind the request form |
 | **[Feature requests](docs/feature-requests.md)** | the `/frr` track — file a request, triage it exactly like the print backlog |
 | **[The API](docs/api.md)** | the JSON surface, bearer tokens, the OpenAPI document and the console at `/docs` |
-| **[Open in PrusaSlicer](docs/prusaslicer.md)** | the one-click "send to the slicer" bridge, the helper, and why the deep link cannot be used |
+| **[Open in PrusaSlicer](docs/prusaslicer.md)** | the one-click "send to the slicer" bridge, the helper on Linux and Windows, other slicers, and why the deep link cannot be used |
 | **[Development](docs/development.md)** | stack, local setup, the verification suites, the full local run, CI, cutting a release |
 | **[Security audit](docs/security-audit.md)** | the OWASP Top 10 assessment, findings, and residual risk accepted |
 | **[Security policy](SECURITY.md)** | how to report a vulnerability |

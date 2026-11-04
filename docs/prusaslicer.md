@@ -3,8 +3,11 @@
 [← back to the README](../README.md)
 
 Every ticket has an **Open in PrusaSlicer** control. Clicking it fetches the
-model and opens it in PrusaSlicer on the machine you clicked from. This page is
-how to set that up once, and why it works the way it does.
+model and opens it in PrusaSlicer on the machine you clicked from, or in
+another slicer if you configure one (see
+[OrcaSlicer, and other slicers](#orcaslicer-and-other-slicers)). This page is
+how to set that up once, on [Linux](#setup-linux) or [Windows](#windows), and
+why it works the way it does.
 
 ## Why it is not a one-line deep link
 
@@ -57,6 +60,7 @@ and creates `~/.config/ppp/slicer.conf` for you to fill in:
 ```sh
 PPP_BASE="https://print.example"      # your instance, no trailing slash
 # PPP_SLICER=…                         # only if auto-detect misses — see below
+# PPP_SLICER_PROFILE=orca              # only for a slicer other than PrusaSlicer
 # PPP_DOWNLOAD_DIR="$HOME/.cache/ppp/models"
 ```
 
@@ -152,8 +156,8 @@ sed -i '/^PPP_TOKEN=/d' ~/.config/ppp/slicer.conf
 ### Just want the file?
 
 Every ticket also has a plain **Download** button next to this one. Same bytes,
-same permissions, no helper and no setup — for a machine without PrusaSlicer,
-or a slicer that is not PrusaSlicer.
+same permissions, no helper and no setup — for a machine without the helper,
+or a slicer it does not know.
 
 ## When it does not work
 
