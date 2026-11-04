@@ -130,6 +130,16 @@ Notable changes. Every entry names a released version; deployments pin
   case was never reached and the log stopped at "fetching". The app always
   sends the header; a proxy that strips it is what would have hit this.
 
+- **A failed click on Windows or macOS said nothing on screen.** The slicer
+  helper put its errors in a notification only through `notify-send`, which is
+  Linux's; elsewhere an expired link or an unreachable instance left a line in
+  the log and nothing else, which looks exactly like a helper that was never
+  installed. It now raises a notification through `osascript` on macOS and a
+  message box through PowerShell under Git Bash, in front of the browser. The
+  message, which can quote the clicked link, reaches both as data and never as
+  code. A config with no `PPP_BASE` is reported the same way; it used to exit
+  on stderr alone, which a protocol handler does not have.
+
 ## v0.3.0
 
 2026-10-04.

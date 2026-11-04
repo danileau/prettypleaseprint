@@ -34,9 +34,10 @@
 # delete it from the config and click the button again.
 #
 # Failures are made loud rather than swallowed: a protocol handler has no
-# terminal, so every error goes to a log AND a desktop notification (when
-# notify-send exists), because a click that silently does nothing is the worst
-# possible outcome — indistinguishable from "not installed".
+# terminal, so every error goes to a log AND to the screen (a notification on
+# Linux and macOS, a message box on Windows), because a click that silently
+# does nothing is the worst possible outcome — indistinguishable from "not
+# installed".
 
 set -euo pipefail
 
@@ -46,16 +47,37 @@ LOG="$LOG_DIR/slicer.log"
 mkdir -p "$LOG_DIR"
 
 # --- loud failure -----------------------------------------------------------
-# Log with a timestamp, pop a desktop notification if we can, and leave a copy
+# Log with a timestamp, put the failure on screen if we can, and leave a copy
 # on stderr for the case where this was run from a terminal to debug it.
 note() {
   printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >>"$LOG"
 }
+# notify-send is Linux's. macOS has osascript and Git Bash on Windows has
+# PowerShell, so those say it instead — a notification on macOS, a message box
+# on Windows. 0x1010 is an error icon (0x10) on a system-modal box (0x1000),
+# which is what keeps it in front of the browser that was clicked in; an
+# ordinary one opens behind it, where nobody sees it. The message can
+# quote the clicked URL, which any web page can write, so it never becomes part
+# of the code they run: osascript gets it as an argument, PowerShell from the
+# environment.
+alert() {
+  local title="Open in ${SLICER_NAME:-PrusaSlicer} failed"
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send -u critical "$title" "$1" || true
+  elif command -v osascript >/dev/null 2>&1; then
+    osascript -e 'on run argv' \
+      -e 'display notification (item 2 of argv) with title (item 1 of argv)' \
+      -e 'end run' "$title" "$1" >/dev/null 2>&1 || true
+  elif command -v powershell.exe >/dev/null 2>&1; then
+    # shellcheck disable=SC2016 # PowerShell's $variables, not bash's
+    PPP_ALERT_TITLE="$title" PPP_ALERT_TEXT="$1" powershell.exe -NoProfile -NonInteractive -Command \
+      '[void](New-Object -ComObject WScript.Shell).Popup($env:PPP_ALERT_TEXT, 0, $env:PPP_ALERT_TITLE, 0x1010)' \
+      >/dev/null 2>&1 </dev/null || true
+  fi
+}
 fail() {
   note "ERROR: $1"
-  if command -v notify-send >/dev/null 2>&1; then
-    notify-send -u critical "Open in ${SLICER_NAME:-PrusaSlicer} failed" "$1" || true
-  fi
+  alert "$1"
   printf 'prusa-open: %s\n' "$1" >&2
   exit 1
 }
@@ -79,7 +101,9 @@ fi
 # shellcheck disable=SC1090
 . "$CONF"
 
-: "${PPP_BASE:?PPP_BASE is not set in $CONF}"
+# Through `fail`, not `${PPP_BASE:?}`: that one exits on stderr alone, which a
+# protocol handler does not have — no log line, nothing on screen.
+[ -n "${PPP_BASE:-}" ] || fail "PPP_BASE is not set in $CONF — set it to the address of your instance"
 DOWNLOAD_DIR="${PPP_DOWNLOAD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/ppp/models}"
 
 # --- which slicer -----------------------------------------------------------

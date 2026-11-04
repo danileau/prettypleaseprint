@@ -165,9 +165,10 @@ helper does, and every refusal, is logged:
 tail -f "${XDG_STATE_HOME:-$HOME/.local/state}/ppp/slicer.log"
 ```
 
-Failures also raise a desktop notification where `notify-send` exists, because
-a protocol handler has no terminal and a click that silently fails is
-indistinguishable from one that was never wired up. Common lines:
+Failures also reach the screen, because a protocol handler has no terminal and
+a click that silently fails is indistinguishable from one that was never wired
+up: a notification through `notify-send` on Linux or `osascript` on macOS, and
+a message box through PowerShell on Windows. Common lines:
 
 | It says | Means |
 | --- | --- |
