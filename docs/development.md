@@ -186,6 +186,42 @@ outside the checkout, and the health wait is 120 seconds rather than 90.
 `--only` and `--no-build` print `PARTIAL RUN`; neither is what a merge or a
 release is gated on.
 
+## Crediting contributors
+
+Contributors are credited by GitHub login in two places, and neither list is
+written by hand:
+
+- **The `/about` page** lists everyone with a commit on `main`, ever, from a
+  committed file, `src/lib/contributors.ts`. It is only as current as the last
+  run of `npm run contributors`.
+- **The release notes** end with *Contributors to this release*: the authors
+  of the pull requests that release includes. The release wizard works it out
+  when it publishes; see [Cutting a release](#cutting-a-release).
+
+Regenerate the `/about` list after merging somebody's first contribution, and
+commit the result like any other change:
+
+```bash
+git fetch origin
+npm run contributors               # reads origin/main; `-- --ref main` for another ref
+```
+
+It needs `gh`, signed in: it asks GitHub for each person's profile, and for
+the login behind any author address that is not a GitHub `noreply` one. A
+`Co-authored-by:` trailer counts when its address is a `noreply` one or
+belongs to someone who has authored a commit on the ref. Bots are left out,
+and so is anyone the script cannot match to a GitHub account; it says so on
+stderr. The repository owner, from `package.json`, is listed as the
+maintainer. A commit or account GitHub does not know (an unpushed commit, a
+deleted user) is skipped with a warning; any other `gh` failure stops the run.
+
+The file holds logins, display names and the month of each person's first
+commit. Addresses are used only for the lookup and never written to it, and
+nothing in it grows with every commit, so a re-run changes it only when
+somebody new has landed a commit or a name has changed on GitHub. It is a file
+rather than a read of git at runtime because the Docker build context excludes
+`.git`.
+
 ## Cutting a release
 
 A release is a name for a commit that is already on `main`. Every merge
@@ -209,6 +245,11 @@ state file: where a release has got to is read from git and GitHub each time,
 so `--continue` works after a reboot or from another clone. **It never merges
 the pull request.** It waits, the owner merges in the browser, and it carries
 on; Ctrl-C while it waits is safe.
+
+The wizard does not refresh the `/about` list. If anybody has contributed for
+the first time since the last release, run `npm run contributors` and merge
+the result before starting, so that the release's `/about` lists them; see
+[Crediting contributors](#crediting-contributors).
 
 What it does, which is also how to do it by hand:
 
