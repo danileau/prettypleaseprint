@@ -250,19 +250,20 @@ Four rules the wizard holds to, and that a release by hand should too:
   *Upgrading from* section, and a link to the full changelog — and that
   section is the part someone needs before changing `PPP_TAG`.
 
-The wizard also ends the notes with *Contributors to this release*: the
-`@login` of everyone whose pull request was merged into `main` between the
-previous release's tag and the release commit, sorted and each once, leaving
-out the repository's owner, whoever is cutting the release, and bots. A pull
-request counts when its merge commit is in that range, not when its merge date
-is, so nothing merged just before the last tag slips in. It appears in the
-preview, where it can be edited like the rest, and in `--dry-run`. If `gh`
-cannot answer, or the last tag is not behind the release commit (a hotfix
-tagged on a side branch), the wizard warns and publishes without it. By hand,
-the same list is
+The wizard also ends the notes with *Contributors to this release* — a line
+reading `With thanks to: @a, @b` — naming the author of every pull request
+merged into `main` between the previous release's tag and the release commit,
+in alphabetical order and each once, leaving out the repository's owner, whoever is cutting the release,
+and bots. A pull request counts when its merge commit is in that range, not
+when its merge date is, so nothing merged just before the last tag slips in.
+The list is in the preview, where it can be edited like the rest, and in
+`--dry-run`. If `gh` cannot answer, or the previous tag is not an ancestor of
+the release commit (a hotfix tagged on a side branch), the wizard warns and
+publishes without it. By hand, the same list is
 `gh pr list --state merged --base main --search "merged:>=<the day before the last tag's commit date, UTC>" --limit 1000 --json number,author,mergeCommit`,
-kept to the pull requests whose merge commit `git rev-list vLAST..<merge commit>`
-prints. Without `--limit`, `gh` stops at 30 and says nothing.
+kept to the pull requests whose merge commit `git rev-list vLAST..<release commit>`
+prints. Without `--limit`, `gh` stops at 30 and says nothing; at 1000, the
+most its search returns, the wizard warns that the list may be short.
 
 A version is prepared once. If anything already carries it — a tag, a
 `release-X.Y.Z` branch, a pull request in any state, or `main` itself — the

@@ -32,11 +32,11 @@
 #      and the deploy wizard refuses an unsigned image.
 #   8. PUBLISH     the GitHub release, with notes cut from the changelog: the
 #      summary, the Upgrading section, and a link to the rest. The Upgrading
-#      heading matters — the deploy wizard shows it to whoever upgrades. Then
-#      "Contributors to this release": by @login, the authors of the pull
-#      requests merged since the last release, less the owner, whoever runs
-#      this, and bots, so GitHub shows their faces on it. Found out through
-#      gh; if that fails it is a warning, and the notes go out without it.
+#      heading matters — the deploy wizard shows it to whoever upgrades. The
+#      notes end with "Contributors to this release": the @login of everyone
+#      who authored a pull request merged since the previous release, less the
+#      owner, whoever runs this, and bots. It comes from gh; when it cannot be
+#      worked out that is a warning, and the notes go out without it.
 #
 # There is no state file. Where a release has got to is read from git and
 # GitHub every time, so `--continue` works from another clone, after a reboot,
