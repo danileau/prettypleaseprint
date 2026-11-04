@@ -9,25 +9,31 @@
 # got wrong at least once. This script is that run, the same every time.
 #
 # What it does, in order:
-#   1. Refuses to start if it could hurt something that is already here: a ppp
-#      stack of any kind (the container names are fixed, so there can only be
-#      one), a port the stack needs, or env files a killed run left saved.
-#   2. The static gates — typecheck, links, secrets, trivy, the upload
-#      validator — BEFORE touching any env file, so the secret scanner sees
-#      your real .env* and not a generated one.
-#   3. Saves .env, .env.backup and .env.docker, writes a throwaway .env.docker
-#      and raises the stack under its own project name on a data directory
-#      outside the repository.
+#   1. Refuses to start if it could hurt something that is already here: a
+#      port the stack needs that something else holds, a stack an earlier run
+#      of this test left behind, or env files or a set-aside stack a killed run
+#      did not put back. Another ppp stack (yours, a try-out) is not a reason
+#      to refuse: the container names are fixed, so only one stack can exist,
+#      and that one is stopped and set aside for the run (step 3).
+#   2. The static gates — typecheck, links, translations, secrets, trivy, the
+#      upload validator — BEFORE touching any env file, so the secret scanner
+#      sees your real .env* and not a generated one.
+#   3. Saves .env, .env.backup and .env.docker, writes a throwaway .env.docker,
+#      stops any other ppp stack and renames its containers out of the way, and
+#      raises the stack under its own project name on a data directory outside
+#      the repository.
 #   4. The nine integration suites in CI's order, all of them even after one
 #      fails, then the two image pins CI keeps.
-#   5. Takes the stack down, removes its data and puts the three env files
-#      back exactly as they were — on success, on failure and on Ctrl-C.
+#   5. Takes the stack down, removes its data, puts the three env files back
+#      exactly as they were and gives the set-aside stack its names back,
+#      starting again what was running — on success, on failure and on Ctrl-C.
 #
 # Two things it deliberately does not do:
 #   - It never removes a stack it did not raise. The project is `ppp-fulltest`,
-#     not `ppp`, so `down` cannot reach yours; and before the first suite it
-#     checks that the app container answering on :3000 belongs to this run.
-#     The suites wipe users and tickets.
+#     not `ppp`, so `down` cannot reach yours; one it sets aside is only
+#     stopped and renamed, its volumes and data untouched; and before the first
+#     suite it checks that the app container answering on :3000 belongs to this
+#     run. The suites wipe users and tickets.
 #   - It does not itself interrupt a suite that is running. A signal sent to
 #     this script alone (`kill <pid>`) is acted on once the current step has
 #     returned. Ctrl-C in a terminal is different: it goes to the whole
@@ -49,7 +55,8 @@
 #   scripts/full-test.sh --no-build      # raise the stack without rebuilding
 #   scripts/full-test.sh --only "verify:auth verify:api"   # a subset of suites
 #   scripts/full-test.sh --preflight     # only the refusals in step 1, then exit
-#   scripts/full-test.sh --restore       # undo what a killed run left behind
+#   scripts/full-test.sh --restore       # undo what a killed run left behind,
+#                                        # including a stack it set aside
 #
 # --no-build and --only are for iterating; both print PARTIAL RUN, and neither
 # is a release gate.
@@ -79,7 +86,7 @@ while [ $# -gt 0 ]; do
     --only) [ $# -ge 2 ] || die "--only needs a quoted list of suites"; ONLY="$2"; ONLY_GIVEN=1; shift 2 ;;
     --restore) MODE="restore"; shift ;;
     --preflight) MODE="preflight"; shift ;;
-    -h|--help) sed -n '2,61p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,68p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown arg: $1" ;;
   esac
 done
@@ -123,6 +130,13 @@ ENV_FILES=".env .env.backup .env.docker"
 # (.dockerignore excludes .git) and not read by check:secrets, which looks at
 # .env* in the root.
 SAVED="$(git rev-parse --absolute-git-dir)/ppp-full-test-saved"
+
+# Another stack's containers, while they are set aside: one line per
+# container, its name and whether it was running, written before it is
+# touched. Next to SAVED for the same reasons.
+PARKED="$(git rev-parse --absolute-git-dir)/ppp-full-test-parked"
+PARK_SUFFIX="-parked-by-full-test"
+PARK_NAMES=""
 
 HEALTH_TIMEOUT="${PPP_FULLTEST_HEALTH_TIMEOUT:-120}"
 [[ "$HEALTH_TIMEOUT" =~ ^[0-9]+$ ]] \
@@ -180,6 +194,59 @@ restore_env() {
   rm -rf "$SAVED"
 }
 
+# ----- another stack: set aside and put back ---------------------------------
+# The container names are fixed, so a stack that is already here holds the
+# names, and the ports, this run needs. It is stopped and renamed out of the
+# way, never removed: its volumes, data and settings stay exactly as they are.
+# Afterwards each container gets its name back, and what was running is
+# started again, in the reverse order, so the database is up before the app.
+
+# "true"/"false", or a failure if there is no container of that name.
+container_state() { docker container inspect -f '{{.State.Running}}' "$1" 2>/dev/null; }
+
+park() {
+  local n state
+  for n in "$@"; do
+    state="$(container_state "$n")" || continue
+    printf '%s\t%s\n' "$n" "$state" >>"$PARKED" || return 1
+    if [ "$state" = "true" ]; then
+      docker stop "$n" >/dev/null || return 1
+    fi
+    docker rename "$n" "$n$PARK_SUFFIX" || return 1
+    echo "${YLW}set aside${R} $n ${DIM}(as $n$PARK_SUFFIX, put back after the run)${R}"
+  done
+}
+
+# Returns 1, and keeps the list, if anything could not be put back.
+unpark() {
+  local i n state bad=0 back="" lines=()
+  [ -f "$PARKED" ] || return 0
+  mapfile -t lines <"$PARKED"
+  for (( i = ${#lines[@]} - 1; i >= 0; i-- )); do
+    IFS=$'\t' read -r n state <<<"${lines[$i]}"
+    [ -n "$n" ] || continue
+    if container_state "$n$PARK_SUFFIX" >/dev/null; then
+      if container_state "$n" >/dev/null; then
+        echo "${RED}✗ cannot give $n its name back: a container called $n is still there${R}" >&2
+        bad=1; continue
+      fi
+      docker rename "$n$PARK_SUFFIX" "$n" || { bad=1; continue; }
+    fi
+    if [ "$state" = "true" ]; then
+      docker start "$n" >/dev/null || { bad=1; continue; }
+    fi
+    back="$n $back"
+  done
+  if [ "$bad" -ne 0 ]; then
+    echo "${RED}✗ the stack that was set aside is not all back — the list is in:${R}" >&2
+    echo "${RED}    $PARKED${R}" >&2
+    echo "${RED}  Once the test stack is gone: scripts/full-test.sh --restore${R}" >&2
+    return 1
+  fi
+  rm -f "$PARKED"
+  [ -z "$back" ] || echo "put back: ${back% }"
+}
+
 # ----- --restore ------------------------------------------------------------
 # For the run that was killed with -9 or lost its terminal: the trap never
 # fired, so the stack may still be up and the env files are still the
@@ -199,10 +266,18 @@ if [ "$MODE" = "restore" ]; then
       # shellcheck disable=SC2086
       docker network rm $nets >/dev/null || die "could not remove the $PROJECT network"
     fi
+    if [ -f "$PARKED" ]; then
+      unpark || exit 1
+      restored_stack=1
+    fi
   else
     echo "${YLW}⚠ docker not found — only the env files are restored.${R}"
+    [ ! -f "$PARKED" ] || echo "${YLW}⚠ a stack set aside by a killed run is listed in $PARKED${R}"
   fi
-  if [ ! -d "$SAVED" ]; then echo "nothing to restore"; exit 0; fi
+  if [ ! -d "$SAVED" ]; then
+    [ -n "${restored_stack:-}" ] || echo "nothing to restore"
+    exit 0
+  fi
   restore_env || exit 1
   echo "restored .env, .env.backup, .env.docker"
   exit 0
@@ -214,7 +289,7 @@ fi
 port_in_use() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 
 preflight() {
-  local t f p listing mine=0 lines=""
+  local t f p listing mine=0 lines="" park_ports=""
   for t in docker npm curl openssl; do
     command -v "$t" >/dev/null || die "$t required"
   done
@@ -228,30 +303,48 @@ preflight() {
     echo "  Run: scripts/full-test.sh --restore" >&2
     exit 1
   fi
+  if [ -e "$PARKED" ]; then
+    echo "${RED}✗ a previous run did not put back the stack it set aside; it is listed in $PARKED.${R}" >&2
+    echo "  Run: scripts/full-test.sh --restore" >&2
+    exit 1
+  fi
 
   # Running or stopped: a stopped ppp-db still owns the name, and `up` would
   # fail on it halfway through. Filtered in awk, not grep, because "no stack"
   # is the normal case and must not be an error under pipefail.
-  listing="$(docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Label "com.docker.compose.project"}}')" \
+  listing="$(docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Label "com.docker.compose.project"}}\t{{.Ports}}')" \
     || die "docker ps failed — is the docker daemon running, and may you talk to it?"
   lines="$(printf '%s\n' "$listing" | awk -F'\t' -v names="$STACK_NAMES" '
     BEGIN { n = split(names, a, " "); for (i = 1; i <= n; i++) want[a[i]] = 1 }
     ($1 in want) { printf "    %s  (%s, project %s)\n", $1, $2, ($3 == "" ? "none" : $3) }')"
   if [ -n "$lines" ]; then
+    # Any container of this test's own project is a run that was killed: that
+    # is --restore's to clean up, together with whatever it left saved.
     mine="$(printf '%s\n' "$listing" | awk -F'\t' -v names="$STACK_NAMES" -v p="$PROJECT" '
-      BEGIN { n = split(names, a, " "); for (i = 1; i <= n; i++) want[a[i]] = 1; other = 0; seen = 0 }
-      ($1 in want) { seen = 1; if ($3 != p) other = 1 }
-      END { print (seen && !other) ? 1 : 0 }')"
-    echo "${RED}✗ a ppp stack already exists on this machine:${R}" >&2
-    printf '%s\n' "$lines" >&2
+      BEGIN { n = split(names, a, " "); for (i = 1; i <= n; i++) want[a[i]] = 1; seen = 0 }
+      ($1 in want) && $3 == p { seen = 1 }
+      END { print seen }')"
     if [ "$mine" = "1" ]; then
+      echo "${RED}✗ a ppp stack already exists on this machine:${R}" >&2
+      printf '%s\n' "$lines" >&2
       echo "  It is what an earlier run of this test left behind. Remove it with:" >&2
       echo "      scripts/full-test.sh --restore" >&2
-    else
-      echo "  Container names are fixed, so only one stack can exist, and this test" >&2
-      echo "  would have to remove yours. It will not. Take it down yourself, then run again." >&2
+      exit 1
     fi
-    exit 1
+    echo "${YLW}⚠ a ppp stack is in the way:${R}"
+    printf '%s\n' "$lines"
+    echo "  The container names are fixed, so only one stack can exist. For the length"
+    echo "  of the run it is stopped and set aside, never removed; afterwards it gets"
+    echo "  its names back and what was running is started again."
+    PARK_NAMES="$(printf '%s\n' "$listing" | awk -F'\t' -v names="$STACK_NAMES" '
+      BEGIN { n = split(names, a, " "); for (i = 1; i <= n; i++) want[a[i]] = 1 }
+      ($1 in want) { print $1 }' | tr '\n' ' ')"
+    # The host ports those containers publish are free once they are stopped,
+    # so they are not a reason to refuse. Anything else on one still is.
+    park_ports=" $(printf '%s\n' "$listing" | awk -F'\t' -v names="$STACK_NAMES" '
+      BEGIN { n = split(names, a, " "); for (i = 1; i <= n; i++) want[a[i]] = 1 }
+      ($1 in want) { k = split($4, e, ", "); for (i = 1; i <= k; i++) {
+        s = e[i]; if (sub(/->.*/, "", s)) { sub(/.*:/, "", s); print s } } }' | tr '\n' ' ') "
   fi
 
   # A data directory left in a reused PPP_FULLTEST_OUT is last run's database,
@@ -266,6 +359,7 @@ preflight() {
   [ -z "${PPP_FULLTEST_PORTS:-}" ] \
     || echo "${YLW}⚠ port check replaced by PPP_FULLTEST_PORTS=$PPP_FULLTEST_PORTS${R}"
   for p in $PORTS; do
+    case "${park_ports:-}" in *" $p "*) continue ;; esac
     if port_in_use "$p"; then
       die "port $p is in use — the test stack publishes it. Stop whatever holds it, then run again."
     fi
@@ -274,7 +368,11 @@ preflight() {
 
 preflight
 if [ "$MODE" = "preflight" ]; then
-  echo "${GRN}✓ nothing in the way of a full test${R}"
+  if [ -n "$PARK_NAMES" ]; then
+    echo "${GRN}✓ a full test can run; the stack above is set aside for it and put back after${R}"
+  else
+    echo "${GRN}✓ nothing in the way of a full test${R}"
+  fi
   exit 0
 fi
 
@@ -343,6 +441,11 @@ cleanup() {
       fi
     fi
   fi
+  # After `down`, which is what frees the names. If `down` failed, the test's
+  # own containers still hold them, and unpark says so and keeps its list.
+  if [ -f "$PARKED" ]; then
+    unpark || { ok=0; FAILED=1; }
+  fi
   case "$ENV_SAVED" in
     saving)
       # The save itself did not finish, so no env file was touched and no
@@ -368,6 +471,17 @@ echo "${B}ppp full test${R}  ${DIM}· $ROOT · logs in $OUT${R}"
 
 step typecheck npm run -s typecheck || true
 step check-links npm run -s check:links || true
+step check-messages npm run -s check:messages || true
+# Untranslated keys pass the gate by design (docs/i18n.md: an English-only
+# change must not wait on a translator), so a PASS alone would bury them in a
+# log. The checker's last line counts them; say so in the summary. awk, not
+# grep, so "no warnings" is not an error under pipefail.
+messages_warned="$(awk '/^check:messages — [0-9]+ error\(s\), [1-9][0-9]* warning\(s\)$/ { print $5 }' \
+  "$OUT/check-messages.log" 2>/dev/null || true)"
+if [ -n "$messages_warned" ]; then
+  echo "${YLW}WARN${R} check-messages: $messages_warned untranslated or stale key(s) — see $OUT/check-messages.log" \
+    | tee -a "$OUT/summary.txt"
+fi
 step check-secrets npm run -s check:secrets -- --all || true
 if command -v trivy >/dev/null; then
   step trivy-fs trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL \
@@ -406,6 +520,18 @@ rm -f $ENV_FILES
   echo "PPP_TAG=$LOCAL_TAG"
 } >.env.docker
 export DATA_ROOT="$OUT/data"
+
+# Only now, after the static gates: until the stack is about to go up, the
+# one in its way keeps running. Inside the trap, so a run that fails or is
+# interrupted halfway through still puts back what it set aside.
+if [ -n "$PARK_NAMES" ]; then
+  # shellcheck disable=SC2086
+  if ! park $PARK_NAMES; then
+    echo "${RED}✗ could not set the stack in the way aside — nothing was raised${R}" >&2
+    FAILED=1
+    exit 1
+  fi
+fi
 
 STACK_RAISED=1
 UP=(up -d)

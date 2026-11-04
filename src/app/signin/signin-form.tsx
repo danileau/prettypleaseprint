@@ -1,19 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { authClient } from "@/lib/auth-client";
 import { Button, Input, Label, Notice } from "@/components/ui";
 
-/**
- * One message for every way a sign-in can fail.
- *
- * Distinguishing "no such username" from "wrong password" turns this form
- * into a membership oracle for the office, and there is nothing the person at
- * the keyboard can do with the difference anyway.
- */
-const REFUSED = "That username and password do not match. Try again.";
-
 export function SignInForm({ next }: { next: string }) {
+  const t = useTranslations("signin.form");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -37,10 +30,9 @@ export function SignInForm({ next }: { next: string }) {
     setError(null);
     const res = await authClient.signIn.passkey();
     if (res?.error) {
-      setError(
-        res.error.message ??
-          "That passkey was not accepted. Use your password instead.",
-      );
+      // Better Auth's own message when it has one, which is English: it comes
+      // from the library, not from a catalogue this app owns.
+      setError(res.error.message ?? t("passkeyRefused"));
       return;
     }
     window.location.assign(next);
@@ -60,11 +52,12 @@ export function SignInForm({ next }: { next: string }) {
       setBusy(false);
       // 429 is worth saying out loud: "wrong password" would send someone
       // hunting for a typo that is not there.
-      setError(
-        error.status === 429
-          ? "Too many attempts. Wait a minute and try again."
-          : REFUSED,
-      );
+      //
+      // Otherwise one message for every way a sign-in can fail.
+      // Distinguishing "no such username" from "wrong password" turns this
+      // form into a membership oracle for the office, and there is nothing the
+      // person at the keyboard can do with the difference anyway.
+      setError(error.status === 429 ? t("tooManyAttempts") : t("refused"));
       return;
     }
     window.location.assign(next);
@@ -75,11 +68,11 @@ export function SignInForm({ next }: { next: string }) {
       {passkeySupported && (
         <>
           <Button type="button" onClick={signInWithPasskey} className="w-full">
-            Sign in with a passkey
+            {t("withPasskey")}
           </Button>
           <div className="flex items-center gap-[13.2px]">
             <span className="h-[3px] flex-1 rounded-full bg-ink" />
-            <span className="font-mono text-[11.5px] font-bold uppercase tracking-[0.14em] text-ink-3">or</span>
+            <span className="font-mono text-[11.5px] font-bold uppercase tracking-[0.14em] text-ink-3">{t("or")}</span>
             <span className="h-[3px] flex-1 rounded-full bg-ink" />
           </div>
         </>
@@ -87,7 +80,7 @@ export function SignInForm({ next }: { next: string }) {
 
       <form onSubmit={signInWithPassword} className="flex flex-col gap-[13.2px]">
         <div>
-          <Label htmlFor="username">Username</Label>
+          <Label htmlFor="username">{t("username")}</Label>
           <Input
             id="username"
             name="username"
@@ -103,7 +96,7 @@ export function SignInForm({ next }: { next: string }) {
           />
         </div>
         <div>
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="password">{t("password")}</Label>
           <Input
             id="password"
             name="password"
@@ -122,16 +115,14 @@ export function SignInForm({ next }: { next: string }) {
           disabled={busy}
           className="w-full"
         >
-          {busy ? "Checking…" : "Sign in"}
+          {busy ? t("checking") : t("submit")}
         </Button>
       </form>
 
       {error && <Notice tone="warn">{error}</Notice>}
 
       <p className="m-0 border-t-2 border-dashed border-rule pt-[13.2px] text-[13.5px] leading-[1.5] text-ink-2">
-        Pretty Please Print is invite-only — there is no sign-up. If you have not
-        been invited yet, or you have forgotten your password, ask whoever owns
-        the printer.
+        {t("inviteOnly")}
       </p>
     </div>
   );

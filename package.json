@@ -36,6 +36,7 @@
     "verify:passkey": "tsx scripts/verify-passkey.ts",
     "check:secrets": "tsx scripts/check-secrets.ts",
     "check:links": "tsx scripts/check-links.ts",
+    "check:messages": "tsx scripts/check-messages.ts",
     "hooks:install": "git config core.hooksPath .githooks && echo \"pre-commit hook active\"",
     "shots": "tsx scripts/screenshot.ts",
     "env:container": "tsx scripts/use-container-env.ts",
@@ -45,7 +46,8 @@
     "verify:catalog": "tsx scripts/verify-catalog.ts",
     "verify:api": "tsx scripts/verify-api.ts",
     "vendor:swagger": "tsx scripts/vendor-swagger.ts",
-    "migrate:storage": "tsx scripts/export-storage.ts"
+    "migrate:storage": "tsx scripts/export-storage.ts",
+    "contributors": "tsx scripts/update-contributors.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -56,6 +58,7 @@
     "better-auth": "1.7.10",
     "fflate": "^0.8.3",
     "next": "15.5.28",
+    "next-intl": "4.14.9",
     "nodemailer": "10.1.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",

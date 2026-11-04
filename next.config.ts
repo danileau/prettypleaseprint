@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
 
 import { MAX_REQUEST_BYTES } from "./src/lib/upload-limits";
 
@@ -74,4 +75,12 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+/*
+ * next-intl finds its per-request configuration — the language and its
+ * messages — in the module named here, through an alias this plugin adds.
+ * That is all it does to the build: there is no locale in the URL, so no
+ * rewrites, no redirects and no next-intl middleware. See src/i18n/request.ts.
+ */
+const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
+
+export default withNextIntl(nextConfig);

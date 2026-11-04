@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { getLocale } from "next-intl/server";
 import "./globals.css";
 
 import { SourceLink } from "@/components/source-link";
@@ -63,12 +64,16 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // The language src/i18n/request.ts chose for this request — English, until
+  // there is another. `lang` follows it so a screen reader picks the right
+  // voice and the browser the right hyphenation.
+  const locale = await getLocale();
   return (
     <html
-      lang="en"
+      lang={locale}
       className={`${script.variable} ${slab.variable} ${archivo.variable} ${courier.variable}`}
     >
       <body className="plate flex min-h-screen flex-col bg-cream text-ink antialiased">

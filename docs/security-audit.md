@@ -492,6 +492,30 @@ that a tampered or malformed one is refused. The binding probe aims the token at
 a story the printer owner *can* read by session, so it fails if the binding ever
 stops being enforced independently of scope.
 
+#### The helper off Linux
+
+Since v0.4.0 the helper also runs on Windows, through
+`install-slicer-handler.ps1`, and reports failures on screen on macOS and
+Windows. Both add a place where text from a web page meets an interpreter, and
+both are handled the same way: as data, never as code.
+
+- **The clicked link.** Any page can write a `ppp://` link, so the helper's
+  first argument is hostile until proven otherwise. The Windows handler is
+  registered under `HKCU` (per user, no admin rights) as
+  `mintty -w hide -e /usr/bin/bash -l <helper> "%1"`. The link is the last
+  argument and is quoted; even one that escaped its quotes would only become
+  more arguments to the helper, never options to `mintty` or `bash`. The helper
+  then accepts a numeric id and a token from a fixed character set and nothing
+  else, as it does on Linux.
+- **The failure message.** It can quote that link. `osascript` receives it as
+  an argument to a fixed script (`on run argv`), and PowerShell reads it from
+  an environment variable inside a fixed command string, so the message is
+  never part of the code either one parses.
+
+Neither path is covered by CI, which has no macOS or PowerShell: the helper's
+own test (`scripts/tests/prusa-open.test.sh`) stubs both, and the installer was
+reviewed line by line and tried by hand on Windows 11.
+
 ### Residual risk accepted
 
 - **A trusted-proxy misconfiguration is silent.** `TRUST_PROXY_HEADERS` now
