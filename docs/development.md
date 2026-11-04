@@ -186,6 +186,27 @@ outside the checkout, and the health wait is 120 seconds rather than 90.
 `--only` and `--no-build` print `PARTIAL RUN`; neither is what a merge or a
 release is gated on.
 
+## Crediting contributors
+
+The `/about` page lists everyone with code on `main`, from a committed file,
+`src/lib/contributors.ts`. Regenerate it after merging somebody's first
+contribution:
+
+```bash
+git fetch origin
+npm run contributors               # reads origin/main; `-- --ref main` for another ref
+```
+
+It needs `gh`, signed in: an author address that is not a GitHub `noreply`
+one is resolved to a login by asking GitHub about one of their commits.
+`Co-authored-by:` trailers count too. Bots are left out, and so is anyone the
+script cannot match to a GitHub account — it says so on stderr. The repository
+owner from `package.json` is listed as the maintainer. Addresses are used only
+for the lookup and never written to the file, and the output is sorted with
+nothing in it that grows per commit, so a re-run with no newcomers is a
+no-diff. It is a file rather than a read of git at runtime because the Docker
+build context excludes `.git`.
+
 ## Cutting a release
 
 A release is a name for a commit that is already on `main`. Every merge

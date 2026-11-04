@@ -724,6 +724,24 @@ async function main() {
   check("and signed-in ones",
         (await (await ruben.go(`${APP}/board`)).text()).includes("Source · AGPL-3.0"));
 
+  // The credits page beside it: linked from that same footer, but behind
+  // sign-in like any other page — the footer reaching signed-out visitors must
+  // not turn into a way past the gate.
+  check("the footer links to the About page",
+        anonPage.includes('href="/about"'));
+  const anonAbout = await new Browser().raw(`${APP}/about`);
+  check("and /about sends a signed-out visitor to sign-in",
+        anonAbout.status >= 300 && anonAbout.status < 400 &&
+        (anonAbout.headers.get("location") ?? "").includes("/signin"),
+        `status ${anonAbout.status} location ${anonAbout.headers.get("location")}`);
+  const about = await (await ruben.go(`${APP}/about`)).text();
+  check("and renders for a signed-in one, crediting people by GitHub profile",
+        about.includes("Who made it") && about.includes('href="https://github.com/'),
+        about.slice(0, 200));
+  check("with no e-mail address on it",
+        !/[\w.+-]+@[\w-]+\.[a-z]{2,}/i.test(/<main[\s\S]*?<\/main>/.exec(about)?.[0] ?? "<main>"),
+        "the contributors list must hold logins and names only");
+
   const iconRes = await new Browser().raw(`${APP}/icon.svg`);
   check("the favicon is served, not redirected to sign-in",
         iconRes.status === 200 &&

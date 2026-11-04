@@ -64,6 +64,15 @@ settings-page and first-run work now open as #103 to #106. And to
   profile, both settings at once, or a non-Prusa profile with no location set
   are each refused by name; nothing is guessed. A config that sets neither
   behaves exactly as before.
+- **An About page says what the app is and who made it.** `/about`, linked
+  from the footer next to the source offer, gives the licence, the address of
+  the source this instance runs, and every GitHub account with code on `main`
+  — the maintainer first, then contributors, each linked to their profile.
+  It is behind sign-in like every other page. The list is a committed file,
+  `src/lib/contributors.ts`, regenerated from main's history by
+  `npm run contributors`, because the image is built without `.git` and has no
+  history to read. It holds logins and display names only, never an address,
+  and re-running it changes nothing until somebody new lands a commit.
 
 ### Changed
 
