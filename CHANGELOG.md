@@ -65,6 +65,16 @@ settings-page and first-run work now open as #103 to #106. And to
   are each refused by name; nothing is guessed. A config that sets neither
   behaves exactly as before.
 
+- **Release notes name the people who contributed to the release.** The release
+  wizard ends the notes it publishes with *Contributors to this release*: by
+  `@login`, the authors of every pull request whose merge commit is between
+  the previous release's tag and the release commit, sorted, each once, leaving
+  out the repository's owner and bots. GitHub shows the avatar of everyone
+  mentioned in a release. The list is in the preview the notes are edited in,
+  and in `--dry-run`. It comes from `gh`; when that fails the wizard says so
+  and publishes without it, because a missing thank-you is no reason to hold
+  a release back.
+
 ### Changed
 
 - **Every colour the app draws with is a theme variable** (#111, @Hogun974;

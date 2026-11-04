@@ -53,6 +53,9 @@ case "${1:-} ${2:-}" in
   "pr list")
     case " $* " in
       *" --head "*) if [ -f "$S/pr-list.json" ]; then cat "$S/pr-list.json"; else echo "[]"; fi ;;
+      *" --state merged "*)
+        [ ! -e "$S/pr-merged-fail" ] || { echo "HTTP 502: Bad Gateway" >&2; exit 1; }
+        if [ -f "$S/pr-merged.json" ]; then cat "$S/pr-merged.json"; else echo "[]"; fi ;;
       *) if [ -f "$S/pr-open.json" ]; then cat "$S/pr-open.json"; else echo "[]"; fi ;;
     esac
     exit 0 ;;
@@ -781,6 +784,92 @@ new_sandbox
     npm_config_update_notifier=false PPP_POLL_INTERVAL=0 PPP_FULL_TEST_CMD=true EDITOR=true \
     bash scripts/release-wizard.sh 0.2.0 ) >"$T/out" 2>&1; RC=$?; OUT="$(cat "$T/out")"
 rc 0; eq "the title" "$(cat "$T/stub/state/title-captured" 2>/dev/null)" "v0.2.0"
+
+# ============================================================================
+# C. the contributors list in the notes
+# ============================================================================
+# empty_commits <n> — n commits on main, one per merged pull request, pushed.
+# Their SHAs land in C[1..n]; the pull requests below point at them.
+C=()
+empty_commits() {
+  local i
+  C=("")
+  for ((i = 1; i <= $1; i++)); do
+    git -C "$T/work" commit -q --allow-empty -m "Merged pull request $i (#$((10 + i)))"
+    C+=("$(git -C "$T/work" rev-parse HEAD)")
+  done
+  git -C "$T/work" push -q origin main
+  MAIN0="$(git -C "$T/remote.git" rev-parse main)"
+}
+# merged_prs '<json with @MERGE@>' — what gh lists as merged into main. The
+# release pull request's own merge commit only exists once the owner merges, so
+# @MERGE@ is filled in then, by the same poll that merges.
+merged_prs() {
+  printf '%s\n' "$1" >"$T/stub/pr-merged.tpl"
+  on_sleep 'if [ "$1" -ge 2 ] && [ ! -e "$STUB/merged" ]; then touch "$STUB/merged"; "$HELPERS/merge-pr"
+    oid="$(grep -o "\"mergeCommit\":{\"oid\":\"[0-9a-f]*\"" "$STUB/state/pr-list.json" | grep -o "[0-9a-f]\{40\}")"
+    sed "s/@MERGE@/$oid/" "$STUB/pr-merged.tpl" >"$STUB/state/pr-merged.json"; fi'
+}
+pr_json() { # pr_json <number> <merge oid> <login> [is_bot]
+  printf '{"number":%s,"mergeCommit":{"oid":"%s"},"author":{"login":"%s","is_bot":%s}}' "$1" "$2" "$3" "${4:-false}"
+}
+
+t "C1 the notes credit the authors by @login, sorted and once each; not the owner, bots, or pull requests outside the release"
+new_sandbox; empty_commits 6
+v010="$(git -C "$T/remote.git" rev-parse 'v0.1.0^{commit}')"
+merged_prs "[$(pr_json 2 "${C[1]}" zed), $(pr_json 11 "${C[2]}" alice), $(pr_json 12 "${C[3]}" app/dependabot true),
+  $(pr_json 13 "${C[4]}" Bob), $(pr_json 14 "${C[5]}" ZED), $(pr_json 15 "${C[6]}" 'renovate[bot]'),
+  $(pr_json 1 "$v010" mallory), $(pr_json 7 @MERGE@ Octo),
+  {\"number\":16,\"mergeCommit\":null,\"author\":{\"login\":\"nomerge\",\"is_bot\":false}}]"
+wiz "$HAPPY" 0.2.0
+rc 0
+eq "the last three lines of the notes" "$(tail -3 "$T/stub/state/notes-captured" 2>/dev/null)" \
+  $'### Contributors to this release\n\n@alice, @Bob, @zed'
+eq "the contributors line" "$(grep '^@' "$T/stub/state/notes-captured" 2>/dev/null)" "@alice, @Bob, @zed"
+out "### Contributors to this release"; out "@alice, @Bob, @zed"
+logged '^gh pr list --repo octo/widgets --state merged --base main --search merged:>=[0-9]{4}-[0-9]{2}-[0-9]{2} --limit 1000 --json number,author,mergeCommit$'
+no_out "no contributors list"
+
+t "C1 the preview shows the list before the question whether to edit the notes"
+listed="$(printf '%s\n' "$OUT" | grep -n '^@alice, @Bob, @zed$' | cut -d: -f1)"
+asked="$(printf '%s\n' "$OUT" | grep -n 'Edit the release notes before publishing' | cut -d: -f1)"
+[ "${listed:-0}" -gt 0 ] && [ "${listed:-0}" -lt "${asked:-0}" ] \
+  || no "the list (line ${listed:-none}) does not come before the question (line ${asked:-none})"
+
+t "C2 only the owner and bots since the last release: no contributors section, and no warning"
+new_sandbox; empty_commits 1
+merged_prs "[$(pr_json 11 "${C[1]}" 'dependabot[bot]' true), $(pr_json 7 @MERGE@ octo)]"
+wiz "$HAPPY" 0.2.0
+rc 0; logged 'release create v0\.2\.0'; logged '^gh pr list .*--state merged'
+nok "a contributors heading" grep -q 'Contributors' "$T/stub/state/notes-captured"
+no_out "Contributors"; no_out "no contributors list"
+
+t "C3 gh failing to list the merged pull requests is a warning, and the release is still published"
+new_sandbox; touch "$T/stub/state/pr-merged-fail"
+wiz "$HAPPY" 0.2.0
+rc 0; out "no contributors list in the notes: gh could not list the pull requests merged since v0.1.0"
+logged 'release create v0\.2\.0'; ok "the release on the remote's tag" remote_has refs/tags/v0.2.0
+nok "a contributors heading" grep -q 'Contributors' "$T/stub/state/notes-captured"
+ok "the notes are otherwise the usual ones" grep -q '^Everything, entry by entry: ' "$T/stub/state/notes-captured"
+
+t "C4 --dry-run shows who the notes would credit, and changes nothing"
+new_sandbox; empty_commits 1; before="$(snap)"
+echo "[$(pr_json 11 "${C[1]}" zed), $(pr_json 12 "$(git -C "$T/remote.git" rev-parse 'v0.1.0^{commit}')" mallory)]" >"$T/stub/state/pr-merged.json"
+wiz '' --dry-run 0.2.0
+rc 0; eq "refs and files" "$(snap)" "$before"; not_logged 'create'
+out "DRY-RUN the notes would end with, as main stands now:"; out "DRY-RUN   ### Contributors to this release"
+out "DRY-RUN   @zed"; no_out "mallory"
+
+t "C5 --continue, with the tag already pushed, still credits from the release before it"
+new_sandbox; empty_commits 1; : >"$T/stub/state/images"; EXTRA=(PPP_IMAGES_TIMEOUT=1)
+merged_prs "[$(pr_json 11 "${C[1]}" zed)]"
+wiz "$HAPPY" 0.2.0
+rc 1; ok "the tag on the remote" remote_has refs/tags/v0.2.0; EXTRA=(); clear_log
+printf '%s\n' ghcr.io/octo/ppp-app:v0.2.0 ghcr.io/octo/ppp-migrate:v0.2.0 ghcr.io/octo/ppp-storage-migrate:v0.2.0 >"$T/stub/state/images"
+git -C "$T/work" switch -q main
+wiz 'n\ny\n' --continue 0.2.0
+rc 0; logged 'release create v0\.2\.0'
+eq "the contributors line" "$(grep '^@' "$T/stub/state/notes-captured" 2>/dev/null)" "@zed"
 
 # ============================================================================
 # 25. --continue
