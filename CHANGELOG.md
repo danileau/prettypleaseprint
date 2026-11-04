@@ -71,8 +71,9 @@ settings-page and first-run work now open as #103 to #106. And to
   It is behind sign-in like every other page. The list is a committed file,
   `src/lib/contributors.ts`, regenerated from main's history by
   `npm run contributors`, because the image is built without `.git` and has no
-  history to read. It holds logins and display names only, never an address,
-  and re-running it changes nothing until somebody new lands a commit.
+  history to read. It holds logins, display names and the month of each
+  person's first commit — never an address — and re-running it changes
+  nothing until somebody new lands a commit.
 
 ### Changed
 

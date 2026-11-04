@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 /**
  * Where the source of *this* instance lives.
  *
@@ -21,11 +19,13 @@ export function SourceLink({ href }: { href: string }) {
       <a href={href} target="_blank" rel="noreferrer noopener" className={link}>
         Source · AGPL-3.0
       </a>
-      {/* Who made it. A plain same-origin link, so it needs no client code;
-          signed-out visitors who follow it land on sign-in like anywhere else. */}
-      <Link href="/about" className={link}>
+      {/* Who made it. A plain <a>, not next/link: this footer is on the
+          signed-out pages too, where a prefetch of /about would only fetch the
+          middleware's redirect to sign-in. Following it signed out lands there
+          like anywhere else. */}
+      <a href="/about" className={link}>
         About · credits
-      </Link>
+      </a>
     </footer>
   );
 }

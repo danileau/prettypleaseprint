@@ -28,8 +28,8 @@
  * the maintainer; everyone else as a contributor.
  *
  * Email addresses are used only to resolve logins and are NEVER written out:
- * the committed file holds logins, display names and a first-contribution
- * month, nothing else.
+ * the committed file holds logins, display names and the month of each
+ * person's first commit, nothing else.
  *
  * The output is sorted and carries no timestamps or counts that grow with
  * every merge, so re-running it with no new contributors produces no diff.
@@ -41,9 +41,30 @@ import { join } from "node:path";
 const ROOT = join(import.meta.dirname, "..");
 const OUT = join(ROOT, "src/lib/contributors.ts");
 
-const refFlag = process.argv.indexOf("--ref");
-const REF = refFlag >= 0 ? process.argv[refFlag + 1] : "origin/main";
-if (!REF) throw new Error("--ref needs a value");
+/**
+ * `--ref X` or `--ref=X`; anything else on the command line is refused rather
+ * than ignored, so a typo cannot silently fall back to origin/main.
+ */
+function parseRef(argv: string[]): string {
+  let ref = "origin/main";
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (arg === "--ref") {
+      const value = argv[++i];
+      if (!value) throw new Error("--ref needs a value");
+      ref = value;
+    } else if (arg.startsWith("--ref=")) {
+      ref = arg.slice("--ref=".length);
+      if (!ref) throw new Error("--ref needs a value");
+    } else {
+      throw new Error(`unknown argument ${JSON.stringify(arg)}; the only option is --ref <ref>`);
+    }
+  }
+  // A ref that looks like an option would be read by git as one.
+  if (ref.startsWith("-")) throw new Error(`--ref ${JSON.stringify(ref)} is not a ref`);
+  return ref;
+}
+const REF = parseRef(process.argv.slice(2));
 
 const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
   repository?: { url?: string };
@@ -55,7 +76,14 @@ const [, OWNER, REPO] = slug as unknown as [string, string, string];
 const git = (...args: string[]) =>
   execFileSync("git", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 
-function gh(path: string, jq: string): string {
+/**
+ * One `gh api` call. Returns null when GitHub answers 404 or 422 — a deleted
+ * or renamed account, or a commit GitHub has never seen (an unpushed one on a
+ * local `--ref`) — so the caller can skip that one person and carry on.
+ * Anything else (gh missing, not signed in, no network, rate limit) is fatal:
+ * a list built around a hole like that would silently drop people.
+ */
+function gh(path: string, jq: string): string | null {
   try {
     return execFileSync("gh", ["api", path, "--jq", jq], {
       cwd: ROOT,
@@ -63,7 +91,11 @@ function gh(path: string, jq: string): string {
       stdio: ["ignore", "pipe", "pipe"],
     }).trim();
   } catch (err) {
-    throw new Error(`gh api ${path} failed — is gh installed and signed in?\n${String(err)}`);
+    const e = err as { code?: string; stderr?: string | Buffer };
+    if (e.code === "ENOENT") throw new Error("gh is not installed; see https://cli.github.com");
+    const stderr = String(e.stderr ?? "").trim();
+    if (/HTTP (404|422)\b/.test(stderr)) return null;
+    throw new Error(`gh api ${path} failed:\n${stderr || String(err)}`);
   }
 }
 
@@ -110,7 +142,11 @@ for (const c of commits) {
   }
   const login = gh(`repos/${OWNER}/${REPO}/commits/${c.sha}`, ".author.login // empty");
   loginByEmail.set(c.email, login || null);
-  if (!login) console.warn(`no GitHub account for the author of ${c.sha.slice(0, 7)}; skipped`);
+  if (login === null) {
+    console.warn(`GitHub does not know commit ${c.sha.slice(0, 7)} (not pushed?); its author is skipped`);
+  } else if (!login) {
+    console.warn(`no GitHub account for the author of ${c.sha.slice(0, 7)}; skipped`);
+  }
 }
 
 function coAuthorLogin(email: string): string | null {
@@ -122,12 +158,12 @@ function coAuthorLogin(email: string): string | null {
 // --- collect -----------------------------------------------------------------
 
 const firstSeen = new Map<string, string>(); // login (case-folded) -> ISO date
-const canonical = new Map<string, string>(); // case-folded -> login as GitHub spells it
+const seen = new Map<string, string>(); // case-folded -> a spelling of the login, for the lookup
 const unresolved = new Set<string>();
 
 function credit(login: string, date: string) {
   const key = login.toLowerCase();
-  if (!canonical.has(key)) canonical.set(key, login);
+  if (!seen.has(key)) seen.set(key, login);
   if (!firstSeen.has(key)) firstSeen.set(key, date);
 }
 
@@ -150,9 +186,16 @@ for (const u of unresolved) {
 type Entry = { login: string; name: string | null; since: string; role: "maintainer" | "contributor" };
 
 const entries: Entry[] = [];
-for (const [key, login] of canonical) {
-  if (isBotLogin(login)) continue;
-  const [type, name] = JSON.parse(gh(`users/${login}`, "[.type, .name]")) as [string, string | null];
+for (const [key, spelled] of seen) {
+  if (isBotLogin(spelled)) continue;
+  // The login as GitHub spells it, from the profile: addresses are case-folded
+  // above, so a login read out of a noreply address may not be.
+  const profile = gh(`users/${spelled}`, "[.login, .type, .name]");
+  if (profile === null) {
+    console.warn(`GitHub has no account ${spelled} (deleted or renamed?); skipped`);
+    continue;
+  }
+  const [login, type, name] = JSON.parse(profile) as [string, string, string | null];
   if (type === "Bot") continue;
   entries.push({
     login,
@@ -175,7 +218,8 @@ const body = `/**
  * the commit history of main. Do not edit by hand — re-run the script. It is a
  * committed file because the Docker build has no .git to read.
  *
- * Logins and display names only; no e-mail addresses, ever.
+ * Logins, display names and the month of each person's first commit; no
+ * e-mail addresses, ever.
  */
 export type Contributor = {
   /** GitHub login; the profile is https://github.com/<login>. */

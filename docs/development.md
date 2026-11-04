@@ -201,8 +201,11 @@ It needs `gh`, signed in: an author address that is not a GitHub `noreply`
 one is resolved to a login by asking GitHub about one of their commits.
 `Co-authored-by:` trailers count too. Bots are left out, and so is anyone the
 script cannot match to a GitHub account — it says so on stderr. The repository
-owner from `package.json` is listed as the maintainer. Addresses are used only
-for the lookup and never written to the file, and the output is sorted with
+owner from `package.json` is listed as the maintainer. A commit or account
+GitHub does not know (an unpushed commit, a deleted user) is skipped with a
+warning; any other `gh` failure stops the run. The file holds logins, display
+names and the month of each person's first commit; addresses are used only
+for the lookup and never written to it, and the output is sorted with
 nothing in it that grows per commit, so a re-run with no newcomers is a
 no-diff. It is a file rather than a read of git at runtime because the Docker
 build context excludes `.git`.

@@ -5,7 +5,8 @@
  * the commit history of main. Do not edit by hand — re-run the script. It is a
  * committed file because the Docker build has no .git to read.
  *
- * Logins and display names only; no e-mail addresses, ever.
+ * Logins, display names and the month of each person's first commit; no
+ * e-mail addresses, ever.
  */
 export type Contributor = {
   /** GitHub login; the profile is https://github.com/<login>. */
