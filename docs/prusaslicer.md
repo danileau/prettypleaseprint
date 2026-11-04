@@ -209,6 +209,13 @@ Windows Registry Editor Version 5.00
 @="\"C:\\Program Files\\Git\\bin\\bash.exe\" \"C:/path/to/prusa-open.sh\" \"%1\""
 ```
 
+Neither Git Bash nor macOS has `setsid`, which the helper uses on Linux to let
+the slicer outlive it. Without it the helper runs the slicer in the foreground
+under Git Bash — a handler started in a hidden window takes a backgrounded
+child down with it — and detaches it with `nohup` on macOS. A checkout made on
+Windows keeps the scripts' LF line endings: `.gitattributes` sees to that,
+because bash will not run them with CRLF.
+
 Both are untested here and offered as starting points — the Linux path is the
 supported one, matching the app's own "one printer, one office" shape.
 
