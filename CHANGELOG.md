@@ -5,9 +5,16 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+With thanks to **@Hogun974**, who wrote six of the changes below: the slicer
+helper on Windows and macOS, slicers other than PrusaSlicer, and the theme
+variables every colour now comes from. They also proposed the translation,
+settings-page and first-run work now open as #103 to #106. And to
+**@chrisbirie**, whose request (#91) became importing from a Printables link.
+
 ### Added
 
-- **A request can start from a Printables link instead of an upload** (#91).
+- **A request can start from a Printables link instead of an upload** (#91,
+  asked for by @chrisbirie).
   Where the printer owner switches it on, the request form offers *or paste a
   Printables link* under the dropzone. Paste the address of a model's page and
   the app lists the `.stl` and `.3mf` files in it; pick one, fill in the rest
@@ -38,7 +45,7 @@ Notable changes. Every entry names a released version; deployments pin
   upload. `npm run verify:import` is the eleventh suite, and runs against a
   stand-in for Printables so that the far end can be made to misbehave.
 
-- **Open in PrusaSlicer installs on Windows.** `scripts/install-slicer-handler.ps1`
+- **Open in PrusaSlicer installs on Windows** (#109, @Hogun974). `scripts/install-slicer-handler.ps1`
   is the Linux installer's twin: per user and without admin rights, it copies
   the helper to `~\.local\bin\ppp-open` with LF line endings, registers
   `ppp://` under `HKCU` to run it through a hidden `mintty`, and lays down a
@@ -47,7 +54,7 @@ Notable changes. Every entry names a released version; deployments pin
   `HKEY_CLASSES_ROOT`, which needs admin, and ran `bash.exe` directly, which
   flashes a console on every click. Tested on Windows 11.
 
-- **The slicer helper knows slicers other than PrusaSlicer.** It used to hand
+- **The slicer helper knows slicers other than PrusaSlicer** (#108, @Hogun974). It used to hand
   every slicer PrusaSlicer's `--single-instance`, and it could not reach one
   installed under a path with a space — which on Windows and macOS is all of
   them, the macOS example in the docs included. `PPP_SLICER_PROFILE` (`prusa`,
@@ -60,8 +67,8 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Changed
 
-- **Every colour the app draws with is a theme variable** (#105, step one; no
-  visible change). The 3D viewer's background, lights, edges and build plate,
+- **Every colour the app draws with is a theme variable** (#111, @Hogun974;
+  #105, step one; no visible change). The 3D viewer's background, lights, edges and build plate,
   the ink-at-an-alpha of the layer lines, the plate grid, the starburst and
   `--color-rule`, and the shadow behind a "whatever" swatch's `?` were written
   out where they were used; they now come from `globals.css` — the viewer
@@ -96,6 +103,16 @@ Notable changes. Every entry names a released version; deployments pin
   copied again to get a newer one. The pull-request template lists all ten
   suites, the wizard tests and the rollback check for a migration.
 
+- **The documentation caught up with the slicer helper's new reach.** The
+  README and the slicer guide no longer say the helper is for PrusaSlicer
+  only, and the guide's opening points at the Windows setup and the other
+  slicers. The architecture guide's file layout has the Windows installer and
+  the helper's own test, and its viewer section says where the colours now
+  come from. The development guide counts the helper among the sandboxed
+  script tests and says plainly that the PowerShell installer has none. The
+  [security audit](docs/security-audit.md#the-helper-off-linux) records how a
+  clicked link and a failure message stay data on Windows and macOS.
+
 ### Fixed
 
 - **The last places that still described an object store.** MinIO left in
@@ -112,13 +129,21 @@ Notable changes. Every entry names a released version; deployments pin
   pending, and the reason recorded for `Cross-Origin-Embedder-Policy:
   credentialless` no longer names a storage origin that does not exist.
 
+- **Next.js 15.5.26 → 15.5.28** (#100), for the advisories published against
+  15.5.26: among them GHSA-2464-fhr4-w9xw (CRITICAL, remote code execution in
+  the image optimiser when SVG files are involved) and denial of service through
+  Server Actions, cache poisoning of static pages, and an information disclosure
+  in metadata image routes. Trivy fails on 15.5.26, and the daily security scan
+  had been red since 2026-10-23. The same group update moved Better Auth to
+  1.7.10 and React to 19.3.1, with newer nodemailer, resend and zod.
+
 - **`source-map-js` 1.2.1 → 1.2.2**, for CVE-2026-93749 (HIGH): a malformed
   indexed source map could hang whatever parsed it. It arrives through PostCSS
   and Tailwind, which run when the stylesheet is built, and the Trivy gate
   fails on it. Lockfile only.
 
 - **Open in PrusaSlicer did nothing where there is no `setsid`**, and said it
-  had worked. The helper launched the slicer with `setsid … &`; Git for
+  had worked (#107, @Hogun974). The helper launched the slicer with `setsid … &`; Git for
   Windows and macOS have no `setsid`, the failure happened in the background,
   and the log read "handed off" with nothing open. Without `setsid` it now
   runs the slicer in the foreground under Git Bash, where the handler's hidden
@@ -127,19 +152,19 @@ Notable changes. Every entry names a released version; deployments pin
   like every other failure. `scripts/tests/prusa-open.test.sh` covers the
   three ways in, and the helper had no test before.
 
-- **A Windows checkout broke the shell scripts.** Git for Windows checks text
+- **A Windows checkout broke the shell scripts** (#107, @Hogun974). Git for Windows checks text
   out with CRLF by default, and bash refuses a script whose first command is
   `set -euo pipefail\r`. `.gitattributes` now keeps `*.sh` and the git hook
   LF on every platform.
 
 - **The slicer helper exited without a word when a response had no
-  `Content-Disposition`.** The filename is read from that header with a
+  `Content-Disposition`** (#110, @Hogun974). The filename is read from that header with a
   `grep`; under `pipefail` a grep that finds nothing failed the assignment and
   `set -e` ended the script, so the `model-<id>.stl` fallback written for that
   case was never reached and the log stopped at "fetching". The app always
   sends the header; a proxy that strips it is what would have hit this.
 
-- **A failed click on Windows or macOS said nothing on screen.** The slicer
+- **A failed click on Windows or macOS said nothing on screen** (#112, @Hogun974). The slicer
   helper put its errors in a notification only through `notify-send`, which is
   Linux's; elsewhere an expired link or an unreachable instance left a line in
   the log and nothing else, which looks exactly like a helper that was never
