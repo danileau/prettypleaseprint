@@ -187,10 +187,51 @@ a message box through PowerShell on Windows. Common lines:
 | loads then says *empty file* / *loading failed* | The bytes did arrive; the slicer could not read them (a truncated or non-model file). Check the ticket's file. |
 | `WARNING: … is group/world-readable` | Only raised while the file still holds a `PPP_TOKEN`. Delete the line, or `chmod 600 ~/.config/ppp/slicer.conf`. |
 
-## macOS and Windows
+## Windows
 
-The installer is Linux/XDG only. The helper script itself is portable (`bash` +
-`curl`); only the scheme registration differs.
+It needs [Git for Windows](https://gitforwindows.org), which brings the
+`bash`, `curl` and `mintty` the helper runs on. Then, from a checkout:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-slicer-handler.ps1
+```
+
+It is the twin of the Linux installer, all under your own profile and without
+admin rights: it copies the helper to `~\.local\bin\ppp-open` with LF line
+endings, registers `ppp://` under `HKCU\Software\Classes\ppp`, and creates
+`~\.config\ppp\slicer.conf` if there is none. Fill that in — on Windows every
+slicer sits under `C:\Program Files`, so use `PPP_SLICER_PATH`:
+
+```sh
+PPP_BASE="https://print.example"
+PPP_SLICER_PROFILE=elegoo
+PPP_SLICER_PATH="/c/Program Files/ElegooSlicer/elegoo-slicer.exe"
+```
+
+After a `git pull`, run it again to update the copy. `-Uninstall` removes the
+copy and the registration and leaves `slicer.conf` alone. The log is
+`~\.local\state\ppp\slicer.log`.
+
+The registered command is
+
+```
+"C:\Program Files\Git\usr\bin\mintty.exe" -w hide -e /usr/bin/bash -l "/c/Users/you/.local/bin/ppp-open" "%1"
+```
+
+— `mintty -w hide` because a console program registered directly flashes a
+window on every click, and `-l` so that bash's `PATH` has `curl`. Because the
+terminal is hidden and goes away, Git Bash, which has no `setsid`, runs the
+slicer in the foreground: a backgrounded child would die with it. A checkout
+keeps the scripts' LF line endings whatever `core.autocrlf` says —
+`.gitattributes` sees to that, because bash will not run them with CRLF.
+
+Tested on Windows 11 with Git for Windows 2.52 and ElegooSlicer. The same
+command, registered by hand, has been clicked from a Chromium browser (Opera GX).
+
+## macOS
+
+The installer is Linux and Windows only. The helper script itself is portable
+(`bash` + `curl`); only the scheme registration differs.
 
 **macOS** — register `ppp://` with a tiny app wrapper. In *Script Editor*, save
 an application that runs:
@@ -205,27 +246,10 @@ and add `CFBundleURLSchemes` = `ppp` to its `Info.plist`. Set `PPP_SLICER_PATH`
 — not `PPP_SLICER`, which is split on the spaces in the path — to
 `/Applications/Original Prusa Drivers/PrusaSlicer.app/Contents/MacOS/PrusaSlicer`.
 
-**Windows** — the helper needs a `bash` (Git Bash / WSL). Register the scheme
-with a `.reg` file:
+macOS has no `setsid`, which the helper uses on Linux to let the slicer
+outlive it; there it detaches the slicer with `nohup` instead.
 
-```reg
-Windows Registry Editor Version 5.00
-[HKEY_CLASSES_ROOT\ppp]
-@="URL:Pretty Please Print"
-"URL Protocol"=""
-[HKEY_CLASSES_ROOT\ppp\shell\open\command]
-@="\"C:\\Program Files\\Git\\bin\\bash.exe\" \"C:/path/to/prusa-open.sh\" \"%1\""
-```
-
-Neither Git Bash nor macOS has `setsid`, which the helper uses on Linux to let
-the slicer outlive it. Without it the helper runs the slicer in the foreground
-under Git Bash — a handler started in a hidden window takes a backgrounded
-child down with it — and detaches it with `nohup` on macOS. A checkout made on
-Windows keeps the scripts' LF line endings: `.gitattributes` sees to that,
-because bash will not run them with CRLF.
-
-Both are untested here and offered as starting points — the Linux path is the
-supported one, matching the app's own "one printer, one office" shape.
+This is untested here and offered as a starting point.
 
 ## OrcaSlicer, and other slicers
 

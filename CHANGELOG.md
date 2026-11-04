@@ -38,6 +38,15 @@ Notable changes. Every entry names a released version; deployments pin
   upload. `npm run verify:import` is the eleventh suite, and runs against a
   stand-in for Printables so that the far end can be made to misbehave.
 
+- **Open in PrusaSlicer installs on Windows.** `scripts/install-slicer-handler.ps1`
+  is the Linux installer's twin: per user and without admin rights, it copies
+  the helper to `~\.local\bin\ppp-open` with LF line endings, registers
+  `ppp://` under `HKCU` to run it through a hidden `mintty`, and lays down a
+  `slicer.conf`. It needs Git for Windows and says so when it is missing;
+  `-Uninstall` undoes it. The `.reg` file the docs offered before wrote to
+  `HKEY_CLASSES_ROOT`, which needs admin, and ran `bash.exe` directly, which
+  flashes a console on every click. Tested on Windows 11.
+
 - **The slicer helper knows slicers other than PrusaSlicer.** It used to hand
   every slicer PrusaSlicer's `--single-instance`, and it could not reach one
   installed under a path with a space — which on Windows and macOS is all of
