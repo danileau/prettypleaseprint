@@ -100,6 +100,14 @@ Notable changes. Every entry names a released version; deployments pin
   including the one that catches everybody — an `@` in the username has to be
   `%40`.
 
+### Changed
+
+- **Publishing images is held to `main` and the owner's release tags.** A
+  manual run of `release-images.yml` on any other branch now refuses before
+  building, and the repository's rules let only an admin merge into `main` or
+  create a `v*` tag, with CI's four gates required for every change to `main`
+  ([What GitHub enforces](docs/development.md#what-github-enforces)).
+
 ## v0.4.0
 
 2026-11-04.
