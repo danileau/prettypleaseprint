@@ -102,6 +102,25 @@ Two more workflows:
   PR gate cannot: a CVE published after the last commit still lands in the
   committed lockfile and in the base layers already running on the NAS.
 
+### What GitHub enforces
+
+Three rule sets on the repository (Settings → Rules) hold the line that
+merging and releasing are the owner's, whoever else has write access:
+
+- **`main-protection`** — `main` changes only through a pull request with one
+  approving review, linear history, no force-push or deletion, and **only a
+  repository admin may update it**: a collaborator can review, label and close,
+  but cannot merge. Admins bypass this set, which is how the owner merges.
+- **`main-ci`** — the four gates above, `guard`, `models`, `verify` and
+  `trivy`, must pass before anything lands on `main`. It has **no bypass**, not
+  even for the owner: `--admin` skips the review, never the gates.
+- **`release-tags`** — only an admin can create, move or delete a `v*` tag.
+  A tag is what the NAS's cosign check accepts besides `main`
+  (`refs/tags/v…`), so it is guarded like a release.
+
+`release-images.yml` itself refuses to publish from anything but `main` or a
+`v*` tag, so a manual run on a branch builds nothing.
+
 ## The cheap gates
 
 Checks that need no server, all of them in CI's `guard` job:
