@@ -34,6 +34,7 @@ invitation and reset links are clickable there.
 ```bash
 npm run verify:models         # upload validator vs. hostile fixtures (no server needed)
 npm run verify:auth           # registration, sign-in and password reset, end to end
+npm run verify:sso            # single sign-on (OIDC), against a stand-in provider
 npm run verify:upload         # upload -> board -> story, end to end
 npm run verify:import         # a model from a link, against a stand-in for Printables
 npm run verify:queue          # the admin queue, status flow and conversation
@@ -79,7 +80,7 @@ as four gates that can be required by name in branch protection:
 | --- | --- |
 | `guard` | typecheck, the secret scanner over every tracked file, the markdown link check, and the shell scripts' own tests (`scripts/tests/*.test.sh`: the two wizards, the full local run and the slicer helper, each in a sandbox where `docker`, `gh`, `curl` or the slicer are stubs) |
 | `models` | the upload validator against hostile fixtures — no server needed |
-| `verify` | raises the real compose stack and runs all ten integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
+| `verify` | raises the real compose stack and runs all eleven integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
 | `trivy` | filesystem scan for vulnerabilities, secrets and misconfiguration; HIGH/CRITICAL fail |
 
 `verify` uses docker compose rather than GitHub `services:` so that running the
@@ -155,7 +156,7 @@ scripts/full-test.sh --restore                    # undo what a killed run left 
 
 It runs the three cheap gates, a `trivy` filesystem scan if `trivy` is
 installed, and `verify:models`; then raises the stack, waits for
-`/api/health`, runs the ten integration suites — all of them, even after one
+`/api/health`, runs the eleven integration suites — all of them, even after one
 fails — and the two image pins CI keeps (no npm in the runtime images; the
 migrator still runs without it).
 
@@ -176,7 +177,7 @@ outside the checkout, and the health wait is 120 seconds rather than 90.
   is killed outright, the list waits in the git directory and `--restore`
   finishes the job; until then the next run refuses.
 - **It refuses to start if something else is in the way**: port 3000, 5432,
-  1025, 8025 or 4010 held by anything but the stack it sets aside, or a stack
+  1025, 8025, 4010 or 4020 held by anything but the stack it sets aside, or a stack
   an earlier run of the test left behind (`--restore` removes that).
   `--preflight` runs only these checks, and touches nothing.
 - **It raises its own compose project, `ppp-fulltest`**, never `ppp`, so the

@@ -7,6 +7,7 @@ import { SignInForm } from "./signin-form";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { CLIENT_GROUPS } from "@/i18n/client-groups";
 import { getClientMessages } from "@/i18n/server";
+import { authMethods, oidcConfig } from "@/lib/auth-methods";
 
 /**
  * The `?error=` codes this page explains, and which message explains each.
@@ -22,6 +23,17 @@ const ERRORS = {
   TOKEN_EXPIRED: "tokenExpired",
   banned: "suspended",
   BANNED_USER: "suspended",
+  // Single sign-on. The provider vouching for the address is what stands in
+  // for a password here, so "it has not" is its own sentence rather than a
+  // shrug — it is the one of these somebody can go and fix.
+  // One answer for an unverified address whether or not somebody here has it:
+  // which of these two Better Auth sends depends on exactly that, so telling
+  // them apart would say who is a member. The auth route rewrites the first
+  // into the second as well (`sameAnswerForUnverified`).
+  account_not_linked: "emailNotVerified",
+  email_not_verified: "emailNotVerified",
+  email_not_found: "emailNotFound",
+  unable_to_get_user_info: "providerUnverified",
 } as const;
 
 export default async function SignInPage({
@@ -36,12 +48,23 @@ export default async function SignInPage({
 
   const t = await getTranslations("signin");
   const shell = await getTranslations("authShell");
+  const waysIn = await getTranslations("waysIn");
+
+  const methods = authMethods();
+  const sso = oidcConfig();
+  const ssoName = sso ? (sso.name ?? waysIn("sso.defaultName")) : null;
 
   return (
     <AuthShell sign={shell("sign")}>
       <Kicker>{t("kicker")}</Kicker>
       <H1>{t("title")}</H1>
-      <Lead>{t("lead")}</Lead>
+      <Lead>
+        {!methods.local
+          ? t("leadSsoOnly", { name: ssoName ?? waysIn("sso.defaultName") })
+          : ssoName
+            ? t("leadSso", { name: ssoName })
+            : t("lead")}
+      </Lead>
 
       {reset && (
         <div className="mb-[22px]">
@@ -59,7 +82,7 @@ export default async function SignInPage({
       )}
 
       <NextIntlClientProvider messages={await getClientMessages(CLIENT_GROUPS.signin)} timeZone="UTC">
-        <SignInForm next={safeRedirect(next)} />
+        <SignInForm next={safeRedirect(next)} local={methods.local} ssoName={ssoName} />
       </NextIntlClientProvider>
     </AuthShell>
   );

@@ -6,17 +6,22 @@
     "kicker": "Members only · ask at the counter",
     "title": "What’ll it be?",
     "lead": "Use the passkey on this device, or your username and password.",
+    "leadSso": "Use {name}, the passkey on this device, or your username and password.",
+    "leadSsoOnly": "Sign in with {name} — the same login you use elsewhere.",
     "passwordSet": "Password saved. Sign in with it.",
     "errors": {
       "inviteRequired": "That address has not been invited. Pretty Please Print is invite-only — ask whoever owns the printer for a link.",
       "invalidToken": "That link is no longer valid. Ask the printer owner for a fresh one.",
       "tokenExpired": "That link expired. Ask the printer owner for another.",
       "suspended": "That account has been suspended. Ask whoever owns the printer.",
+      "emailNotVerified": "Your sign-on provider has not confirmed your email address, so it cannot vouch for who you are here. Verify it there, then try again.",
+      "emailNotFound": "Your sign-on provider did not share an email address, so there is no way to tell who you are here.",
+      "providerUnverified": "Your sign-on provider’s answer could not be verified, so nobody was signed in. Try again; if it keeps happening, tell whoever owns the printer.",
       "other": "That sign-in attempt did not go through."
     },
     "form": {
+      "withSso": "Sign in with {name}",
       "withPasskey": "Sign in with a passkey",
-      "or": "or",
       "username": "Username",
       "password": "Password",
       "checking": "Checking…",
@@ -24,7 +29,17 @@
       "refused": "That username and password do not match. Try again.",
       "tooManyAttempts": "Too many attempts. Wait a minute and try again.",
       "passkeyRefused": "That passkey was not accepted. Use your password instead.",
-      "inviteOnly": "Pretty Please Print is invite-only — there is no sign-up. If you have not been invited yet, or you have forgotten your password, ask whoever owns the printer."
+      "inviteOnly": "Pretty Please Print is invite-only — there is no sign-up. If you have not been invited yet, or you have forgotten your password, ask whoever owns the printer.",
+      "inviteOnlySso": "Pretty Please Print is invite-only. If signing in tells you that you have not been invited, ask whoever owns the printer."
+    }
+  },
+  "waysIn": {
+    "or": "or",
+    "sso": {
+      "defaultName": "single sign-on",
+      "busy": "Taking you there…",
+      "tooManyAttempts": "Too many attempts. Wait a minute and try again.",
+      "couldNotStart": "Single sign-on could not be started. Try again, or ask whoever owns the printer."
     }
   },
   "header": {
@@ -73,5 +88,49 @@
       "setUp": "Set it up — 30 seconds",
       "notNow": "Not now"
     }
+  },
+  "invite": {
+    "leadLocal": "Pick a name to go by, a username and a password, and you are in.",
+    "leadSso": "Sign in with {name} and you are in.",
+    "withSso": "Continue with {name}",
+    "ssoFor": "This invitation is for <strong>{email}</strong>. Sign in there with that address and there is no password to choose here."
+  },
+  "reauth": {
+    "lead": "You are about to change who can get in. A password or a passkey confirms it is you at the keyboard and not a browser somebody left open.",
+    "leadSso": "You are about to change who can get in. Signing in with {name} again confirms it is you at the keyboard and not a browser somebody left open.",
+    "withSso": "Confirm with {name}",
+    "ssoNotConfirmed": "Signing in again with {name} did not confirm it is you: it has to ask you to sign in there again, just now. Try again, or use a passkey or your password if you have one."
+  },
+  "setPassword": {
+    "ssoOnly": {
+      "kicker": "New key, cut fresh",
+      "title": "No passwords here",
+      "lead": "This instance signs people in with {name} only, so there is no password to choose. Sign in with the address you were invited as.",
+      "toSignin": "Go to sign in →"
+    }
+  },
+  "passwordsOff": {
+    "refused": "Passwords are switched off on this instance, so there is none to set or reset."
+  },
+  "me": {
+    "sso": {
+      "kicker": "Single sign-on",
+      "connected": "Connected to {name}. Signing in there with the identity you connected opens this account.",
+      "notConnected": "Not connected. Signing in through {name} does not open the printer owner’s account until you connect it here — on purpose, so the provider cannot make itself the owner.",
+      "connect": "Connect {name}",
+      "connectNote": "You will be asked to confirm it is you, and then to sign in at the provider as {email}.",
+      "disconnect": "Disconnect {name}",
+      "onlyWayIn": "Passwords are off on this instance, so {name} is your only way in and cannot be disconnected here.",
+      "status": {
+        "connected": "{name} is connected. You can sign in through it from now on.",
+        "disconnected": "{name} is disconnected. Signing in through it no longer opens this account.",
+        "failed": "{name} could not be connected. Sign in there as {email}, with the address verified, and try again.",
+        "kept": "Passwords are off, so {name} stays connected: it is your only way in.",
+        "unavailable": "{name} could not be reached to connect it just now. Try again in a moment."
+      }
+    }
+  },
+  "adminSso": {
+    "ownerNotConnected": "Passwords are off and you have not connected {name}. Nobody can sign in as the printer owner. Turn local sign-in back on, connect {name} from your page, then turn it off again."
   }
 }

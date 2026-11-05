@@ -112,7 +112,7 @@ S="$STUB/state"
 if [ "${1:-} ${2:-}" = "run -s" ]; then
   script="${3:-}"
   case "$script" in
-    typecheck|check:links|verify:models|verify:auth|verify:upload|verify:import|verify:queue|verify:frr|verify:benefits|verify:catalog|verify:api|verify:passkey|probe:security) ;;
+    typecheck|check:links|verify:models|verify:auth|verify:sso|verify:upload|verify:import|verify:queue|verify:frr|verify:benefits|verify:catalog|verify:api|verify:passkey|probe:security) ;;
     check:messages)
       # Its last line, in the shape scripts/check-messages.ts prints it.
       if [ -e "$S/messages-warn" ]; then echo "check:messages — 0 error(s), 2 warning(s)"; fi ;;
@@ -258,7 +258,7 @@ stack_now() { local f; for f in "$T/stub/state/c"/*; do [ -e "$f" ] && printf '%
 restored() { eq "the three env files" "$(envsum)" "$ENV0"; nok "the saved copies are still there" test -e "$SAVED"; }
 suites_run() { grep -E '^npm run -s (verify|probe):' "$T/stub/log" | grep -v 'verify:models' | awk '{print $4}' | tr '\n' ' '; }
 
-ALL_SUITES="verify:auth verify:upload verify:import verify:queue verify:frr verify:benefits verify:catalog verify:api verify:passkey probe:security "
+ALL_SUITES="verify:auth verify:sso verify:upload verify:import verify:queue verify:frr verify:benefits verify:catalog verify:api verify:passkey probe:security "
 
 # ============================================================================
 # 31, F3, F4, R8. refusing
@@ -362,7 +362,7 @@ ft
 t "32 the whole run passes and puts all three env files back, content and mode"
 rc 0; restored; out "DONE failed=0"; no_out "PARTIAL RUN"
 out "restored .env, .env.backup, .env.docker; stack down; logs in $LOGS"
-eq "steps that passed" "$(grep -c PASS "$LOGS/summary.txt")" "22"
+eq "steps that passed" "$(grep -c PASS "$LOGS/summary.txt")" "23"
 eq "the suites, in order" "$(suites_run)" "$ALL_SUITES"
 
 t "39 up and down are both aimed at the project ppp-fulltest with the three files and the profile"
@@ -541,7 +541,7 @@ t "38 SIGTERM during a suite: the stack comes down and the env files go back"
 new_sandbox; echo "verify:upload" >"$T/stub/state/term-during"
 ft
 rc 130; restored; logged '^docker compose .* down -v --remove-orphans$'
-eq "the suites" "$(suites_run)" "verify:auth verify:upload "
+eq "the suites" "$(suites_run)" "verify:auth verify:sso verify:upload "
 
 t "F1 a second signal during the teardown cannot skip the restore"
 new_sandbox; echo "verify:upload" >"$T/stub/state/term-during"; touch "$T/stub/state/term-on-down"
@@ -580,6 +580,21 @@ ci="$(awk '/^  verify:$/ { on = 1; next } /^  [a-z]+:$/ { on = 0 } on && $1 !~ /
   | grep -o 'npm run \(verify\|probe\):[a-z]*' | awk '{ print $3 }' | tr '\n' ' ')"
 ok "ci.yml's verify job lists suites at all" test -n "$ci"
 eq "the suites" "$(suites_run)" "$ci"
+
+t "44 the names it sets aside and the ports it checks are exactly what the compose files pin and publish"
+# A stand-in added to docker-compose.test.yml with a container_name or a port
+# the script does not know about would collide with somebody's stack instead
+# of being set aside, or be reported as a failed up instead of a port in use.
+pinned="$(cat "$REPO_ROOT"/docker-compose.prod.yml "$REPO_ROOT"/docker-compose.build.yml "$REPO_ROOT"/docker-compose.test.yml \
+  | awk '$1 == "container_name:" { print $2 }' | sort | tr '\n' ' ')"
+names="$(sed -n 's/^STACK_NAMES="\(.*\)"$/\1/p' "$SCRIPT" | tr ' ' '\n' | sort | tr '\n' ' ')"
+ok "the compose files pin names at all" test -n "$pinned"
+eq "STACK_NAMES" "$names" "$pinned"
+published="$(grep -oE '^ *- "(\$\{[A-Z_]+:-)?[0-9]+\}?:[0-9]+"' "$REPO_ROOT/docker-compose.test.yml" \
+  | sed -E 's/^ *- "(\$\{[A-Z_]+:-)?([0-9]+).*/\2/' | sort -n | tr '\n' ' ')"
+ports="$(sed -n 's/^PORTS="\${PPP_FULLTEST_PORTS:-\(.*\)}"$/\1/p' "$SCRIPT" | tr ' ' '\n' | sort -n | tr '\n' ' ')"
+ok "the test overlay publishes ports at all" test -n "$published"
+eq "PORTS" "$ports" "$published"
 
 t "an unknown argument is refused, and -h prints the header"
 new_sandbox

@@ -4,6 +4,10 @@
  * renders those components: the header hands its own to its menus, the
  * sign-in page to its form (`getClientMessages` in ./server.ts).
  *
+ * `waysIn` is the single sign-on button and the "or" between two ways in
+ * (src/components/sso-button.tsx), on every screen that offers a choice of
+ * how to sign in: signing in, accepting an invitation, confirming it is you.
+ *
  * Not the whole catalogue, and not one list for every page, and the reason is
  * not size. Messages sent to a client component travel in the page's RSC
  * payload, readable in its source by whoever loads it. Sent from the root
@@ -20,5 +24,7 @@
  */
 export const CLIENT_GROUPS = {
   header: ["header.activity", "header.account", "header.nudge"],
-  signin: ["signin.form"],
+  signin: ["signin.form", "waysIn"],
+  invite: ["waysIn"],
+  reauth: ["waysIn"],
 } as const;

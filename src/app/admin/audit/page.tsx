@@ -38,6 +38,7 @@ const LENSES: Array<{ key: Lens; label: string; actions?: string[] }> = [
     actions: [
       "invite.sent", "invite.resent", "invite.revoked", "invite.accepted",
       "invite.rejected", "auth.signed_in", "auth.signed_out", "user.role_changed",
+      "auth.sso_linked", "auth.sso_link_refused", "auth.sso_unlinked",
     ],
   },
   {

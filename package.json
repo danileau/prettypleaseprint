@@ -33,6 +33,7 @@
     "verify:models": "tsx scripts/verify-models.ts",
     "verify:upload": "tsx scripts/verify-upload.ts",
     "verify:import": "tsx scripts/verify-import.ts",
+    "verify:sso": "tsx scripts/verify-sso.ts",
     "verify:passkey": "tsx scripts/verify-passkey.ts",
     "check:secrets": "tsx scripts/check-secrets.ts",
     "check:links": "tsx scripts/check-links.ts",

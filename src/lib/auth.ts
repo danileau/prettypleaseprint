@@ -6,7 +6,9 @@ import { bearer } from "better-auth/plugins/bearer";
 import { openAPI } from "better-auth/plugins";
 import { haveIBeenPwned } from "better-auth/plugins/haveibeenpwned";
 import { username } from "better-auth/plugins/username";
+import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { passkey } from "@better-auth/passkey";
+import { APIError, addOAuthServerContext, createAuthMiddleware, getOAuthState, getSessionFromCtx } from "better-auth/api";
 
 import { db } from "@/lib/db";
 import {
@@ -16,9 +18,26 @@ import {
   isClaimingInvite,
 } from "@/lib/invites";
 import { initialsFor } from "@/lib/tokens";
+import { FRESH_AUTH_SECONDS } from "@/lib/auth-rules";
 import { isBuildPhase } from "@/lib/runtime";
 import { enabledSources } from "@/lib/import-source";
+import {
+  OIDC_PROVIDER_ID,
+  authMethods,
+  disabledAuthPaths,
+  mayProvision,
+  oidcConfig,
+} from "@/lib/auth-methods";
 import { record } from "@/lib/audit";
+import {
+  REAUTH_MARK,
+  currentDiscovery,
+  currentIssuerAccounts,
+  sameIssuer,
+  ssoAccountId,
+  ssoProfile,
+  ssoRequest,
+} from "@/lib/oidc-flow";
 import {
   PASSWORD_MAX,
   PASSWORD_MIN,
@@ -54,6 +73,17 @@ const isLoopback = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(
 // quietly meaning "off" — see `enabledSources`.
 if (!isBuildPhase) enabledSources();
 
+/**
+ * How people sign in here — see `src/lib/auth-methods.ts`.
+ *
+ * Read once, at load, and refused by name if it does not add up: a provider
+ * with no client secret, an issuer over plain HTTP, a method that is not one.
+ * During `next build` there is no deployment environment to read, so the build
+ * sees the default (local only) and the guards wait for the first request.
+ */
+const methods = isBuildPhase ? { local: true, oidc: false } : authMethods();
+const oidc = isBuildPhase ? null : oidcConfig();
+
 if (isProd && !isBuildPhase) {
   if (!process.env.BETTER_AUTH_SECRET) {
     throw new Error("BETTER_AUTH_SECRET is required in production.");
@@ -73,6 +103,71 @@ if (isProd && !isBuildPhase) {
     );
   }
 }
+
+/**
+ * May this identity at the provider be attached to an existing account?
+ * Better Auth asks with `action: "link-account"` both when it links one
+ * implicitly — a first sign-in whose verified address matches an account — and
+ * when somebody connects one on purpose through `/link-social`.
+ *
+ * - **On purpose:** the account being linked has to be the one signed in now.
+ *   The flow's state names it; the session in the browser that comes back has
+ *   to be the same person.
+ * - **Implicitly:** anybody but the printer owner. A provider that asserts the
+ *   owner's address does not become the owner by doing so; the owner connects
+ *   it from /me. The refusal is word for word the one an address nobody here
+ *   has gets, so it does not say whose address it was.
+ */
+async function linkRule(
+  userId: string,
+  source: { oauth?: { providerId?: string } },
+  context: Parameters<typeof getSessionFromCtx>[0],
+): Promise<{ error: string; errorDescription: string } | void> {
+  if (source.oauth?.providerId !== OIDC_PROVIDER_ID) return;
+  const NOT_INVITED = {
+    error: "invite_required",
+    errorDescription: "Pretty Please Print is invite-only. Ask the printer owner for a link.",
+  };
+  const state = await getOAuthState();
+  const link = state?.link as { userId?: string } | undefined;
+  if (link) {
+    const session = await getSessionFromCtx(context).catch(() => null);
+    if (link.userId && link.userId === userId && session?.user.id === userId) return;
+    return NOT_INVITED;
+  }
+  const target = await db.user.findUnique({ where: { id: userId }, select: { email: true, role: true } });
+  if (target?.role === "admin") {
+    await record({
+      action: "auth.sso_link_refused",
+      subject: target.email,
+      detail: { reason: "owner_not_connected", provider: oidc?.issuer ?? null },
+    });
+    return NOT_INVITED;
+  }
+}
+
+/**
+ * With passwords off, the owner gets in through the provider or not at all,
+ * and is never linked to it implicitly. Said at start, loudly, if nothing
+ * connects them yet — the guest list says it too.
+ */
+if (!isBuildPhase && oidc && !methods.local) {
+  void db.account
+    .count({ where: { ...currentIssuerAccounts(oidc.issuer), user: { role: "admin" } } })
+    .then((n) => {
+      if (n === 0) {
+        console.error(
+          "[auth] AUTH_METHODS has no `local`, and the printer owner has not connected single sign-on. " +
+            "Nobody can sign in as the owner. Start with AUTH_METHODS=local,oidc, connect the provider " +
+            "from /me, then turn local off — docs/deployment.md#single-sign-on.",
+        );
+      }
+    })
+    .catch(() => {});
+}
+
+/** See `disabledPaths` below, and the first rule in `hooks.before`. */
+const disabled = new Set(disabledAuthPaths(methods));
 
 export const auth = betterAuth({
   appName: "Pretty Please Print",
@@ -107,6 +202,136 @@ export const auth = betterAuth({
   },
 
   trustedOrigins: [baseURL],
+
+  /**
+   * A method that is off is off at the endpoint, not just missing from the
+   * page. See `disabledAuthPaths`.
+   */
+  disabledPaths: [...disabled],
+
+  hooks: {
+    /**
+     * Rules for the endpoints themselves, whoever calls them.
+     */
+    before: createAuthMiddleware(async (ctx) => {
+      // `disabledPaths` is enforced by the HTTP router only. The same
+      // endpoints called in process — `auth.api.signUpEmail` from a server
+      // action, say — go straight past it, so a method that is off is refused
+      // here as well.
+      if (disabled.has(ctx.path)) throw new APIError("NOT_FOUND");
+
+      const linking = ctx.path === "/link-social";
+      if (ctx.path !== "/sign-in/social" && !linking) return;
+      const body = (ctx.body ?? {}) as {
+        provider?: unknown;
+        idToken?: unknown;
+        additionalData?: Record<string, unknown>;
+        additionalParams?: Record<string, string>;
+      };
+
+      // `/sign-in/social` has a second branch: post an ID token and be signed
+      // in on it, with no state, no PKCE, a nonce only if the caller offers
+      // one, and — when the token carries no address — a userinfo lookup with
+      // whatever access token the caller sends alongside. `/link-social` has
+      // the same branch for attaching one. The redirect flow is the only one
+      // this app offers, for every provider.
+      if (body.idToken !== undefined) throw new APIError("NOT_FOUND");
+
+      if (linking) {
+        // Connecting the provider to an account on request is for the printer
+        // owner alone — everybody else is linked by their verified address
+        // when they first sign in — and only on a session fresh enough to move
+        // access around: this is a new way into the owner's account.
+        if (!oidc || body.provider !== OIDC_PROVIDER_ID) throw new APIError("NOT_FOUND");
+        const session = await getSessionFromCtx(ctx);
+        const role = (session?.user as { role?: string } | undefined)?.role;
+        const age = session ? Date.now() - new Date(session.session.createdAt).getTime() : Infinity;
+        if (role !== "admin" || !(age >= 0 && age <= FRESH_AUTH_SECONDS * 1000)) {
+          throw new APIError("FORBIDDEN", { message: "Connect single sign-on from /me, on a fresh sign-in." });
+        }
+        // Once is enough. A second link would only re-attach the same
+        // identity — and Better Auth's re-link path writes the provider's
+        // tokens onto the row (the account update hook strips them as well).
+        if (oidc && (await db.account.count({ where: { userId: session!.user.id, ...currentIssuerAccounts(oidc.issuer) } })) > 0) {
+          throw new APIError("CONFLICT", { message: "Single sign-on is already connected." });
+        }
+      }
+
+      if (!oidc || body.provider !== OIDC_PROVIDER_ID) return;
+
+      // The discovery document as it stands now, checked: its issuer is the
+      // configured one and nothing in it is plain HTTP behind an https issuer.
+      // And the provider the plugin built was built from one that named the
+      // same issuer — when it has built one: after a failed start-up
+      // discovery the plugin builds it in its own hook, which runs after this
+      // one. Either way the ID token's `iss` is held to OIDC_ISSUER in
+      // `ssoProfile`, after the plugin has held it to the document's issuer,
+      // so no sign-in completes through a provider built from another's.
+      const discovery = await currentDiscovery(oidc);
+      const built = (ctx.context.socialProviders as Array<{ id: string; issuer?: string }>).find(
+        (p) => p.id === OIDC_PROVIDER_ID,
+      );
+      const problems = discovery.ok ? [] : discovery.problems;
+      if (built?.issuer !== undefined && !sameIssuer(built.issuer, oidc.issuer)) {
+        problems.push(`the provider was set up from a document naming the issuer ${JSON.stringify(built.issuer)}`);
+      }
+      if (problems.length) {
+        ctx.context.logger.error(`single sign-on refused to start: ${problems.join("; ")}`);
+        throw new APIError("SERVICE_UNAVAILABLE", { message: "Single sign-on is not available." });
+      }
+
+      // What is sent to the provider is the server's to say, not the
+      // request's. Better Auth lays a request's `additionalParams` over the
+      // configured `prompt`, so a hand-made POST could otherwise ask for
+      // `prompt=none` past `OIDC_PROMPT=login`. Nothing in this app sends any;
+      // they are replaced here, on the body the endpoint goes on to read (a
+      // returned context is merged into it, which could add keys but never
+      // take the request's away).
+      //
+      // A re-authentication (src/app/reauth) asks the provider to make the
+      // person sign in there again, whatever session it holds, and marks the
+      // flow so the answer is held to that — see `ssoProfile`. The mark goes in
+      // the server's half of the state. Connecting the provider is always one.
+      // Anything else gets the configured `OIDC_PROMPT`, which the plugin adds
+      // itself, and nothing more.
+      const reauth = linking || body.additionalData?.reauth === true;
+      const mutable = ctx.body as Record<string, unknown>;
+      if (reauth) {
+        await addOAuthServerContext({ [REAUTH_MARK]: true });
+        mutable.additionalParams = { prompt: "login", max_age: "0" };
+      } else {
+        delete mutable.additionalParams;
+      }
+    }),
+  },
+
+  /**
+   * A failed single sign-on comes back to the sign-in page, which knows how to
+   * say what went wrong, rather than to Better Auth's own bare error page.
+   */
+  onAPIError: { errorURL: "/signin" },
+
+  account: {
+    /**
+     * Somebody who already has an account here, signing in through the
+     * provider for the first time, lands in *that* account — if, and only if,
+     * the provider says it has verified the address and it matches.
+     *
+     * `trustedProviders` is left empty on purpose. A trusted provider is
+     * linked on its say-so even when it has *not* verified the address, and
+     * the whole of this rule is that it has.
+     *
+     * The printer owner's account is the exception, in `validateUserInfo`
+     * below: it is never linked implicitly, so a provider that asserts the
+     * owner's address does not thereby become the owner. The owner connects
+     * the provider deliberately, from /me (`/link-social`, gated in
+     * `hooks.before`).
+     */
+    accountLinking: { enabled: true, trustedProviders: [] },
+    // Tokens are not refreshed on sign-in because none are kept — see the
+    // account hooks below.
+    updateAccountOnSignIn: false,
+  },
 
   /**
    * Reset links are filed under a digest of their token rather than the token
@@ -162,12 +387,12 @@ export const auth = betterAuth({
     /**
      * Left at a day, and deliberately not doing the job its name suggests.
      *
-     * `freshAge` gates exactly two Better Auth endpoints — `/unlink-account`
-     * and `/list-sessions` — and this app exposes neither. It is NOT the
-     * re-authentication control for this app's own destructive actions; that
-     * is `requireFreshPasskey` in `src/lib/reauth.ts`, which asks for a passkey
-     * touch rather than trusting the age of a session that may have been
-     * captured. Kept at a day so the two library endpoints stay sane.
+     * `freshAge` gates exactly two Better Auth endpoints: `/unlink-account`,
+     * which `disabledAuthPaths` closes in every mode, and `/list-sessions`,
+     * which lists only the caller's own. It is NOT the re-authentication
+     * control for this app's own destructive actions; that is
+     * `requireFreshAuth` in `src/lib/reauth.ts`, at five minutes. Kept at a day
+     * so the library endpoint stays sane.
      */
     freshAge: 60 * 60 * 24,
 
@@ -259,7 +484,8 @@ export const auth = betterAuth({
      * that address, you just lack the link" would turn the endpoint into a way
      * to ask who has been invited. The trail keeps them apart instead.
      */
-    async validateUserInfo({ user, source }) {
+    async validateUserInfo({ user, source }, context) {
+      if (source.action === "link-account") return linkRule(String(user.id ?? ""), source, context);
       if (source.action !== "create-user") return;
 
       const email = user.email ? normalizeEmail(user.email) : "";
@@ -268,15 +494,35 @@ export const auth = betterAuth({
       }
 
       const invited = Boolean(await pendingInviteFor(email));
-      if (!invited || !isClaimingInvite(email)) {
+      const viaOidc = source.method === "oauth" && source.oauth?.providerId === OIDC_PROVIDER_ID;
+      const verdict = mayProvision({
+        invited,
+        claimingLink: isClaimingInvite(email),
+        viaOidc,
+        // Exactly `true`. `mapProfileToUser` below already reduces the claim
+        // to a boolean; this is the belt to that braces.
+        emailVerifiedByProvider: viaOidc && user.emailVerified === true,
+        oidcSignup: oidc?.signup ?? null,
+      });
+      if (!verdict.ok) {
         // Worth a trail entry: repeated rejections for the same address are
         // the shape of someone probing for a way in — and `no_link` against an
         // address that *is* invited is the shape of someone who knows who was.
         await record({
           action: "invite.rejected",
           subject: email,
-          detail: { reason: invited ? "no_link" : "no_invitation" },
+          detail: { reason: verdict.reason, ...(viaOidc ? { via: "oidc" } : {}) },
         });
+        // One refusal has its own answer. An address the provider has not
+        // verified is refused before anything is looked up about it, so saying
+        // so tells nobody who has been invited — and it is the one of these
+        // the person at the keyboard can go and fix.
+        if (verdict.reason === "unverified_email") {
+          return {
+            error: "email_not_verified",
+            errorDescription: "Your sign-on provider has not verified that address.",
+          };
+        }
         return {
           error: "invite_required",
           errorDescription:
@@ -326,8 +572,91 @@ export const auth = betterAuth({
       },
     },
 
+    account: {
+      create: {
+        /**
+         * Keep none of the provider's tokens.
+         *
+         * Better Auth stores the access, refresh and ID token it was handed.
+         * This app never calls the provider on anybody's behalf — the sign-in
+         * is the whole of the relationship — so they would be credentials for
+         * somebody else's system, sitting in this database for no reason. The
+         * row keeps what it needs: which provider, and which subject there.
+         */
+        async before(account) {
+          if (account.providerId !== OIDC_PROVIDER_ID) return;
+          return {
+            data: {
+              ...account,
+              accessToken: null,
+              refreshToken: null,
+              idToken: null,
+              accessTokenExpiresAt: null,
+              refreshTokenExpiresAt: null,
+            },
+          };
+        },
+
+        /**
+         * An identity at the provider now opens this account. For somebody who
+         * already had a password that is a new way in, added without anyone
+         * here pressing a button — exactly the kind of change the trail is for.
+         */
+        async after(account) {
+          if (account.providerId !== OIDC_PROVIDER_ID) return;
+          const user = await db.user.findUnique({
+            where: { id: account.userId },
+            select: { id: true, email: true, role: true },
+          });
+          if (!user) return;
+          // Connected from /me runs through `/link-social`, whose state names
+          // the account; the automatic link at first sign-in has none.
+          const state = await getOAuthState();
+          await record({
+            action: "auth.sso_linked",
+            actor: user,
+            subject: user.email,
+            detail: { provider: oidc?.issuer ?? null, role: user.role, how: state?.link ? "connected" : "automatic" },
+          });
+        },
+      },
+      update: {
+        /**
+         * And none on an update either. Better Auth's link path, for an
+         * identity that is already attached, writes the tokens it was handed
+         * onto the existing row rather than creating one — which the create
+         * hook above never sees.
+         */
+        async before(account) {
+          if (!("accessToken" in account || "refreshToken" in account || "idToken" in account)) return;
+          return {
+            data: {
+              ...account,
+              ...("accessToken" in account ? { accessToken: null } : {}),
+              ...("refreshToken" in account ? { refreshToken: null } : {}),
+              ...("idToken" in account ? { idToken: null } : {}),
+              ...("accessTokenExpiresAt" in account ? { accessTokenExpiresAt: null } : {}),
+              ...("refreshTokenExpiresAt" in account ? { refreshTokenExpiresAt: null } : {}),
+            },
+          };
+        },
+      },
+    },
+
     session: {
       create: {
+        /**
+         * A session opened through the provider dates from when the person
+         * last authenticated *there* (its `auth_time`), not from when this row
+         * was written — which is what makes `/reauth`'s "is this sign-in
+         * recent?" mean somebody typed something recently, rather than that a
+         * provider waved a held session through. See `ssoAuthenticatedAt`.
+         */
+        async before(session) {
+          const at = ssoRequest()?.authenticatedAt;
+          if (!at) return;
+          return { data: { ...session, createdAt: at } };
+        },
         async after(session) {
           const user = await db.user.findUnique({
             where: { id: session.userId },
@@ -388,6 +717,68 @@ export const auth = betterAuth({
       enabled: process.env.HIBP_DISABLED !== "true",
       customPasswordCompromisedMessage:
         "That password appears in a known breach. Pick another — length beats cleverness.",
+    }),
+
+    /**
+     * Single sign-on, through one OpenID Connect provider the host names.
+     *
+     * Always registered, with no providers when it is off: a plugin list whose
+     * shape depends on the environment would make `auth.api` a different type
+     * on every deployment. Off, it adds nothing — and `/sign-in/social` is in
+     * `disabledPaths` besides.
+     *
+     * Discovery rather than typed-out endpoints, so the keys come from the
+     * provider's own document and the ID token is checked against them:
+     * signature, issuer, audience, expiry, and the nonce that binds it to the
+     * request that asked. `requireIdTokenVerification` makes that a condition
+     * of the provider existing at all — without it, a discovery document that
+     * failed to load would quietly downgrade sign-in to *decoding* a token
+     * nobody had verified. PKCE is on by default and left on.
+     */
+    genericOAuth({
+      config: oidc
+        ? [
+            {
+              providerId: OIDC_PROVIDER_ID,
+              // Better Auth's own label, never shown: the screens name the
+              // provider themselves.
+              name: oidc.name ?? OIDC_PROVIDER_ID,
+              discoveryUrl: oidc.discoveryUrl,
+              clientId: oidc.clientId,
+              clientSecret: oidc.clientSecret,
+              scopes: ["openid", "email", "profile"],
+              prompt: oidc.prompt,
+              requireIdTokenVerification: true,
+              /**
+               * Filed under issuer and subject, not the subject alone: see
+               * `ssoAccountId`.
+               */
+              accountSubject: ({ profile }) => (profile.sub ? ssoAccountId(oidc.issuer, String(profile.sub)) : ""),
+              /** The checks this app adds to the profile step: `ssoProfile`. */
+              getUserInfo: (tokens) => ssoProfile(tokens, oidc, (m) => console.error(`[auth] ${m}`)),
+              /**
+               * Three claims, and nothing else from the provider reaches a
+               * user row. In particular not a role: who the printer owner is
+               * was decided by the seed, and what an invitee may do by their
+               * invitation. Nor a picture: the plugin would copy `picture`
+               * into `image`, a URL of the provider's choosing that nothing
+               * here shows and that a browser would be sent to fetch.
+               *
+               * `email_verified` must be the boolean `true`. Providers have
+               * been seen sending the string "false", which is truthy.
+               */
+              mapProfileToUser: (profile) => ({
+                email: typeof profile.email === "string" ? profile.email : undefined,
+                emailVerified: profile.email_verified === true,
+                name:
+                  (typeof profile.name === "string" && profile.name.trim()) ||
+                  (typeof profile.preferred_username === "string" && profile.preferred_username.trim()) ||
+                  undefined,
+                image: undefined,
+              }),
+            },
+          ]
+        : [],
     }),
 
     passkey({

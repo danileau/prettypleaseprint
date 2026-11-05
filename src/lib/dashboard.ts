@@ -38,6 +38,7 @@ export const REFUSAL_ACTIONS = [
   "invite.rejected",
   "upload.rejected",
   "file.refused",
+  "auth.sso_link_refused",
 ] as const;
 
 export type RefusalRow = {

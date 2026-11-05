@@ -5,7 +5,64 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
-Nothing yet.
+### Upgrading from v0.4.0
+
+- **Nothing to set, and no migration.** Single sign-on stays off until
+  `AUTH_METHODS` names it; an instance that does not set it signs people in
+  exactly as before. Read
+  [Single sign-on](docs/deployment.md#single-sign-on) before turning it on.
+
+### Added
+
+- **Single sign-on through an OpenID Connect provider** (#56, #96). A
+  deployment can let people sign in with the login they already have —
+  Authelia, Authentik, Keycloak, VoidAuth, any standard provider — instead
+  of, or beside, the username and password. `AUTH_METHODS` chooses: `local`
+  (the default, and unchanged), `oidc`, or `local,oidc`; the provider is
+  `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`, and the redirect
+  URI to register is `<APP_URL>/api/auth/callback/oidc`. A method that is off
+  is off at its endpoints — over HTTP and when called from the app's own
+  server code — not just hidden.
+
+  **Still invite-only, unless a host says otherwise.** The provider replaces
+  the password, not the guest list: invite an address, and that person signs in
+  through the provider with nothing to follow and nothing to choose.
+  `OIDC_SIGNUP="open"` gives an account to anyone the provider signs in.
+
+  A member who already has an account lands in it the first time they sign in
+  this way. Both that and a new account require the provider to say, as the
+  boolean `true`, that it has verified the address. No claim from the provider
+  reaches a role, a name already chosen, or a picture, and none of its tokens
+  are stored.
+
+  **The printer owner is never linked by address.** A provider that asserts
+  the owner's address gets the answer a stranger gets. The owner connects the
+  provider deliberately, from their own page (*Connect …*, after confirming it
+  is them and signing in again at the provider), and can disconnect it there
+  while passwords are on.
+
+  Three things to read before switching it on, in
+  [Single sign-on](docs/deployment.md#single-sign-on): connect the provider on
+  your own page *before* taking `local` out, or nobody can sign in as the
+  owner — the log, the seed and the guest list warn if you have not; single
+  sign-on works only while the provider is up, and recovers by itself when it
+  is back; and with `oidc` alone there is no password to fall back on.
+
+  Confirming it is you before moving access around asks the provider for a
+  fresh login (`prompt=login`, `max_age=0`) and refuses an answer whose
+  `auth_time` is not from just now, and a session opened through the provider
+  counts as recent only if the person really signed in there recently.
+  Identities are filed under the issuer as well as the subject, so pointing
+  the app at a different provider never opens an account for somebody who
+  merely shares a subject there — and the owner reconnects. The provider's
+  discovery document is checked on every sign-in, a bare ID token posted to
+  the app signs nobody in, and Better Auth's own unlinking endpoint is closed.
+  Linking, refused owner links and disconnecting are on the audit trail
+  (`auth.sso_linked`, `auth.sso_link_refused`, `auth.sso_unlinked`).
+
+  `npm run verify:sso` is the twelfth suite, and runs against a stand-in
+  provider that can be told to lie. What two reviews of the feature found, and
+  what is accepted, is in [the security notes](docs/security-audit.md#single-sign-on).
 
 ## v0.4.0
 

@@ -8,6 +8,7 @@ import { relativeTime } from "@/lib/catalog";
 import { AppHeader } from "@/components/app-header";
 import { Kicker, StatusChip } from "@/components/ui";
 import { ColorSwatch } from "@/components/color-swatch";
+import { SsoPanel } from "./sso-panel";
 
 import type { StoryStatus } from "@prisma/client";
 
@@ -37,7 +38,12 @@ const PRINTED: StoryStatus[] = ["Delivery", "Done"];
 
 type Card = { value: string; label: string; skin: string };
 
-export default async function ProfilePage() {
+export default async function ProfilePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sso?: string }>;
+}) {
+  const { sso } = await searchParams;
   const user = await requireUser("/me");
   const owner = await printerName();
   const isAdmin = user.role === "admin";
@@ -122,6 +128,9 @@ export default async function ProfilePage() {
             </p>
           </div>
         </div>
+
+        {/* The owner's link to the provider, which only the owner makes. */}
+        {isAdmin && <SsoPanel userId={user.id} email={user.email} status={sso} />}
 
         <div className="mb-[35.2px] grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[13.2px]">
           {cards.map((c) => (

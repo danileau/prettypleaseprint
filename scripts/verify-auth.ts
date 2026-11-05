@@ -639,11 +639,17 @@ async function main() {
     const headers: Record<string, string> = acceptLanguage ? { "accept-language": acceptLanguage } : {};
     return (await new Browser().go(`${APP}/signin${query}`, { headers })).text();
   };
+  const plain = await signinIn();
+  // With single sign-on on beside passwords — as docker-compose.test.yml runs
+  // the stack — the lead names the provider; verify:sso covers the rest of it.
+  const ssoName = />\s*Sign in with ([^<{]+)</.exec(plain)?.[1]?.trim();
   const ENGLISH_SIGNIN = [
     "Open · come on in",
     "Members only · ask at the counter",
     "What’ll it be?",
-    "Use the passkey on this device, or your username and password.",
+    ssoName
+      ? `Use ${ssoName}, the passkey on this device, or your username and password.`
+      : "Use the passkey on this device, or your username and password.",
     "Username",
     "Password",
     "Sign in",
@@ -651,7 +657,6 @@ async function main() {
       "been invited yet, or you have forgotten your password, ask whoever owns the printer.",
   ];
 
-  const plain = await signinIn();
   const plainText = visibleText(plain);
   const missingEnglish = ENGLISH_SIGNIN.filter((s) => !plainText.includes(s));
   check("with no Accept-Language the page is English, word for word",

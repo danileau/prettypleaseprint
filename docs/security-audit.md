@@ -251,7 +251,9 @@ section 2b.
 ## Findings correctly dismissed
 
 - **Semgrep "Facebook OAuth detected"** in `tsconfig.tsbuildinfo` — a regex
-  matching hex hashes in a TypeScript build cache. This app has no OAuth.
+  matching hex hashes in a TypeScript build cache. This app had no OAuth at
+  the time; the single sign-on it has since gained is OpenID Connect against
+  a provider the host names, and is covered [below](#single-sign-on).
 - **ZAP "Sensitive Information in URL"** — ZAP's own injected
   `?email=zaproxy@example.com`. The app never puts an address in a URL.
 - **ZAP "Content-Type Header Missing"** — on 307 redirects, which have no body.
@@ -594,6 +596,324 @@ cannot read it, and one taken with `sudo` that flattens ownership produces an
 archive Postgres refuses to start from. On ZFS a snapshot sidesteps this
 entirely; elsewhere the copy has to be made from inside a container, which the
 README now says.
+
+## Single sign-on
+
+Added after the audit above: an optional second way in, through an OpenID
+Connect provider, off unless `AUTH_METHODS` names it. It makes a second party
+able to say who somebody is, so what was checked is what the app does when that
+party is wrong. Every row is asserted by `npm run verify:sso` against a
+stand-in provider, except where the row says otherwise; the starred rows are
+guards this app adds itself. Seven guards of the first version — the strict
+`email_verified` mapping, the gate's verified-address check, the invitation
+requirement, the refusal to link on an unverified address, nonce binding,
+token stripping and the closed `/link-social` — were each removed in turn and
+watched failing before the checks were believed. The fixes from the two
+reviews, [below](#what-the-two-reviews-found), each name the check that holds
+them.
+
+| The risk | What stops it |
+| --- | --- |
+| A forged or misdirected ID token | Verified against the provider's published keys, with issuer, audience, expiry and a per-request nonce — and `requireIdTokenVerification` makes that a condition of the provider being registered at all. A wrong signature, issuer, audience or nonce, or an expired token, signs nobody in. ★ (nonce) |
+| A genuine ID token replayed on its own | Better Auth's `/sign-in/social` will sign somebody in on a posted ID token with no state, no PKCE and the nonce optional, looking up userinfo with a caller-supplied access token. That branch is refused for every provider (404); only the redirect flow, where the nonce is bound, signs anybody in. ★ |
+| The discovery document names another issuer, or sends keys or tokens over plain HTTP | Its `issuer` must be `OIDC_ISSUER`, every endpoint must be `https://` when the issuer is, and it is re-read and re-checked each time a sign-in starts. The ID token's `iss` is held to `OIDC_ISSUER` too, not to whatever the document said. ★ |
+| Userinfo answers for somebody else | When the ID token carries no address and userinfo is asked, userinfo's `sub` must be the token's. ★ |
+| A new provider's subjects overlap the old one's | Identities are filed under issuer and subject together, so a subject at a different issuer opens nothing. ★ |
+| "Confirm it is you" is a click on a provider session left open | The re-authentication asks for `prompt=login` and `max_age=0` and is refused unless the ID token says the person authenticated under two minutes before it was issued (`iat − auth_time`, both on the provider's clock, with `iat` within ten minutes of this server's) — or does not say. A session opened through the provider dates from its `auth_time`, so an ordinary sign-in on an old provider session is not fresh either. ★ |
+| The provider vouches for a stranger | A pending invitation is still required unless the host set `OIDC_SIGNUP=open`. ★ |
+| An address the provider has not verified opens an account | `email_verified` must be the boolean `true` — not the string, not absent — both where the profile is mapped and again in the gate. ★ ★ |
+| …or takes over an existing account | Linking requires the same claim; the provider is deliberately not a "trusted provider", which would link on its say-so alone. ★ |
+| …or takes over the printer owner's | The owner is never linked implicitly, verified address or not; the answer is a stranger's, word for word. The owner connects the provider from `/me`: only the owner, only on a session under five minutes old, only to their own verified address, and only to the account signed in in the browser the flow returns to. ★ ★ |
+| The refusal says who is a member | Better Auth answers an unverified address with `account_not_linked` when somebody has it and `email_not_verified` when nobody does. The browser is told the second in both cases, and the page says the same sentence for either. ★ |
+| The provider's picture is fetched by every browser | `picture` never reaches `image`. ★ |
+| A claim makes somebody the owner | No claim reaches `role`. Asserted with `role`, `groups` and `is_admin` all sent. |
+| A replayed or borrowed callback | State is bound to the browser that started the flow and the code is single-use: a second browser, a second use and an invented state are all refused. |
+| The flow is used as an open redirect | A `callbackURL` on another origin is refused before the provider is contacted. |
+| Somebody at the owner's open browser removes their single sign-on | Better Auth's `/unlink-account` is closed in every mode. Disconnecting is on `/me`: a fresh sign-in, refused with passwords off, and on the trail. ★ |
+| Provider tokens arrive on a re-link | Re-linking a connected owner is refused, and an account update hook strips tokens as the create hook does. ★ |
+| A signed-in person attaches an arbitrary identity | `/link-social` answers the owner alone, on a fresh session, for an identity with the owner's own verified address; a member gets 403, and it is closed where single sign-on is off. ★ |
+| Provider tokens leak from the database | None are stored. ★ |
+| A method that is "off" is only hidden | Its endpoints answer 404 — checked by hand in single-sign-on-only mode, and by a pure check of the list in every mode. Called in process, the same endpoints are refused by a hook, and the server actions that take a password refuse before writing — driven in a child process with `AUTH_METHODS=oidc`. ★ |
+| A suspended account comes back through the provider | Refused; no session is created. |
+
+### What the two reviews found
+
+Single sign-on was reviewed twice before it merged: once as written, and again
+after the first round of fixes and the decision about the printer owner. Each
+finding below says what an attacker could have done, how it was closed, and
+which section of `verify:sso` holds it closed. Severity is for this app as
+deployed — an office, one printer owner, a provider the host runs.
+
+#### S1. A posted ID token signed somebody in — *high, fixed*
+
+Better Auth's `/sign-in/social` has a second branch besides the redirect flow:
+post an ID token and be signed in on it. There is no state and no PKCE, the
+nonce is checked only if the caller offers one, and when the token carries no
+address the userinfo lookup uses whatever access token the caller sends with
+it. Anybody who ever held an ID token this provider issued for this client —
+from a log, a proxy, a browser extension — could replay it and be signed in as that person for as long as it was unexpired,
+without going near the provider. `/link-social` has the same branch for
+attaching an identity.
+
+Closed in `hooks.before`: a request to either endpoint carrying `idToken` is
+answered 404, for every provider. The redirect flow, where state, PKCE and the
+nonce are all bound to the browser that started it, is the only way in.
+*verify:sso: "an ID token on its own signs nobody in".*
+
+#### S2. Re-authentication through the provider was a click — *high, fixed*
+
+`/reauth` stands between a captured session and the actions that hand out
+access: inviting, minting a reset link, revoking. Through the provider it
+asked for nothing — the provider answered from the session it already held, so
+anybody at a browser left signed in to the provider passed it with one click.
+Worse, *any* sign-in through the provider produced a brand-new session, which
+`/reauth` reads as fresh, so signing in again was a way round the question
+altogether.
+
+Closed in two halves. Confirming through the provider is marked as a
+re-authentication in the flow's server-side state, and the server — not the
+page — sends `prompt=login` and `max_age=0`; the answer is refused unless its
+ID token says the person authenticated no more than 120 seconds before it was
+issued. And every session opened through the provider is dated from that
+`auth_time` rather than from when the row was written, so a provider waving
+through an hour-old session produces an hour-old session here.
+*verify:sso: "confirming it is still you means signing in again", and the pure
+checks under "an identity is filed under its issuer, and dated by it".*
+
+#### S3. Passwords could still be set with passwords off — *moderate, fixed*
+
+`AUTH_METHODS=oidc` closed the password endpoints with Better Auth's
+`disabledPaths` — which the library enforces for HTTP requests only. The
+app's own server actions call the same endpoints in process. Accepting an
+invitation with a password, setting one from a reset link, and the owner
+minting a reset link all still worked, so an invitation could be redeemed with
+a password on an instance that had none, and the password would come back to
+life the day `local` was switched on again.
+
+Closed in three places: the first rule in `hooks.before` refuses a disabled
+path however it is called; the three server actions refuse before writing
+anything (not even the name chosen on the form); and `issuePasswordSetupUrl`
+throws rather than mint a link.
+*verify:sso: "with passwords off, the server refuses them too", driven by
+`scripts/passwords-off-probe.ts` in a child process with `AUTH_METHODS=oidc`.*
+
+#### S4. Identities were keyed on the subject alone — *moderate, fixed*
+
+A link was filed under the provider's `sub` only. A subject is unique only at
+its issuer, and many providers use small integers or usernames. Point
+`OIDC_ISSUER` at a different provider — a migration, a second realm — and
+whoever held subject `42` there landed in the account linked to subject `42` at
+the old one.
+
+Closed by filing identities as `<issuer>|<sub>`, the issuer spelt one way
+(`ssoAccountId`, `normalIssuer`). A subject at another issuer opens nothing.
+*verify:sso: "a different provider is not the old one", and the pure checks
+under "an identity is filed under its issuer, and dated by it".*
+
+#### S5. The error code said who is a member — *low, fixed*
+
+For an address the provider has not verified, Better Auth answers
+`account_not_linked` when somebody here has that address and
+`email_not_verified` when nobody does. Anybody who could get an unverified
+address through a provider — their own, at a provider that lets them set it —
+could ask whether a given person is a member.
+
+Closed in two places: the sign-in page maps both codes to the same sentence,
+and the auth route rewrites the first into the second (`sameAnswerForUnverified`).
+*verify:sso: "the answer is the very one an address nobody here has gets",
+under "somebody with a password signs in through the provider".*
+
+#### S6. …and so did the error description — *low, fixed*
+
+After S5, the redirect still differed: only the app's own refusal carried an
+`error_description`, so the URL alone told the two cases apart even though the
+page said the same thing. The rewrite now drops the description too, and the
+browser is sent to the same URL, character for character, either way.
+*verify:sso: the same check, which compares the two redirect URLs whole.*
+
+#### S7. The provider chose a picture for every browser to fetch — *low, fixed*
+
+The plugin copies the provider's `picture` claim into `user.image`: a URL of
+the provider's choosing — or of whoever can set a profile picture there —
+stored for any page that ever renders it, and fetched by every browser that
+does. A tracking pixel at best.
+
+Closed in `mapProfileToUser`: `image` is always unset. Nothing reaches a user
+row from the provider but the address, its verification and, for a new
+account, a name. *verify:sso: "the provider's picture is not kept".*
+
+#### S8. The discovery document was taken as found — *moderate, fixed*
+
+The plugin trusted whatever discovery document the issuer URL served: an
+`issuer` naming somebody else, keys or a token endpoint over plain HTTP behind
+an `https://` issuer. The ID token was then checked against whatever issuer the
+document named. And when the token carried no address, the plugin merged
+whatever userinfo said for the access token, without asking whether it was
+about the same subject.
+
+Closed in `src/lib/oidc-flow.ts`: the document must name `OIDC_ISSUER`, name
+the authorization and token endpoints and the keys, and with an `https://`
+issuer have only `https://` endpoints; it is fetched and checked again each
+time a sign-in starts, and a sign-in does not start while it fails. The ID
+token's `iss` is held to `OIDC_ISSUER` itself, and userinfo's `sub` to the
+token's.
+*verify:sso: "a discovery document is believed only if it adds up" (pure), "a
+discovery document that lies is not believed", "userinfo is about the same
+person as the token".*
+
+#### S9. A provider could make itself the printer owner — *high, fixed*
+
+As first written, the owner's account was linked like any member's: the first
+sign-in through the provider with the owner's verified address opened it. That
+was a deliberate choice, and the first review put the consequence plainly —
+whoever can get the provider to assert the owner's address with
+`email_verified: true` (an administrator there, a self-service profile, a
+compromised provider account) becomes the owner here, with no action by the
+owner and nothing to see until the trail is read.
+
+Reversed by the owner. `validateUserInfo` refuses an implicit link to the
+`admin` account, with the answer a stranger gets and an
+`auth.sso_link_refused` row. The owner connects the provider deliberately from
+`/me`: a fresh sign-in, a fresh login at the provider, an identity with the
+owner's own verified address, attached only to the account signed in in the
+browser that comes back. `/link-social` answers nobody else.
+*verify:sso: "the printer owner is never linked implicitly", "the owner
+connects the provider on purpose, from /me", and "a signed-in member cannot
+attach an identity on request".*
+
+#### S10. `/unlink-account` was open — *moderate, fixed*
+
+Better Auth's own unlinking asks only for a session under a day old
+(`freshAge`) and that one account remain. Anybody at the owner's open browser
+could remove their single sign-on: no step-up, no row on the trail, and in
+`oidc`-only mode no way back in for the owner.
+
+Closed in every mode, through `disabledAuthPaths`. Disconnecting is the server
+action on `/me`, which asks for a fresh sign-in, refuses where passwords are
+off, and records `auth.sso_unlinked`.
+*verify:sso: "Better Auth's own unlinking is closed in every mode" (pure),
+"Better Auth's own unlinking answers 404, and the link stays", and "the owner
+can disconnect the provider again".*
+
+#### S11. Changing the issuer stranded the owner, silently — *moderate, fixed*
+
+With identities keyed on the issuer (S4), an owner connected to the old
+provider is not connected to a new one. But `/me`, the guest-list warning, the
+start-up warning and the seed all counted *any* link, so after `OIDC_ISSUER`
+changed they said the owner was connected when nothing would let them in — and
+in `oidc`-only mode the first sign of it was a locked door. `/reauth`, for its
+part, offered the provider to an owner it would then refuse.
+
+Closed by counting only links filed under the issuer configured now
+(`currentIssuerAccounts`) in every one of those places, `/reauth` included,
+and by documenting the order for changing the issuer.
+*verify:sso: "a link to a provider this instance no longer uses does not count
+as connected". The seed's copy of the rule is not covered — see below.*
+
+#### S12. `auth_time` was measured on this server's clock — *low, fixed*
+
+S2's first form compared `auth_time` with this server's clock. A provider
+whose clock ran a few minutes ahead could make a login several minutes old look
+fresh; one running behind failed honest re-authentications.
+
+Closed by measuring the age as `iat − auth_time`, both on the provider's
+clock, and holding only `iat` to this server's, within ten minutes
+(`authAgeAtIssue`).
+*verify:sso: "how long ago is measured on the provider's clock", and the pure
+checks beside S2's.*
+
+#### S13. Provider tokens were stored on a re-link — *low, fixed*
+
+The account hook that discards the provider's tokens ran on create. Better
+Auth's link path for an identity that is already attached updates the existing
+row instead, writing the access, refresh and ID tokens onto it — so connecting
+an already-connected owner a second time put them in the database.
+
+Closed twice: an account *update* hook nulls the token fields as the create
+hook does, and `/link-social` refuses an owner who is already connected (409).
+*verify:sso: "connecting again once connected is refused", and "Better Auth
+updating a linked account with the provider's tokens stores none of them",
+under "with passwords off, the server refuses them too".*
+
+#### S14. The start-up cross-check was skipped while discovery was pending — *low, documented*
+
+S8 also compares the issuer the plugin built its provider from with
+`OIDC_ISSUER`. When the plugin's start-up discovery failed, though, it builds
+the provider in its own hook, which runs *after* this app's on the same
+request, so on that request there is nothing to compare yet and the check is
+skipped. The comment beside it said the check always ran.
+
+Not closable from this app's side without replacing the plugin's retry. What
+holds either way: the current document is checked on every sign-in, the
+plugin verifies the ID token against the issuer of the document it built from,
+and `ssoProfile` then requires the token's `iss` to be `OIDC_ISSUER` — so no
+sign-in completes through a provider built from a document naming another
+issuer. The comment and the docs now say what the check does and does not
+cover. Accepted below. *Not pinned by a check of its own.*
+
+#### S15. A failed connect showed an error page — *low, fixed*
+
+The owner's *Connect* button, pressed while the discovery document failed its
+checks, threw out of the server action onto the framework's error page, with
+nothing to say what had happened or that nothing had changed.
+
+Closed: a flow that does not start comes back to `/me?sso=unavailable`, which
+says the provider could not be reached; a flow that fails at the provider comes
+back to `/me?sso=failed`.
+*verify:sso: "while the provider cannot be trusted, the button comes back to
+/me and says so — not an error page".*
+
+### Accepted, and worth knowing
+
+- **Once the owner connects it, the provider is part of how the owner is
+  authenticated.** It cannot get there by itself — the owner is never linked
+  by address — but after *Connect* on `/me`, whoever controls the owner's
+  identity at the provider is the owner here. Recorded as `auth.sso_linked`
+  with `how: "connected"` and the role.
+- **A provider that lies about `auth_time` is believed.** One that ignores
+  `prompt=login` but reports an honest `auth_time` is refused; one that reports
+  a false one passes re-authentication. That is the provider being wrong about
+  the one thing it is there to say, and the same trust as everything else
+  here. `OIDC_PROMPT=login` additionally asks the provider to prompt on every
+  ordinary sign-in, for a shared machine; it is a request, not a check, and it
+  is not the default.
+- **An address the provider calls verified is believed.** If people can set
+  their own address there and have it reported verified, they can claim an
+  invited address or a member's. The app cannot see how the provider decided;
+  [the deployment guide](deployment.md#what-has-to-be-true-at-the-provider)
+  says what to check.
+- **A second identity can link to one account.** Two subjects at the provider
+  that both carry the same verified address both open that account. That is
+  what trusting the provider's word for an address means.
+- **The pending-discovery window (S14).** After a failed start-up discovery,
+  the plugin's endpoints are the ones from the document its own retry reads,
+  a moment after this app checked one. Its token and userinfo endpoints are not
+  exposed to compare, so a document that changed them between the two reads is
+  trusted that far; the issuer is not, because the token's `iss` is held to
+  `OIDC_ISSUER`. Once set up, the plugin keeps the endpoints it read until the
+  app restarts.
+- **A provider that is down means nobody signs in through it**, with the
+  button still shown; in `oidc`-only mode that is nobody at all. It recovers by
+  itself when the provider does: Better Auth (1.7.10) retries a discovery that
+  failed at start on the next request for that provider, and this app re-reads
+  the document on every sign-in. Availability, not confidentiality, and loud in
+  the log.
+- **Only `local,oidc` runs as a full stack in CI.** The test overlay runs both
+  ways in, so `oidc`-only is covered by the pure checks of the rules in every
+  mode and by `scripts/passwords-off-probe.ts`, which drives the server side —
+  Better Auth called in process, the password server actions, reset-link
+  minting — with `AUTH_METHODS=oidc`. Its pages and HTTP endpoints were checked
+  by hand, not by a suite. The default `local`-only mode was checked by running
+  every other suite against it by hand before this merged.
+- **The seed repeats the issuer normalisation.** `prisma/seed.ts` decides
+  whether the owner is connected with its own copy of `normalIssuer`, because
+  the migrator image carries `prisma/` and nothing from `src/`. No test pins
+  the two together; if they drift, the seed's message is wrong — it would say
+  the owner is connected, or not, when the app disagrees. The app's own
+  start-up warning and the guest list use the real one.
+- **`OIDC_ALLOW_INSECURE_ISSUER`** lets the issuer be plain `http://`. It
+  exists for the suites, whose stand-in has no certificate, and must never be
+  set in a deployment.
 
 ## Importing from a link
 
