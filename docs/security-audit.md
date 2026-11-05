@@ -615,22 +615,24 @@ was watched failing with the guard removed.
 | The provider vouches for a stranger | A pending invitation is still required unless the host set `OIDC_SIGNUP=open`. ★ |
 | An address the provider has not verified opens an account | `email_verified` must be the boolean `true` — not the string, not absent — both where the profile is mapped and again in the gate. ★ ★ |
 | …or takes over an existing account | Linking requires the same claim; the provider is deliberately not a "trusted provider", which would link on its say-so alone. ★ |
+| …or takes over the printer owner's | The owner is never linked implicitly, verified address or not; the answer is a stranger's, word for word. The owner connects the provider from `/me`: only the owner, only on a session under five minutes old, only to their own verified address, and only to the account signed in in the browser the flow returns to. ★ ★ |
 | The refusal says who is a member | Better Auth answers an unverified address with `account_not_linked` when somebody has it and `email_not_verified` when nobody does. The browser is told the second in both cases, and the page says the same sentence for either. ★ |
 | The provider's picture is fetched by every browser | `picture` never reaches `image`. ★ |
 | A claim makes somebody the owner | No claim reaches `role`. Asserted with `role`, `groups` and `is_admin` all sent. |
 | A replayed or borrowed callback | State is bound to the browser that started the flow and the code is single-use: a second browser, a second use and an invented state are all refused. |
 | The flow is used as an open redirect | A `callbackURL` on another origin is refused before the provider is contacted. |
-| A signed-in person attaches an arbitrary identity | `/link-social` is closed in every mode. ★ |
+| A signed-in person attaches an arbitrary identity | `/link-social` answers the owner alone, on a fresh session, for an identity with the owner's own verified address; a member gets 403, and it is closed where single sign-on is off. ★ |
 | Provider tokens leak from the database | None are stored. ★ |
 | A method that is "off" is only hidden | Its endpoints answer 404 — checked by hand in single-sign-on-only mode, and by a pure check of the list in every mode. Called in process, the same endpoints are refused by a hook, and the server actions that take a password refuse before writing — driven in a child process with `AUTH_METHODS=oidc`. ★ |
 | A suspended account comes back through the provider | Refused; no session is created. |
 
 **Accepted, and worth knowing:**
 
-- **The provider can become the owner.** Linking on a verified address includes
-  the owner's. This was the choice — the alternative is an owner who can never
-  use single sign-on — and it makes the provider part of the trust boundary.
-  The link is recorded as `auth.sso_linked` with the role.
+- **Once the owner connects it, the provider is part of how the owner is
+  authenticated.** It cannot get there by itself — the owner is never linked
+  by address — but after *Connect* on `/me`, whoever controls the owner's
+  identity at the provider is the owner here. Recorded as `auth.sso_linked`
+  with `how: "connected"` and the role.
 - **Re-authentication trusts the provider's `auth_time`.** A provider that
   ignores `prompt=login` but reports an honest `auth_time` is refused; one that
   reports a false one is believed. That is the provider being wrong about the

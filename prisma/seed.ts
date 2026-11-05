@@ -94,21 +94,36 @@ async function main() {
   console.info(`Benefits ready: ${DEFAULT_BENEFITS.length} default tip(s) present.`);
 
   // Where local sign-in is off there is no password to set, and the link below
-  // would lead to a page that says so. The owner gets in the way everybody
-  // does: through the provider, as the address above — the first sign-in with
-  // that address, verified there, opens this account.
+  // would lead to a page that says so. The owner gets in through the provider —
+  // but only once they have connected it from /me: the owner is never linked
+  // implicitly, so a provider asserting this address does not open the account
+  // (`linkRule` in src/lib/auth.ts). Without that connection there is no way
+  // in as the owner at all, and this says so.
   //
   // Read straight from the environment rather than through
   // src/lib/auth-methods.ts: the migrator image carries `prisma/` and nothing
   // from `src/`. The app itself refuses a value this would misread.
   const methods = (process.env.AUTH_METHODS ?? "local").toLowerCase().split(",").map((m) => m.trim());
   if (!methods.includes("local")) {
-    console.info(
-      `\nSign-in here is single sign-on only (AUTH_METHODS=${process.env.AUTH_METHODS}).\n` +
-        `Sign in at ${appUrl("/signin")} as ${admin.email} — your provider must\n` +
-        "report that address as verified. Then invite the rest of the office\n" +
-        "from /admin/invites.",
-    );
+    const connected = await db.account.findFirst({
+      where: { userId: admin.id, providerId: "oidc" },
+      select: { id: true },
+    });
+    if (connected) {
+      console.info(
+        `\nSign-in here is single sign-on only (AUTH_METHODS=${process.env.AUTH_METHODS}).\n` +
+          `Sign in at ${appUrl("/signin")} through your provider as ${admin.email}.\n` +
+          "Then invite the rest of the office from /admin/invites.",
+      );
+    } else {
+      console.error(
+        `\n!! Sign-in here is single sign-on only (AUTH_METHODS=${process.env.AUTH_METHODS}),\n` +
+          `!! and ${admin.email} has not connected the provider. Nobody can sign in as\n` +
+          "!! the printer owner. Start with AUTH_METHODS=\"local,oidc\", set the owner's\n" +
+          "!! password from the link this prints, connect the provider on /me, and only\n" +
+          "!! then take local out. See docs/deployment.md, Single sign-on.",
+      );
+    }
     return;
   }
 

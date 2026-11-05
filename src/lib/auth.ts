@@ -8,7 +8,7 @@ import { haveIBeenPwned } from "better-auth/plugins/haveibeenpwned";
 import { username } from "better-auth/plugins/username";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { passkey } from "@better-auth/passkey";
-import { APIError, addOAuthServerContext, createAuthMiddleware } from "better-auth/api";
+import { APIError, addOAuthServerContext, createAuthMiddleware, getOAuthState, getSessionFromCtx } from "better-auth/api";
 
 import { db } from "@/lib/db";
 import {
@@ -18,6 +18,7 @@ import {
   isClaimingInvite,
 } from "@/lib/invites";
 import { initialsFor } from "@/lib/tokens";
+import { FRESH_AUTH_SECONDS } from "@/lib/auth-rules";
 import { isBuildPhase } from "@/lib/runtime";
 import { enabledSources } from "@/lib/import-source";
 import {
@@ -102,6 +103,68 @@ if (isProd && !isBuildPhase) {
   }
 }
 
+/**
+ * May this identity at the provider be attached to an existing account?
+ * Better Auth asks with `action: "link-account"` both when it links one
+ * implicitly — a first sign-in whose verified address matches an account — and
+ * when somebody connects one on purpose through `/link-social`.
+ *
+ * - **On purpose:** the account being linked has to be the one signed in now.
+ *   The flow's state names it; the session in the browser that comes back has
+ *   to be the same person.
+ * - **Implicitly:** anybody but the printer owner. A provider that asserts the
+ *   owner's address does not become the owner by doing so; the owner connects
+ *   it from /me. The refusal is word for word the one an address nobody here
+ *   has gets, so it does not say whose address it was.
+ */
+async function linkRule(
+  userId: string,
+  source: { oauth?: { providerId?: string } },
+  context: Parameters<typeof getSessionFromCtx>[0],
+): Promise<{ error: string; errorDescription: string } | void> {
+  if (source.oauth?.providerId !== OIDC_PROVIDER_ID) return;
+  const NOT_INVITED = {
+    error: "invite_required",
+    errorDescription: "Pretty Please Print is invite-only. Ask the printer owner for a link.",
+  };
+  const state = await getOAuthState();
+  const link = state?.link as { userId?: string } | undefined;
+  if (link) {
+    const session = await getSessionFromCtx(context).catch(() => null);
+    if (link.userId && link.userId === userId && session?.user.id === userId) return;
+    return NOT_INVITED;
+  }
+  const target = await db.user.findUnique({ where: { id: userId }, select: { email: true, role: true } });
+  if (target?.role === "admin") {
+    await record({
+      action: "auth.sso_link_refused",
+      subject: target.email,
+      detail: { reason: "owner_not_connected", provider: oidc?.issuer ?? null },
+    });
+    return NOT_INVITED;
+  }
+}
+
+/**
+ * With passwords off, the owner gets in through the provider or not at all,
+ * and is never linked to it implicitly. Said at start, loudly, if nothing
+ * connects them yet — the guest list says it too.
+ */
+if (!isBuildPhase && oidc && !methods.local) {
+  void db.account
+    .count({ where: { providerId: OIDC_PROVIDER_ID, user: { role: "admin" } } })
+    .then((n) => {
+      if (n === 0) {
+        console.error(
+          "[auth] AUTH_METHODS has no `local`, and the printer owner has not connected single sign-on. " +
+            "Nobody can sign in as the owner. Start with AUTH_METHODS=local,oidc, connect the provider " +
+            "from /me, then turn local off — docs/deployment.md#single-sign-on.",
+        );
+      }
+    })
+    .catch(() => {});
+}
+
 /** See `disabledPaths` below, and the first rule in `hooks.before`. */
 const disabled = new Set(disabledAuthPaths(methods));
 
@@ -156,7 +219,8 @@ export const auth = betterAuth({
       // here as well.
       if (disabled.has(ctx.path)) throw new APIError("NOT_FOUND");
 
-      if (ctx.path !== "/sign-in/social") return;
+      const linking = ctx.path === "/link-social";
+      if (ctx.path !== "/sign-in/social" && !linking) return;
       const body = (ctx.body ?? {}) as {
         provider?: unknown;
         idToken?: unknown;
@@ -167,9 +231,24 @@ export const auth = betterAuth({
       // `/sign-in/social` has a second branch: post an ID token and be signed
       // in on it, with no state, no PKCE, a nonce only if the caller offers
       // one, and — when the token carries no address — a userinfo lookup with
-      // whatever access token the caller sends alongside. The redirect flow
-      // is the only one this app offers, for every provider.
+      // whatever access token the caller sends alongside. `/link-social` has
+      // the same branch for attaching one. The redirect flow is the only one
+      // this app offers, for every provider.
       if (body.idToken !== undefined) throw new APIError("NOT_FOUND");
+
+      if (linking) {
+        // Connecting the provider to an account on request is for the printer
+        // owner alone — everybody else is linked by their verified address
+        // when they first sign in — and only on a session fresh enough to move
+        // access around: this is a new way into the owner's account.
+        if (!oidc || body.provider !== OIDC_PROVIDER_ID) throw new APIError("NOT_FOUND");
+        const session = await getSessionFromCtx(ctx);
+        const role = (session?.user as { role?: string } | undefined)?.role;
+        const age = session ? Date.now() - new Date(session.session.createdAt).getTime() : Infinity;
+        if (role !== "admin" || !(age >= 0 && age <= FRESH_AUTH_SECONDS * 1000)) {
+          throw new APIError("FORBIDDEN", { message: "Connect single sign-on from /me, on a fresh sign-in." });
+        }
+      }
 
       if (!oidc || body.provider !== OIDC_PROVIDER_ID) return;
 
@@ -194,8 +273,8 @@ export const auth = betterAuth({
       // person sign in there again, whatever session it holds, and marks the
       // flow so the answer is held to that — see `ssoProfile`. The mark goes
       // in the server's half of the state; the parameters are set here rather
-      // than trusted from the page.
-      if (body.additionalData?.reauth === true) {
+      // than trusted from the page. Connecting the provider is always one.
+      if (linking || body.additionalData?.reauth === true) {
         await addOAuthServerContext({ [REAUTH_MARK]: true });
         return {
           context: {
@@ -220,9 +299,13 @@ export const auth = betterAuth({
      *
      * `trustedProviders` is left empty on purpose. A trusted provider is
      * linked on its say-so even when it has *not* verified the address, and
-     * the whole of this rule is that it has. The printer owner's account is
-     * included: the provider a deployment configures can become its owner, so
-     * it has to be one the host controls. docs/authentication.md says so.
+     * the whole of this rule is that it has.
+     *
+     * The printer owner's account is the exception, in `validateUserInfo`
+     * below: it is never linked implicitly, so a provider that asserts the
+     * owner's address does not thereby become the owner. The owner connects
+     * the provider deliberately, from /me (`/link-social`, gated in
+     * `hooks.before`).
      */
     accountLinking: { enabled: true, trustedProviders: [] },
     // Tokens are not refreshed on sign-in because none are kept — see the
@@ -381,7 +464,8 @@ export const auth = betterAuth({
      * that address, you just lack the link" would turn the endpoint into a way
      * to ask who has been invited. The trail keeps them apart instead.
      */
-    async validateUserInfo({ user, source }) {
+    async validateUserInfo({ user, source }, context) {
+      if (source.action === "link-account") return linkRule(String(user.id ?? ""), source, context);
       if (source.action !== "create-user") return;
 
       const email = user.email ? normalizeEmail(user.email) : "";
@@ -505,11 +589,14 @@ export const auth = betterAuth({
             select: { id: true, email: true, role: true },
           });
           if (!user) return;
+          // Connected from /me runs through `/link-social`, whose state names
+          // the account; the automatic link at first sign-in has none.
+          const state = await getOAuthState();
           await record({
             action: "auth.sso_linked",
             actor: user,
             subject: user.email,
-            detail: { provider: oidc?.issuer ?? null, role: user.role },
+            detail: { provider: oidc?.issuer ?? null, role: user.role, how: state?.link ? "connected" : "automatic" },
           });
         },
       },

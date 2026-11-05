@@ -19,16 +19,21 @@ Notable changes. Every entry names a released version; deployments pin
   through the provider with nothing to follow and nothing to choose.
   `OIDC_SIGNUP="open"` gives an account to anyone the provider signs in.
 
-  Somebody who already has an account lands in it the first time they sign in
+  A member who already has an account lands in it the first time they sign in
   this way. Both that and a new account require the provider to say, as the
   boolean `true`, that it has verified the address. No claim from the provider
   reaches a role, and none of its tokens are stored.
 
+  **The printer owner is never linked by address.** A provider that asserts
+  the owner's address gets the answer a stranger gets. The owner connects the
+  provider deliberately, from their own page (*Connect …*, after confirming it
+  is them), and can disconnect it there.
+
   Three things to read before switching it on, in
-  [Single sign-on](docs/deployment.md#single-sign-on): the provider can assert
-  the printer owner's address, so it must be one you control; single sign-on
-  works only while the provider is up; and with `oidc` alone there is no
-  password to fall back on.
+  [Single sign-on](docs/deployment.md#single-sign-on): connect the provider on
+  your own page *before* taking `local` out, or nobody can sign in as the
+  owner; single sign-on works only while the provider is up; and with `oidc`
+  alone there is no password to fall back on.
 
   Confirming it is you before moving access around asks the provider for a
   fresh login and refuses an answer that is not one, and a session opened

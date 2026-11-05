@@ -5,9 +5,10 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
 import { INVITE_TTL_DAYS } from "@/lib/invites";
 import { RESET_TTL_MINUTES } from "@/lib/password-reset";
-import { authMethods } from "@/lib/auth-methods";
+import { getTranslations } from "next-intl/server";
+import { OIDC_PROVIDER_ID, authMethods, oidcConfig } from "@/lib/auth-methods";
 import { AppHeader } from "@/components/app-header";
-import { Kicker, StatusChip } from "@/components/ui";
+import { Kicker, Notice, StatusChip } from "@/components/ui";
 import { InviteForm } from "./invite-form";
 import { ResetPassword } from "@/components/reset-password";
 import { MemberAccess } from "@/components/member-access";
@@ -70,11 +71,27 @@ export default async function InvitesPage() {
 
   const open = invites.filter((i) => stateOf(i) === "Pending");
 
+  // Passwords off and the owner not connected to the provider: nobody can sign
+  // in as the owner once this session ends. Said here, where the owner looks.
+  const sso = oidcConfig();
+  const ownerStranded =
+    sso !== null &&
+    !authMethods().local &&
+    (await db.account.count({ where: { providerId: OIDC_PROVIDER_ID, user: { role: "admin" } } })) === 0;
+  const ssoWords = ownerStranded ? await getTranslations() : null;
+
   return (
     <>
       <AppHeader user={admin} active="/admin/invites" />
 
       <main className="mx-auto w-full max-w-[1180px] px-[26.4px] pb-[80px] pt-[35.2px]">
+        {ssoWords && (
+          <div className="mb-[22px]">
+            <Notice tone="warn">
+              {ssoWords("adminSso.ownerNotConnected", { name: sso?.name ?? ssoWords("waysIn.sso.defaultName") })}
+            </Notice>
+          </div>
+        )}
         <Kicker>Admin · who gets a table</Kicker>
         <h1 className="m-0 mb-[13.2px] text-[46px] leading-[0.98] text-ink">
           The guest list

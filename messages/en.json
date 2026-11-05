@@ -111,5 +111,25 @@
   },
   "passwordsOff": {
     "refused": "Passwords are switched off on this instance, so there is none to set or reset."
+  },
+  "me": {
+    "sso": {
+      "kicker": "Single sign-on",
+      "connected": "Connected to {name}. Signing in there as {email} opens this account.",
+      "notConnected": "Not connected. Signing in through {name} does not open the printer owner’s account until you connect it here — on purpose, so the provider cannot make itself the owner.",
+      "connect": "Connect {name}",
+      "connectNote": "You will be asked to confirm it is you, and then to sign in at the provider as {email}.",
+      "disconnect": "Disconnect {name}",
+      "onlyWayIn": "Passwords are off on this instance, so {name} is your only way in and cannot be disconnected here.",
+      "status": {
+        "connected": "{name} is connected. You can sign in through it from now on.",
+        "disconnected": "{name} is disconnected. Signing in through it no longer opens this account.",
+        "failed": "{name} could not be connected. Sign in there as {email}, with the address verified, and try again.",
+        "kept": "Passwords are off, so {name} stays connected: it is your only way in."
+      }
+    }
+  },
+  "adminSso": {
+    "ownerNotConnected": "Passwords are off and you have not connected {name}. Nobody can sign in as the printer owner. Turn local sign-in back on, connect {name} from your page, then turn it off again."
   }
 }

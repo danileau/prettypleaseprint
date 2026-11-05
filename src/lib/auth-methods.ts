@@ -229,13 +229,11 @@ export function disabledAuthPaths(methods: Record<AuthMethod, boolean>): string[
       "/passkey/verify-authentication",
     );
   }
-  if (methods.oidc) {
-    // An identity is attached to an account one way only: by signing in with a
-    // provider-verified address that matches. Linking on request, to whatever
-    // identity the browser holds, is a second path this app does not offer.
-    off.push("/link-social");
-  } else {
-    off.push("/sign-in/social", "/link-social");
-  }
+  // With single sign-on on, `/link-social` stays open for one person: the
+  // printer owner, who is never linked implicitly and connects the provider on
+  // /me instead. Who may use it, and when, is decided in `hooks.before` in
+  // src/lib/auth.ts — the owner, on a fresh session, and only to the address
+  // they already have.
+  if (!methods.oidc) off.push("/sign-in/social", "/link-social");
   return off;
 }

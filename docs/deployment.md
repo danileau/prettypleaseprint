@@ -538,8 +538,15 @@ Things to know before switching it on — the first three can lock people out:
 - **`AUTH_METHODS="oidc"` has no way in when the provider is away.** There are
   no passwords to fall back on, the owner's included. Run `local,oidc` until
   you trust the arrangement, and consider leaving it that way.
-- **Whoever controls the provider can become the printer owner**, by asserting
-  the owner's address. Point this at a provider you run.
+- **Connect the provider to the printer owner on purpose, before anything
+  else.** The owner is never linked by address: signing in through the
+  provider as `ADMIN_EMAIL` is refused until the owner, signed in with their
+  password, presses *Connect …* on their own page (`/me`). **Do this before
+  taking `local` out of `AUTH_METHODS`** — with `oidc` alone and nothing
+  connected, nobody can sign in as the owner. The app says so in its log at
+  start, the seed says so, and the guest list shows a warning. Once connected,
+  whoever controls the owner's identity at the provider can sign in as the
+  owner, so point this at a provider you run.
 - **`OIDC_SIGNUP="open"` turns the invite-only rule off** for this door: anyone
   the provider signs in gets an account. Leave it at `invite` and the provider
   replaces the password while you keep the guest list — invite an address, and
@@ -550,9 +557,10 @@ Things to know before switching it on — the first three can lock people out:
 - **With `oidc` only, nothing takes a password**: the password and passkey
   endpoints answer 404, and the screens and server actions that set one
   refuse.
-- **First start with `oidc` only:** the seed prints no set-password link,
-  because there is no password to set. Sign in through the provider as
-  `ADMIN_EMAIL`.
+- **A first start cannot be `oidc` only.** Start with `local,oidc`, set the
+  owner's password from the seed's link, connect the provider on `/me`, and
+  only then switch to `oidc`. Started `oidc`-only with nothing connected, the
+  seed prints a warning instead of a link, because there is no way in.
 
 [How authentication works](authentication.md#single-sign-on) has the reasoning,
 and what the provider is and is not trusted to say.

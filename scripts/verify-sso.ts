@@ -258,8 +258,10 @@ async function main() {
   const localOnly = disabledAuthPaths({ local: true, oidc: false });
   check("local only: the provider endpoints are closed and passwords are not",
         localOnly.includes("/sign-in/social") && !localOnly.includes("/sign-in/username"), localOnly.join(" "));
-  check("linking an identity on request is closed in every mode",
-        [ssoOnly, localOnly, disabledAuthPaths({ local: true, oidc: true })].every((l) => l.includes("/link-social")));
+  check("linking an identity on request is closed where single sign-on is off",
+        localOnly.includes("/link-social"));
+  check("and open where it is on — for the owner alone, gated in the hook (below)",
+        !ssoOnly.includes("/link-social") && !disabledAuthPaths({ local: true, oidc: true }).includes("/link-social"));
 
   section("a discovery document is believed only if it adds up");
 
@@ -508,7 +510,8 @@ async function main() {
   const other = await new Browser().post("/api/auth/sign-in/social", { provider: "github", callbackURL: "/board" });
   check("nor with a provider this deployment did not configure", other.status >= 400, `status ${other.status}`);
   const linkSocial = await first.browser.post("/api/auth/link-social", { provider: "oidc", callbackURL: "/board" });
-  check("a signed-in person cannot attach an identity on request", linkSocial.status === 404, `status ${linkSocial.status}`);
+  check("a signed-in member cannot attach an identity on request", linkSocial.status === 403 && !(await linkSocial.json().catch(() => ({}))).url,
+        `status ${linkSocial.status}`);
 
   // ── people who already have an account ───────────────────────────────────
   section("somebody with a password signs in through the provider");
@@ -552,16 +555,103 @@ async function main() {
         (await signinText("/signin?error=account_not_linked")) === (await signinText("/signin?error=email_not_verified")),
         `status ${unlinkedCode.status}`);
 
-  section("the printer owner");
+  section("the printer owner is never linked implicitly");
+
+  const ownerLinks = () => db.account.count({ where: { userId: admin.id, providerId: "oidc" } });
+  const implicit = await sso("owner");
+  check("a provider asserting the owner's verified address opens nothing",
+        !implicit.browser.signedIn && (await ownerLinks()) === 0, implicit.landed);
+  check("and is told exactly what a stranger is told — it does not say whose address it was",
+        implicit.landed === stranger.landed, `${implicit.landed} vs ${stranger.landed}`);
+  check("the refusal is on the trail", Boolean(await lastAudit("auth.sso_link_refused", admin.email)));
+
+  section("the owner connects the provider on purpose, from /me");
+
+  const ownerUsername = usernameFor(admin.email);
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  await ensureCredentials(APP, admin.id, ownerUsername);
+  const deskSignIn = async () => {
+    const b = new Browser();
+    await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+    await signInWithPassword(b, APP, ownerUsername);
+    return b;
+  };
+  const desk = await deskSignIn();
+  check("the owner signs in with their password", desk.signedIn);
+
+  /** The id of the server action behind the form whose button says `label`. */
+  const actionIn = (html: string, label: string) => {
+    const form = (html.match(/<form\b[\s\S]*?<\/form>/g) ?? []).find((f) => visibleText(f).includes(label));
+    return form ? /name="(\$ACTION_ID_[^"]+)"/.exec(form)?.[1] ?? null : null;
+  };
+  const submit = (b: Browser, action: string) => {
+    const fd = new FormData();
+    fd.set(action, "");
+    return b.raw(`${APP}/me`, { method: "POST", body: fd });
+  };
+  /** The provider's half of a flow the app has started, as `as`; then the callback. */
+  const throughProvider = async (b: Browser, authorizeUrl: string, as: string) => {
+    const authorize = new URL(authorizeUrl);
+    const viaHost = new URL(authorize.pathname + authorize.search, STUB);
+    viaHost.searchParams.set("as", as);
+    const back = (await fetch(viaHost, { redirect: "manual" })).headers.get("location");
+    const done = back ? await b.raw(back) : null;
+    return { authorize, landed: done?.headers.get("location") ?? `(${done?.status ?? "no callback"})` };
+  };
+
+  const connectLabel = `Connect ${button}`;
+  const mePage = await (await desk.raw(`${APP}/me`)).text();
+  const connectAction = actionIn(mePage, connectLabel);
+  check("/me says the provider is not connected, and offers to connect it",
+        visibleText(mePage).includes("Not connected") && connectAction !== null, visibleText(mePage).slice(0, 300));
+
+  const memberTry = await first.browser.post("/api/auth/link-social", { provider: "oidc", callbackURL: "/me" });
+  check("a member asking to connect is refused", memberTry.status === 403, `status ${memberTry.status}`);
+
+  await db.session.updateMany({ where: { userId: admin.id }, data: { createdAt: ago(30) } });
+  const staleTry = await desk.post("/api/auth/link-social", { provider: "oidc", callbackURL: "/me" });
+  check("the owner on a session half an hour old is refused at the endpoint", staleTry.status === 403, `status ${staleTry.status}`);
+  const staleAction = connectAction ? await submit(desk, connectAction) : null;
+  check("and the button sends them to confirm it is them first",
+        (staleAction?.headers.get("location") ?? "").startsWith("/reauth?next=%2Fme") && (await ownerLinks()) === 0,
+        `${staleAction?.status} ${staleAction?.headers.get("location")}`);
+
+  // The flow is bound to who started it: a browser holding the owner's flow
+  // but somebody else's session gets nothing linked to anybody.
+  const started = await deskSignIn();
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  const startRes = await started.post("/api/auth/link-social", { provider: "oidc", callbackURL: "/me", errorCallbackURL: "/me?sso=failed" });
+  const startUrl = ((await startRes.json().catch(() => ({}))) as { url?: string }).url;
+  const swapped = new Browser();
+  for (const [k, v] of first.browser.jar) swapped.jar.set(k, v);
+  for (const [k, v] of started.jar) if (!k.includes("session")) swapped.jar.set(k, v);
+  const swappedOut = startUrl ? await throughProvider(swapped, startUrl, "owner") : null;
+  check("a connection finished in a browser signed in as somebody else links nothing",
+        startUrl !== undefined && (await ownerLinks()) === 0 && /error=/.test(swappedOut?.landed ?? ""),
+        `${startRes.status} ${swappedOut?.landed}`);
+
+  const fresh2 = await deskSignIn();
+  const action2 = actionIn(await (await fresh2.raw(`${APP}/me`)).text(), connectLabel);
+  const go = action2 ? await submit(fresh2, action2) : null;
+  const toProvider = go?.headers.get("location") ?? "";
+  check("on a fresh sign-in, the button goes to the provider", toProvider.includes("/authorize?"),
+        `${go?.status} ${toProvider.slice(0, 120)}`);
+  const connected = toProvider.includes("/authorize?") ? await throughProvider(fresh2, toProvider, "owner") : null;
+  check("asking it for a fresh login", connected?.authorize.searchParams.get("prompt") === "login" &&
+        connected?.authorize.searchParams.get("max_age") === "0");
+  check("and comes back to /me, connected", connected?.landed === "/me?sso=connected" && (await ownerLinks()) === 1,
+        connected?.landed);
+  check("which the trail records as connected on purpose, with the role",
+        ((await lastAudit("auth.sso_linked", admin.email))?.detail as { how?: string; role?: string } | null)?.how === "connected" &&
+        ((await lastAudit("auth.sso_linked", admin.email))?.detail as { role?: string } | null)?.role === "admin");
+  check("/me now says so", visibleText(await (await fresh2.raw(`${APP}/me`)).text()).includes(`Connected to ${button}`));
 
   const owner = await sso("owner");
   const adminNow = await db.user.findUnique({ where: { id: admin.id }, include: { accounts: true } });
-  check("signs in to the owner's account with a verified address",
-        owner.landed === "/board" && owner.browser.signedIn && adminNow?.accounts.some((a) => a.providerId === "oidc") === true, owner.landed);
+  check("from then on the owner signs in through the provider",
+        owner.landed === "/board" && owner.browser.signedIn, owner.landed);
   check("and is still the owner, under their own name — a `role` claim changes nothing",
         adminNow?.role === "admin" && adminNow?.name === admin.name, `${adminNow?.role} ${adminNow?.name}`);
-  check("that the owner can now be reached through the provider is on the trail, with the role",
-        ((await lastAudit("auth.sso_linked", admin.email))?.detail as { role?: string } | null)?.role === "admin");
   const guests = await owner.browser.raw(`${APP}/admin/invites`);
   check("a sign-in moments old is fresh enough for the guest list", guests.status === 200, `status ${guests.status}`);
 
@@ -742,6 +832,25 @@ async function main() {
   await setDiscovery({});
   const honest = await sso("uma");
   check("and once it is honest again, it does", honest.browser.signedIn, honest.landed);
+
+  section("the owner can disconnect the provider again");
+
+  const leaving = await deskSignIn();
+  const disconnectLabel = `Disconnect ${button}`;
+  const disconnectAction = actionIn(await (await leaving.raw(`${APP}/me`)).text(), disconnectLabel);
+  check("/me offers to disconnect it", disconnectAction !== null);
+  await db.session.updateMany({ where: { userId: admin.id }, data: { createdAt: ago(30) } });
+  const staleOff = disconnectAction ? await submit(leaving, disconnectAction) : null;
+  check("not on a stale sign-in: they confirm it is them first",
+        (staleOff?.headers.get("location") ?? "").startsWith("/reauth?next=%2Fme") && (await ownerLinks()) === 1,
+        `${staleOff?.status} ${staleOff?.headers.get("location")}`);
+  const leaving2 = await deskSignIn();
+  const off = disconnectAction ? await submit(leaving2, actionIn(await (await leaving2.raw(`${APP}/me`)).text(), disconnectLabel)!) : null;
+  check("on a fresh one it is gone", off?.headers.get("location") === "/me?sso=disconnected" && (await ownerLinks()) === 0,
+        `${off?.status} ${off?.headers.get("location")}`);
+  check("and the trail says so", Boolean(await lastAudit("auth.sso_unlinked", admin.email)));
+  const afterOff = await sso("owner");
+  check("after which the provider opens nothing again", !afterOff.browser.signedIn, afterOff.landed);
 
   section("with passwords off, the server refuses them too");
 

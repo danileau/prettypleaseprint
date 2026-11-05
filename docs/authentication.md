@@ -313,9 +313,9 @@ before anything is looked up, so the refusal says nothing about who is invited.
 account. That switches off the invite-only rule this app is built around, for
 that door, so a host has to ask for it by name.
 
-**Somebody who already has an account lands in it.** The first sign-in through
+**A member who already has an account lands in it.** The first sign-in through
 the provider with a matching, verified address links the two, and is recorded
-as `auth.sso_linked`. An address the provider has *not* verified links nothing
+as `auth.sso_linked` (`how: "automatic"`). An address the provider has *not* verified links nothing
 and signs nobody in — and gets the same answer whether or not anybody here has
 that address, so the refusal does not say who is a member.
 
@@ -327,10 +327,26 @@ through the new one links by verified address as above — or, for somebody
 without an account, needs an invitation as before. The old links stay in the
 database, inert.
 
-> **That includes the printer owner.** Whoever controls the configured provider
-> can assert the owner's address and become the owner. Point this only at a
-> provider you run or trust as much as the app itself — it is, from then on,
-> part of how the owner is authenticated.
+**Except the printer owner, who is never linked by address.** A provider that
+asserts the owner's address — verified or not — opens nothing, and is answered
+word for word as a stranger would be, so the refusal does not say whose address
+it was; the trail records it as `auth.sso_link_refused`. The owner connects the
+provider on purpose, from their own page (`/me`): *Connect …* asks them to
+confirm it is them, then runs Better Auth's explicit link flow
+(`/link-social`), which asks the provider for a fresh login and attaches only
+an identity whose verified address is the owner's own, to the account signed
+in in the browser that comes back. That is recorded as `auth.sso_linked` with
+`how: "connected"`; *Disconnect* (also after confirming) removes it, as
+`auth.sso_unlinked`. `/link-social` answers nobody else: not a member, and not
+the owner on a session older than five minutes.
+
+> Once connected, the provider is part of how the owner is authenticated —
+> whoever controls the owner's identity there can sign in as the owner. Point
+> this only at a provider you run or trust as much as the app itself.
+
+An invitation carries a role, and the app only ever issues `client` ones; an
+invitation is claimed through the provider by the same gate as above (pending,
+and a verified address), so it confers no more than its link would.
 
 **What the provider does not get to say.** Three claims reach a user row — the
 address, whether it is verified, and a name for a *new* account. Not a picture,
