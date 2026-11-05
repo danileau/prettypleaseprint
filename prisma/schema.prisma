@@ -321,7 +321,7 @@ model Story {
   note      String   @default("")
 
   /// URL with information about the model, used as an additional reference
-  modelPageUrl String @default("")
+  modelPageUrl String?
 
   /// Free-text print settings the requester optionally notes (layer height,
   /// infill, supports, temps…), shown to the owner on the ticket so specifics
