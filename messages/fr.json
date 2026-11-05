@@ -1,0 +1,261 @@
+{
+  "authShell": {
+    "sign": "Ouvert · entrez donc"
+  },
+  "signin": {
+    "kicker": "Réservé aux habitués · demandez au comptoir",
+    "title": "Qu’est-ce que je vous sers ?",
+    "lead": "Utilisez la clé d’accès de cet appareil, ou votre nom d’utilisateur et votre mot de passe.",
+    "leadSso": "Utilisez {name}, la clé d’accès de cet appareil, ou votre nom d’utilisateur et votre mot de passe.",
+    "leadSsoOnly": "Connectez-vous avec {name} — les mêmes identifiants que vous utilisez ailleurs.",
+    "passwordSet": "Mot de passe enregistré. Connectez-vous avec.",
+    "errors": {
+      "inviteRequired": "Cette adresse n’a pas été invitée. Pretty Please Print fonctionne sur invitation — demandez un lien à la personne qui s’occupe de l’imprimante.",
+      "invalidToken": "Ce lien n’est plus valable. Demandez-en un nouveau à la personne qui s’occupe de l’imprimante.",
+      "tokenExpired": "Ce lien a expiré. Demandez-en un autre à la personne qui s’occupe de l’imprimante.",
+      "suspended": "Ce compte a été suspendu. Voyez avec la personne qui s’occupe de l’imprimante.",
+      "emailNotVerified": "Votre fournisseur d’identité n’a pas confirmé votre adresse e-mail : il ne peut donc pas garantir qui vous êtes ici. Faites-la vérifier chez lui, puis réessayez.",
+      "emailNotFound": "Votre fournisseur d’identité n’a pas communiqué d’adresse e-mail : impossible, donc, de savoir qui vous êtes ici.",
+      "providerUnverified": "La réponse de votre fournisseur d’identité n’a pas pu être vérifiée, donc personne n’a été connecté. Réessayez ; si cela se reproduit, prévenez la personne qui s’occupe de l’imprimante.",
+      "other": "Cette tentative de connexion n’a pas abouti."
+    },
+    "form": {
+      "withSso": "Se connecter avec {name}",
+      "withPasskey": "Se connecter avec une clé d’accès",
+      "username": "Nom d’utilisateur",
+      "password": "Mot de passe",
+      "checking": "Vérification…",
+      "submit": "Se connecter",
+      "refused": "Ce nom d’utilisateur et ce mot de passe ne correspondent pas. Réessayez.",
+      "tooManyAttempts": "Trop de tentatives. Patientez une minute, puis réessayez.",
+      "passkeyRefused": "Cette clé d’accès n’a pas été acceptée. Utilisez plutôt votre mot de passe.",
+      "inviteOnly": "Pretty Please Print fonctionne sur invitation — on ne s’inscrit pas soi-même. Si vous n’avez pas encore été invité, ou si vous avez oublié votre mot de passe, voyez avec la personne qui s’occupe de l’imprimante.",
+      "inviteOnlySso": "Pretty Please Print fonctionne sur invitation. Si la connexion vous répond que vous n’avez pas été invité, voyez avec la personne qui s’occupe de l’imprimante."
+    }
+  },
+  "waysIn": {
+    "or": "ou",
+    "sso": {
+      "defaultName": "l’authentification unique",
+      "busy": "On vous y emmène…",
+      "tooManyAttempts": "Trop de tentatives. Patientez une minute, puis réessayez.",
+      "couldNotStart": "L’authentification unique n’a pas pu démarrer. Réessayez, ou voyez avec la personne qui s’occupe de l’imprimante."
+    }
+  },
+  "header": {
+    "home": "Pretty Please Print, accueil",
+    "nav": {
+      "rail": "Le rail",
+      "orderUp": "Passer commande",
+      "myOrders": "Mes commandes",
+      "history": "Historique",
+      "featureRequests": "Boîte à idées",
+      "pass": "Le passe",
+      "books": "La caisse",
+      "materials": "Matières",
+      "byPerson": "Par personne",
+      "benefits": "Pourboires",
+      "guestList": "Liste des invités",
+      "mail": "Courrier",
+      "audit": "Journal"
+    },
+    "activity": {
+      "button": "Activité",
+      "markAllRead": "Tout marquer comme lu",
+      "empty": "Rien pour l’instant.",
+      "unread": "non lu"
+    },
+    "feedTitle": {
+      "owner": "Du nouveau en salle",
+      "member": "Où en sont vos impressions"
+    },
+    "account": {
+      "menuFor": "Menu du compte de {name}",
+      "withPassword": "Connexion par mot de passe",
+      "passkeys": "{count, plural, one {# clé d’accès sur ce compte} other {# clés d’accès sur ce compte}}",
+      "addFirst": "Ajouter une clé d’accès →",
+      "addAnother": "En ajouter une autre →",
+      "docs": "API et documentation →",
+      "docsHint": "Chaque point d’accès, et une console pour les appeler.",
+      "signOut": "Se déconnecter"
+    },
+    "role": {
+      "owner": "Propriétaire de l’imprimante",
+      "member": "Membre invité"
+    },
+    "nudge": {
+      "title": "Marre de taper votre mot de passe ?",
+      "body": "Enregistrez une clé d’accès et cet appareil vous connecte d’une empreinte — rien à retenir, rien à se faire voler.",
+      "setUp": "C’est parti — 30 secondes",
+      "notNow": "Pas maintenant"
+    }
+  },
+  "invite": {
+    "leadLocal": "Choisissez un nom, un nom d’utilisateur et un mot de passe, et c’est parti.",
+    "leadSso": "Connectez-vous avec {name}, et c’est parti.",
+    "withSso": "Continuer avec {name}",
+    "ssoFor": "Cette invitation est pour <strong>{email}</strong>. Connectez-vous là-bas avec cette adresse : vous n’aurez aucun mot de passe à choisir ici."
+  },
+  "reauth": {
+    "lead": "Vous allez changer qui peut entrer. Un mot de passe ou une clé d’accès confirme que c’est bien vous au clavier, et pas un navigateur que quelqu’un a laissé ouvert.",
+    "leadSso": "Vous allez changer qui peut entrer. Vous reconnecter avec {name} confirme que c’est bien vous au clavier, et pas un navigateur que quelqu’un a laissé ouvert.",
+    "withSso": "Confirmer avec {name}",
+    "ssoNotConfirmed": "Votre nouvelle connexion avec {name} n’a pas confirmé que c’est bien vous : il faut que l’on vous y redemande vos identifiants, à l’instant même. Réessayez, ou utilisez une clé d’accès ou votre mot de passe si vous en avez un."
+  },
+  "setPassword": {
+    "ssoOnly": {
+      "kicker": "Une clé toute neuve",
+      "title": "Pas de mot de passe ici",
+      "lead": "Sur cette instance, on se connecte uniquement avec {name} : il n’y a donc aucun mot de passe à choisir. Connectez-vous avec l’adresse à laquelle vous avez été invité.",
+      "toSignin": "Aller à la connexion →"
+    }
+  },
+  "passwordsOff": {
+    "refused": "Les mots de passe sont désactivés sur cette instance : il n’y en a donc aucun à définir ni à réinitialiser."
+  },
+  "time": {
+    "justNow": "à l’instant"
+  },
+  "me": {
+    "sso": {
+      "kicker": "Authentification unique",
+      "connected": "Associé à {name}. Se connecter là-bas avec l’identité associée ouvre ce compte.",
+      "notConnected": "Non associé. Se connecter via {name} n’ouvre pas le compte de la personne qui s’occupe de l’imprimante tant que l’association n’est pas faite ici — c’est voulu : le fournisseur ne peut pas s’emparer de ce compte de lui-même.",
+      "connect": "Associer {name}",
+      "connectNote": "On vous demandera de confirmer que c’est bien vous, puis de vous connecter chez le fournisseur en tant que {email}.",
+      "disconnect": "Dissocier {name}",
+      "onlyWayIn": "Les mots de passe sont désactivés sur cette instance : {name} est donc votre seule façon d’entrer, et l’association ne peut pas être défaite ici.",
+      "status": {
+        "connected": "Votre compte est désormais associé à {name}. Vous pouvez vous connecter par là dès maintenant.",
+        "disconnected": "Votre compte n’est plus associé à {name}. Se connecter par là n’ouvre plus ce compte.",
+        "failed": "L’association avec {name} n’a pas abouti. Connectez-vous là-bas en tant que {email}, avec l’adresse vérifiée, puis réessayez.",
+        "kept": "Les mots de passe sont désactivés, donc l’association avec {name} est maintenue : c’est votre seule façon d’entrer.",
+        "unavailable": "Impossible de joindre {name} pour faire l’association pour le moment. Réessayez dans un instant."
+      }
+    },
+    "email": {
+      "heading": "Notifications par e-mail",
+      "on": "Activées. Tout ce qui arrive dans votre panneau Activité est aussi envoyé à {email}.",
+      "off": "Désactivées. Les notifications restent dans votre panneau Activité, et nulle part ailleurs.",
+      "turnOff": "Ne plus me les envoyer par e-mail",
+      "turnOn": "Me les envoyer aussi par e-mail"
+    },
+    "language": {
+      "heading": "Langue",
+      "lead": "La langue de ces pages et des e-mails qui vous sont envoyés. « Suivre mon navigateur » prend la première langue demandée par votre navigateur qui est proposée ici ; les e-mails, faute de navigateur à interroger, prennent alors la langue par défaut de cette instance.",
+      "followBrowser": "Suivre mon navigateur",
+      "save": "Enregistrer",
+      "refused": "Cette langue n’est pas proposée ici : rien n’a été changé."
+    }
+  },
+  "adminSso": {
+    "ownerNotConnected": "Les mots de passe sont désactivés et vous n’avez pas associé {name}. Personne ne peut se connecter en tant que propriétaire de l’imprimante. Réactivez la connexion locale, associez {name} depuis votre page, puis désactivez-la à nouveau."
+  },
+  "notification": {
+    "storyUploaded": "{actor} a envoyé « {title} ».",
+    "storyImported": "{actor} a importé « {title} ».",
+    "storyMoved": "{status, select, Requested {{actor} a renvoyé « {title} » parmi les demandes.} Accepted {{actor} a accepté « {title} ».} Printing {{actor} a lancé l’impression de « {title} ».} Delivery {{actor} a terminé « {title} » : prêt à récupérer.} Done {{actor} a remis « {title} ».} Declined {{actor} a refusé « {title} ».} other {{actor} a passé « {title} » à l’étape {status}.}}",
+    "storyDeclined": "{actor} a refusé « {title} ».",
+    "storyFlagged": "{actor} a signalé un souci sur « {title} » : {reason}",
+    "storyFlagCleared": "{actor} a levé le signalement sur « {title} ».",
+    "storyWithdrawn": "{actor} a retiré {ref} — « {title} ».",
+    "storyRequeued": "{actor} a repassé commande de « {title} ».",
+    "storyPriority": "{actor} a mis « {title} » en {priority, select, low {priorité basse} medium {priorité normale} high {priorité haute} other {priorité {priority}}}.",
+    "storyCommented": "{actor} a commenté « {title} ».",
+    "featureFiled": "{actor} a glissé une idée dans la boîte — « {title} ».",
+    "featureWithdrawn": "{actor} a retiré {ref} — « {title} ».",
+    "featurePriority": "{actor} a mis « {title} » en {priority, select, low {priorité basse} medium {priorité normale} high {priorité haute} other {priorité {priority}}}.",
+    "featureMoved": "{actor} a passé « {title} » à l’étape {status, select, Requested {« demandée »} Accepted {« acceptée »} InProgress {« en cours »} Shipped {« livrée »} Done {« terminée »} Declined {« refusée »} other {« {status} »}}.",
+    "featureDeclined": "{actor} a refusé « {title} ».",
+    "featureCommented": "{actor} a commenté « {title} »."
+  },
+  "mail": {
+    "shell": {
+      "footer": "Vous recevez ce message parce que quelqu’un, au bureau, fait tourner une imprimante 3D et se sert de Pretty Please Print pour savoir qui a demandé quoi. Si rien de tout cela ne vous dit quoi que ce soit, ignorez-le — rien ne se passe sans le lien ci-dessus.",
+      "fallback": "Le bouton ne marche pas ? Collez ce lien dans votre navigateur :"
+    },
+    "invite": {
+      "subject": "{inviter} propose d’imprimer des choses pour vous",
+      "text": "{inviter} vous a ajouté à Pretty Please Print — déposez un .stl ou un .3mf, et le voilà sur le rail, en ticket.\n\nPrenez place : {url}\n\nLe lien ne sert qu’une fois et expire dans {days, plural, one {# jour} other {# jours}}.",
+      "banner": "VOTRE TABLE EST PRÊTE",
+      "heading": "On vous confie une imprimante 3D",
+      "lead": "<strong>{inviter}</strong> vous a ajouté à Pretty Please Print. Déposez un <mono>.stl</mono> ou un <mono>.3mf</mono>, dites ce que vous espérez, et le voilà sur le rail, comme un ticket que vous pouvez suivre.",
+      "button": "Prendre place",
+      "pill": "USAGE UNIQUE · EXPIRE DANS {days, plural, one {# JOUR} other {# JOURS}}"
+    },
+    "reset": {
+      "subject": "Choisissez un nouveau mot de passe",
+      "text": "Quelqu’un qui a les clés de l’imprimante a réinitialisé votre mot de passe Pretty Please Print.\n\nChoisissez-en un nouveau : {url}\n\nLe lien ne sert qu’une fois et expire dans {minutes, plural, one {# minute} other {# minutes}}. Il ne vous connecte pas — vous choisissez un mot de passe, puis vous vous en servez. Si vous ne vous y attendiez pas, dites-le avant de l’utiliser.",
+      "banner": "NOUVELLE CLÉ · USAGE UNIQUE",
+      "heading": "Choisissez un nouveau mot de passe",
+      "lead": "La personne qui s’occupe de l’imprimante a réinitialisé votre mot de passe. Ce lien vous permet d’en choisir un nouveau — il ne vous connecte <strong>pas</strong> à lui seul.",
+      "button": "Choisir un mot de passe",
+      "pill": "USAGE UNIQUE · EXPIRE DANS {minutes, plural, one {# MINUTE} other {# MINUTES}}",
+      "aside": "Vous ne vous y attendiez pas ? Touchez-en un mot à cette personne avant de vous en servir. Marre de taper un mot de passe ? Enregistrez une clé d’accès une fois de retour."
+    },
+    "notification": {
+      "subject": "{ref} : {text}",
+      "banner": "SUR LE RAIL",
+      "bannerRef": "SUR LE RAIL · {ref}",
+      "greeting": "BONJOUR {name}",
+      "open": "Ouvrir",
+      "openRef": "Ouvrir {ref}",
+      "textOpen": "Pour l’ouvrir : {url}",
+      "textWhy": "Vous recevez ce message parce que les notifications par e-mail sont activées pour vous dans Pretty Please Print. Pour les désactiver : {url}",
+      "aside": "C’est aussi dans votre panneau Activité. Vous préférez ne pas recevoir ces messages par e-mail ? <link>Désactivez-les</link>."
+    },
+    "test": {
+      "subject": "Message d’essai de Pretty Please Print",
+      "text": "Ceci est un message d’essai, envoyé par {sender} depuis la page Courrier.\n\nSi vous le lisez, {passwords, select, on {les invitations, les réinitialisations de mot de passe et les notifications} other {les invitations et les notifications}} peuvent atteindre leurs destinataires.",
+      "banner": "ESSAI · RIEN À FAIRE",
+      "heading": "Le courrier passe bien",
+      "lead": "Ceci est un message d’essai, envoyé par <strong>{sender}</strong> depuis la page Courrier. Si vous le lisez, {passwords, select, on {les invitations, les réinitialisations de mot de passe et les notifications} other {les invitations et les notifications}} peuvent atteindre leurs destinataires."
+    }
+  },
+  "adminMail": {
+    "kicker": "À emporter",
+    "title": "Courrier",
+    "intro": "Les invitations{passwords, select, on {, les réinitialisations de mot de passe} other {}} et une copie de chaque notification pour qui ne les a pas désactivées. Rien ici n’a besoin du courrier pour fonctionner — sans lui, vous transmettez les liens vous-même et les notifications restent dans le panneau Activité.",
+    "on": "Le courrier est activé",
+    "off": "Le courrier est désactivé",
+    "sentThrough": "Envoyé via",
+    "noTransport": "rien — ni SMTP_URL ni RESEND_API_KEY n’est défini",
+    "badUrl": "SMTP_URL est défini, mais ce n’est pas une URL",
+    "tls": "TLS",
+    "starttls": "STARTTLS s’il est proposé",
+    "sentAs": "Envoyé au nom de",
+    "fromEnv": "Ces réglages viennent de <mono>.env.docker</mono> sur l’hôte (<mono>SMTP_URL</mono> ou <mono>RESEND_API_KEY</mono>, et <mono>MAIL_FROM</mono>), pas de cette page — ils contiennent un mot de passe.",
+    "sendTest": "M’envoyer un message d’essai",
+    "goesTo": "Part à {email}, et nulle part ailleurs.",
+    "setTransport": "Configurez d’abord un transport.",
+    "previewsTitle": "Ce que les gens reçoivent",
+    "previewsIntro": "Chaque message tel qu’il part, avec des noms d’emprunt et des liens qui ne mènent nulle part. Chacun a aussi une version en texte brut, pour les logiciels de messagerie qui n’affichent pas l’autre.",
+    "subject": "Objet",
+    "seeIt": "Le voir tel qu’il part ↗",
+    "plainText": "Version en texte brut ↗",
+    "previews": {
+      "invitation": {
+        "label": "Invitation",
+        "when": "Envoyée quand vous invitez quelqu’un, et quand vous la renvoyez."
+      },
+      "password-reset": {
+        "label": "Réinitialisation du mot de passe",
+        "when": "Envoyée quand vous réinitialisez le mot de passe de quelqu’un depuis la liste des invités."
+      },
+      "notification": {
+        "label": "Notification",
+        "when": "Envoyée pour tout ce qui arrive aussi dans le panneau Activité — une nouvelle demande, un ticket qui avance, un commentaire — à qui ne l’a pas désactivée."
+      },
+      "test": {
+        "label": "Message d’essai",
+        "when": "Envoyé à vous-même, depuis cette page."
+      }
+    },
+    "result": {
+      "none": "Aucun transport de courrier n’est configuré : il n’y a nulle part où l’envoyer.",
+      "refused": "Le serveur de courrier ne l’a pas accepté : {reason}",
+      "sent": "Envoyé à {email}. S’il n’arrive pas, regardez dans les indésirables avant de toucher aux réglages.",
+      "noReason": "il n’a donné aucune raison"
+    }
+  }
+}

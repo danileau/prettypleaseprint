@@ -14,7 +14,9 @@ import { mailPreview, voiceFor } from "@/lib/email";
  * the part a screen reader, a watch or a suspicious corporate gateway shows.
  *
  * `?locale=fr` writes it in that catalogue's language, as somebody who chose
- * it would get it; no locale, or one with no catalogue, is English. A preview
+ * it would get it — `?locale=en` English, whatever the instance default; no
+ * locale, or one with no catalogue, is what somebody who chose nothing gets:
+ * the instance default, else English. A preview
  * this deployment cannot send — a password reset with passwords off — is 404.
  *
  * Owner only, and 404 otherwise, like every other admin surface. The samples

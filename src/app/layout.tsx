@@ -67,9 +67,9 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // The language src/i18n/request.ts chose for this request — English, until
-  // there is another. `lang` follows it so a screen reader picks the right
-  // voice and the browser the right hyphenation.
+  // The language src/i18n/request.ts chose for this request: the person's,
+  // their browser's, the instance's, or English. `lang` follows it so a screen
+  // reader picks the right voice and the browser the right hyphenation.
   const locale = await getLocale();
   return (
     <html

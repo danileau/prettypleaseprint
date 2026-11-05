@@ -113,6 +113,9 @@
   "passwordsOff": {
     "refused": "Passwords are switched off on this instance, so there is none to set or reset."
   },
+  "time": {
+    "justNow": "just now"
+  },
   "me": {
     "sso": {
       "kicker": "Single sign-on",
@@ -136,6 +139,13 @@
       "off": "Off. Notifications are in your Activity panel and nowhere else.",
       "turnOff": "Stop emailing me",
       "turnOn": "Email them to me too"
+    },
+    "language": {
+      "heading": "Language",
+      "lead": "The language of these pages and of the emails sent to you. “Follow my browser” uses the first language your browser asks for that is offered here; emails, with no browser to ask, then use this instance’s default.",
+      "followBrowser": "Follow my browser",
+      "save": "Save",
+      "refused": "That language is not offered here, so nothing was changed."
     }
   },
   "adminSso": {

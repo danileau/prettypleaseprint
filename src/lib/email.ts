@@ -229,6 +229,17 @@ export async function voiceFor(locale: string | null | undefined): Promise<MailV
   return { lang: catalogue.locale, t: translatorFor(catalogue) };
 }
 
+/**
+ * The `?locale=` a link to a preview needs for it to be written in `lang`, as
+ * the owner's Mail page shows it. Left off only when a preview with none is in
+ * that language anyway — the instance default, else English — and never just
+ * because `lang` is English: with DEFAULT_LOCALE set, a preview with no
+ * locale is in that language, not English.
+ */
+export async function previewLocaleQuery(lang: string): Promise<string> {
+  return lang === (await voiceFor(null)).lang ? "" : `?locale=${encodeURIComponent(lang)}`;
+}
+
 export function inviteEmail(
   { t, lang }: MailVoice,
   opts: { to: string; url: string; inviterName: string; expiresInDays: number },
