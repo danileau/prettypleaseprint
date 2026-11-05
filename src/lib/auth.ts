@@ -8,6 +8,7 @@ import { haveIBeenPwned } from "better-auth/plugins/haveibeenpwned";
 import { username } from "better-auth/plugins/username";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { passkey } from "@better-auth/passkey";
+import { APIError, addOAuthServerContext, createAuthMiddleware } from "better-auth/api";
 
 import { db } from "@/lib/db";
 import {
@@ -27,6 +28,14 @@ import {
   oidcConfig,
 } from "@/lib/auth-methods";
 import { record } from "@/lib/audit";
+import {
+  REAUTH_MARK,
+  currentDiscovery,
+  sameIssuer,
+  ssoAccountId,
+  ssoProfile,
+  ssoRequest,
+} from "@/lib/oidc-flow";
 import {
   PASSWORD_MAX,
   PASSWORD_MIN,
@@ -93,6 +102,9 @@ if (isProd && !isBuildPhase) {
   }
 }
 
+/** See `disabledPaths` below, and the first rule in `hooks.before`. */
+const disabled = new Set(disabledAuthPaths(methods));
+
 export const auth = betterAuth({
   appName: "Pretty Please Print",
   baseURL,
@@ -131,7 +143,68 @@ export const auth = betterAuth({
    * A method that is off is off at the endpoint, not just missing from the
    * page. See `disabledAuthPaths`.
    */
-  disabledPaths: disabledAuthPaths(methods),
+  disabledPaths: [...disabled],
+
+  hooks: {
+    /**
+     * Rules for the endpoints themselves, whoever calls them.
+     */
+    before: createAuthMiddleware(async (ctx) => {
+      // `disabledPaths` is enforced by the HTTP router only. The same
+      // endpoints called in process — `auth.api.signUpEmail` from a server
+      // action, say — go straight past it, so a method that is off is refused
+      // here as well.
+      if (disabled.has(ctx.path)) throw new APIError("NOT_FOUND");
+
+      if (ctx.path !== "/sign-in/social") return;
+      const body = (ctx.body ?? {}) as {
+        provider?: unknown;
+        idToken?: unknown;
+        additionalData?: Record<string, unknown>;
+        additionalParams?: Record<string, string>;
+      };
+
+      // `/sign-in/social` has a second branch: post an ID token and be signed
+      // in on it, with no state, no PKCE, a nonce only if the caller offers
+      // one, and — when the token carries no address — a userinfo lookup with
+      // whatever access token the caller sends alongside. The redirect flow
+      // is the only one this app offers, for every provider.
+      if (body.idToken !== undefined) throw new APIError("NOT_FOUND");
+
+      if (!oidc || body.provider !== OIDC_PROVIDER_ID) return;
+
+      // The discovery document as it stands now, checked: its issuer is the
+      // configured one and nothing in it is plain HTTP behind an https issuer.
+      // And the provider the plugin built at start-up was built from one that
+      // named the same issuer.
+      const discovery = await currentDiscovery(oidc);
+      const built = (ctx.context.socialProviders as Array<{ id: string; issuer?: string }>).find(
+        (p) => p.id === OIDC_PROVIDER_ID,
+      );
+      const problems = discovery.ok ? [] : discovery.problems;
+      if (built?.issuer !== undefined && !sameIssuer(built.issuer, oidc.issuer)) {
+        problems.push(`the provider was set up from a document naming the issuer ${JSON.stringify(built.issuer)}`);
+      }
+      if (problems.length) {
+        ctx.context.logger.error(`single sign-on refused to start: ${problems.join("; ")}`);
+        throw new APIError("SERVICE_UNAVAILABLE", { message: "Single sign-on is not available." });
+      }
+
+      // A re-authentication (src/app/reauth) asks the provider to make the
+      // person sign in there again, whatever session it holds, and marks the
+      // flow so the answer is held to that — see `ssoProfile`. The mark goes
+      // in the server's half of the state; the parameters are set here rather
+      // than trusted from the page.
+      if (body.additionalData?.reauth === true) {
+        await addOAuthServerContext({ [REAUTH_MARK]: true });
+        return {
+          context: {
+            body: { ...body, additionalParams: { ...(body.additionalParams ?? {}), prompt: "login", max_age: "0" } },
+          },
+        };
+      }
+    }),
+  },
 
   /**
    * A failed single sign-on comes back to the sign-in page, which knows how to
@@ -444,6 +517,18 @@ export const auth = betterAuth({
 
     session: {
       create: {
+        /**
+         * A session opened through the provider dates from when the person
+         * last authenticated *there* (its `auth_time`), not from when this row
+         * was written — which is what makes `/reauth`'s "is this sign-in
+         * recent?" mean somebody typed something recently, rather than that a
+         * provider waved a held session through. See `ssoAuthenticatedAt`.
+         */
+        async before(session) {
+          const at = ssoRequest()?.authenticatedAt;
+          if (!at) return;
+          return { data: { ...session, createdAt: at } };
+        },
         async after(session) {
           const user = await db.user.findUnique({
             where: { id: session.userId },
@@ -537,10 +622,19 @@ export const auth = betterAuth({
               prompt: oidc.prompt,
               requireIdTokenVerification: true,
               /**
+               * Filed under issuer and subject, not the subject alone: see
+               * `ssoAccountId`.
+               */
+              accountSubject: ({ profile }) => (profile.sub ? ssoAccountId(oidc.issuer, String(profile.sub)) : ""),
+              /** The checks this app adds to the profile step: `ssoProfile`. */
+              getUserInfo: (tokens) => ssoProfile(tokens, oidc, (m) => console.error(`[auth] ${m}`)),
+              /**
                * Three claims, and nothing else from the provider reaches a
                * user row. In particular not a role: who the printer owner is
                * was decided by the seed, and what an invitee may do by their
-               * invitation.
+               * invitation. Nor a picture: the plugin would copy `picture`
+               * into `image`, a URL of the provider's choosing that nothing
+               * here shows and that a browser would be sent to fetch.
                *
                * `email_verified` must be the boolean `true`. Providers have
                * been seen sending the string "false", which is truthy.
@@ -552,6 +646,7 @@ export const auth = betterAuth({
                   (typeof profile.name === "string" && profile.name.trim()) ||
                   (typeof profile.preferred_username === "string" && profile.preferred_username.trim()) ||
                   undefined,
+                image: undefined,
               }),
             },
           ]

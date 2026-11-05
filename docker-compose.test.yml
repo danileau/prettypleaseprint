@@ -31,9 +31,8 @@ services:
       OIDC_NAME: the office login
     depends_on:
       # Better Auth reads the provider's discovery document when it first
-      # starts. If the provider is not up yet it leaves single sign-on off
-      # until a restart — true of a real provider too, and written down in
-      # docs/deployment.md.
+      # starts, and tries again on the next sign-in if that failed. Starting
+      # the stand-in first keeps that retry out of the suites' way.
       oidc-stub:
         condition: service_started
   db:

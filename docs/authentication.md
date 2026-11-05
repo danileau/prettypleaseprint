@@ -276,7 +276,11 @@ setting it up; this is what it does and does not change.
 existing instance keeps doing), `oidc`, or `local,oidc`. A method that is off is
 off **at the endpoint**, not merely missing from the page: with `local` left
 out, the password and passkey endpoints answer 404 to a request sent straight
-at them.
+at them. Better Auth enforces that list only for HTTP requests, so the same
+endpoints called from the app's own server code (`auth.api.*`) are refused by
+a hook as well, and the server actions that take a password — accepting an
+invitation, setting one from a link, the owner minting a reset link — refuse
+before they write anything.
 
 **The provider replaces the password, not the guest list.** By default a new
 account still needs an invitation. What changes is the proof: locally it is the
@@ -294,7 +298,12 @@ single hook as before:
 That middle row is not finding 10 again. There, an address was something a
 stranger typed into a request. Here it is a claim in a token signed by the
 provider this deployment chose, checked against that provider's published keys
-and bound by nonce to the request that asked for it. The link only ever proved
+and bound by nonce to the request that asked for it, in the redirect flow that
+is the only one this app accepts. Better Auth also offers a second branch of
+`/sign-in/social` that signs somebody in on a posted ID token — no state, no
+PKCE, a nonce only if the caller offers one, and a userinfo lookup with
+whatever access token the caller sends beside it. That branch is refused, for
+every provider. The link only ever proved
 somebody could read the mailbox; this is the same proof from a better witness.
 The claim has to be the boolean `true` — providers have been seen sending the
 string `"false"`, which is truthy — and without it the address is refused
@@ -307,7 +316,16 @@ that door, so a host has to ask for it by name.
 **Somebody who already has an account lands in it.** The first sign-in through
 the provider with a matching, verified address links the two, and is recorded
 as `auth.sso_linked`. An address the provider has *not* verified links nothing
-and signs nobody in.
+and signs nobody in — and gets the same answer whether or not anybody here has
+that address, so the refusal does not say who is a member.
+
+**An identity is the issuer and the subject together.** A subject (`sub`) is
+only unique at the provider that issued it, so the link is filed under both.
+Pointing `OIDC_ISSUER` at a different provider therefore starts afresh: no
+identity from the old one opens anything, and each person's first sign-in
+through the new one links by verified address as above — or, for somebody
+without an account, needs an invitation as before. The old links stay in the
+database, inert.
 
 > **That includes the printer owner.** Whoever controls the configured provider
 > can assert the owner's address and become the owner. Point this only at a
@@ -315,19 +333,32 @@ and signs nobody in.
 > part of how the owner is authenticated.
 
 **What the provider does not get to say.** Three claims reach a user row — the
-address, whether it is verified, and a name for a *new* account. Not a role:
+address, whether it is verified, and a name for a *new* account. Not a picture,
+which would be a URL of the provider's choosing for every browser to fetch. Not a role:
 the owner was decided by the seed and an invitee's role by their invitation, so
 a `role` or `groups` claim changes nothing. An existing account keeps its own
 name. And none of the provider's tokens are stored: the app never calls the
 provider on anybody's behalf, so they would be credentials for somebody else's
 system sitting in this database for no reason.
 
-**Confirming it is still you** works as before — freshness is the age of the
-session, and signing in through the provider again mints a new one. It is,
-though, only as strong as the provider's willingness to ask again: one that
-waves through whoever holds its session confirms nothing on a shared machine.
-`OIDC_PROMPT=login` makes the provider ask for credentials every time, at the
-cost of the "single" in single sign-on. Unset by default.
+**Confirming it is still you** asks the provider for a fresh login
+(`prompt=login`, `max_age=0`), and the answer counts only if its ID token says,
+in `auth_time`, that the person authenticated in the last two minutes. A
+provider that answers from the session it already holds, or does not say when
+the person authenticated, is refused, and `/reauth` says so. And a session
+opened through the provider dates from that `auth_time`, not from when the app
+wrote it, so an ordinary sign-in that the provider waved through on an
+hour-old session is not "recent" either — signing in again is not a way round
+the question. `OIDC_PROMPT=login` makes the provider ask for credentials on
+every sign-in as well, at the cost of the "single" in single sign-on. Unset by
+default.
+
+**The discovery document is checked, not just read.** Its `issuer` has to be
+`OIDC_ISSUER`, and when that is `https://` so must every endpoint in it — the
+keys, the token exchange, userinfo. It is read again each time a sign-in
+starts, and a sign-in does not start while it fails those checks. When the ID
+token carries no address and userinfo has to be asked, userinfo's `sub` has to
+be the token's.
 
 **What single sign-on does not do here:**
 
@@ -336,13 +367,17 @@ cost of the "single" in single sign-on. Unset by default.
 - **Give an SSO-only person a password.** They cannot use the bearer-token
   [API](api.md) from a script, because that starts with a username and
   password. With `local` on they can be given one from the guest list.
-- **Survive the provider being down at start-up.** See the deployment guide —
-  it is the sharpest edge of this feature.
+- **Work while the provider is down.** Nobody can sign in through it then,
+  and with `oidc` alone nobody can sign in at all. It comes back by itself
+  with the provider — see the deployment guide.
 
 `npm run verify:sso` drives all of it against a stand-in provider
 (`scripts/stubs/oidc-stub.mjs`) that can be told who is signing in and told to
 lie: a forged signature, a wrong audience, a replayed nonce, an unverified
-address.
+address, a session it answers from when asked to log somebody in again, no
+`auth_time`, userinfo about somebody else, a discovery document naming another
+issuer. A child process drives the server side with `AUTH_METHODS=oidc`
+(`scripts/passwords-off-probe.ts`).
 
 ### Other decisions worth knowing
 

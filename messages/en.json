@@ -14,7 +14,6 @@
       "invalidToken": "That link is no longer valid. Ask the printer owner for a fresh one.",
       "tokenExpired": "That link expired. Ask the printer owner for another.",
       "suspended": "That account has been suspended. Ask whoever owns the printer.",
-      "accountNotLinked": "There is an account for that address, but your sign-on provider has not confirmed the address is yours. Verify it there, then try again.",
       "emailNotVerified": "Your sign-on provider has not confirmed your email address, so it cannot vouch for who you are here. Verify it there, then try again.",
       "emailNotFound": "Your sign-on provider did not share an email address, so there is no way to tell who you are here.",
       "providerUnverified": "Your sign-on provider’s answer could not be verified, so nobody was signed in. Try again; if it keeps happening, tell whoever owns the printer.",
@@ -99,7 +98,8 @@
   "reauth": {
     "lead": "You are about to change who can get in. A password or a passkey confirms it is you at the keyboard and not a browser somebody left open.",
     "leadSso": "You are about to change who can get in. Signing in with {name} again confirms it is you at the keyboard and not a browser somebody left open.",
-    "withSso": "Confirm with {name}"
+    "withSso": "Confirm with {name}",
+    "ssoNotConfirmed": "Signing in again with {name} did not confirm it is you: it has to ask you to sign in there again, just now. Try again, or use a passkey or your password if you have one."
   },
   "setPassword": {
     "ssoOnly": {
@@ -108,5 +108,8 @@
       "lead": "This instance signs people in with {name} only, so there is no password to choose. Sign in with the address you were invited as.",
       "toSignin": "Go to sign in →"
     }
+  },
+  "passwordsOff": {
+    "refused": "Passwords are switched off on this instance, so there is none to set or reset."
   }
 }

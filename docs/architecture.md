@@ -463,6 +463,7 @@ src/lib/
   auth-client.ts         browser client (username, passkey, admin)
   auth-rules.ts          username and password rules, shared with the forms
   auth-methods.ts        which ways in are on, and who may be given an account
+  oidc-flow.ts           what single sign-on checks beyond the library: discovery, issuer, auth_time
   authz.ts               requireUser/requireAdmin, notify, the printer owner
   scope.ts               pure authorisation rules: scopes, the two status flows
   reauth.ts              "sign in again" before handing out access
@@ -542,6 +543,7 @@ scripts/
   verify-models.ts       validator vs. hostile fixtures
   verify-auth.ts         registration, sign-in and password reset
   verify-sso.ts          single sign-on, and everything a provider can get wrong
+  passwords-off-probe.ts verify:sso's child process: the server side with AUTH_METHODS=oidc
   verify-upload.ts       upload -> board -> ticket, and printing again
   verify-import.ts       a model from a link, and every way the far end can misbehave
   stubs/                 stand-ins for Printables and for an OIDC provider

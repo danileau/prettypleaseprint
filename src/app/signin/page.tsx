@@ -26,7 +26,11 @@ const ERRORS = {
   // Single sign-on. The provider vouching for the address is what stands in
   // for a password here, so "it has not" is its own sentence rather than a
   // shrug — it is the one of these somebody can go and fix.
-  account_not_linked: "accountNotLinked",
+  // One answer for an unverified address whether or not somebody here has it:
+  // which of these two Better Auth sends depends on exactly that, so telling
+  // them apart would say who is a member. The auth route rewrites the first
+  // into the second as well (`sameAnswerForUnverified`).
+  account_not_linked: "emailNotVerified",
   email_not_verified: "emailNotVerified",
   email_not_found: "emailNotFound",
   unable_to_get_user_info: "providerUnverified",

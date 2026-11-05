@@ -516,13 +516,25 @@ Things to know before switching it on — the first three can lock people out:
   send that claim, or sends it `false` for everybody, nobody gets in this way,
   and the sign-in page says the address is unverified. Check it for your own
   account first.
-- **The provider must be up when the app starts.** Its discovery document is
-  read once, on the first request after start. If that fails, single sign-on is
-  off — the button is still there, and answers that it could not be started —
-  **and it stays off until the app is restarted**, even after the provider
-  comes back. The log says `Discovery fetch failed for "oidc"`. `/api/health`
-  keeps answering 200, so nothing restarts it for you. Start the provider
-  first; if both run on one host, make the app `depends_on` it.
+- **Single sign-on works only while the provider is up.** The app reads the
+  provider's discovery document when it starts and again each time somebody
+  starts a sign-in. While the provider cannot be reached, the button is still
+  there and answers that single sign-on could not be started; the log says
+  `Discovery fetch failed for "oidc"` at start and `single sign-on refused to
+  start` after. It comes back by itself: the first sign-in after the provider
+  returns works, with no restart (Better Auth retries a discovery that failed
+  at start, on the next request for that provider). `/api/health` keeps
+  answering 200 throughout. If both run on one host, make the app
+  `depends_on` the provider, so the first sign-ins do not wait on that retry.
+- **The discovery document has to add up.** Its `issuer` must be exactly
+  `OIDC_ISSUER` (give or take a trailing slash), and with an `https://` issuer
+  every endpoint in it must be `https://` too. Otherwise sign-ins do not start,
+  and the log line says which field is wrong.
+- **Changing `OIDC_ISSUER` means a new provider**, even for the same people.
+  Identities are filed under the issuer and the subject, so nobody's old link
+  carries over: each person's first sign-in through the new provider links
+  their account again by verified address, and somebody with no account here
+  needs an invitation as usual. Nothing is deleted.
 - **`AUTH_METHODS="oidc"` has no way in when the provider is away.** There are
   no passwords to fall back on, the owner's included. Run `local,oidc` until
   you trust the arrangement, and consider leaving it that way.
@@ -535,6 +547,9 @@ Things to know before switching it on — the first three can lock people out:
 - **The issuer must be `https://`**, and a misspelt or incomplete setting stops
   the app with a log line naming the variable, rather than quietly leaving the
   button off.
+- **With `oidc` only, nothing takes a password**: the password and passkey
+  endpoints answer 404, and the screens and server actions that set one
+  refuse.
 - **First start with `oidc` only:** the seed prints no set-password link,
   because there is no password to set. Sign in through the provider as
   `ADMIN_EMAIL`.

@@ -5,7 +5,7 @@ import { getTranslations } from "next-intl/server";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/authz";
 import { isFreshAuth } from "@/lib/reauth";
-import { AuthShell, H1, Kicker, Lead } from "@/components/ui";
+import { AuthShell, H1, Kicker, Lead, Notice } from "@/components/ui";
 import { ReauthForm } from "./reauth-form";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { authMethods, oidcConfig } from "@/lib/auth-methods";
@@ -23,9 +23,9 @@ import { getClientMessages } from "@/i18n/server";
 export default async function ReauthPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; error?: string }>;
 }) {
-  const { next } = await searchParams;
+  const { next, error } = await searchParams;
   const target = safeRedirect(next);
 
   // You have to be somebody before you can prove you are still them.
@@ -54,6 +54,15 @@ export default async function ReauthPage({
           ? t("lead")
           : t("leadSso", { name: ssoName ?? waysIn("sso.defaultName") })}
       </Lead>
+
+      {/* A confirmation through the provider that came back refused — most
+          often one that answered from the session it held instead of asking
+          again (`ssoProfile` in src/lib/oidc-flow.ts). */}
+      {error && ssoName && (
+        <div className="mb-[22px]">
+          <Notice tone="warn">{t("ssoNotConfirmed", { name: ssoName })}</Notice>
+        </div>
+      )}
 
       <NextIntlClientProvider messages={await getClientMessages(CLIENT_GROUPS.reauth)} timeZone="UTC">
         <ReauthForm

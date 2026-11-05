@@ -86,7 +86,7 @@ export function ReauthForm({
     <div className="flex flex-col gap-[22px]">
       {ssoLabel && (
         <>
-          <SsoButton label={ssoLabel} next={next} />
+          <SsoButton label={ssoLabel} next={next} reauth />
           {hasPassword && <OrRule />}
         </>
       )}

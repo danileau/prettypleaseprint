@@ -12,8 +12,11 @@
  * So this is a small, honest OIDC provider with a dishonest streak that is
  * switched on per person. It speaks discovery, the authorization-code flow
  * with PKCE, RS256 ID tokens, a JWKS and a userinfo endpoint. It is not a
- * place to learn how to build one: it has no consent, no sessions and no
- * refresh tokens, because nothing here exercises them.
+ * place to learn how to build one: it has no consent and no refresh tokens,
+ * because nothing here exercises them. It does keep a *session* per person —
+ * when they last "typed their password" here — because what `auth_time` says,
+ * and whether `prompt=login` / `max_age` are honoured, is what re-authentication
+ * through a provider rests on.
  *
  * Plain Node with no dependencies, like the Printables stand-in beside it and
  * for the same reason — the test overlay runs it in a bare Node image.
@@ -26,6 +29,22 @@
  *     what makes this usable for trying the feature by hand.
  *
  * `fault` on a person makes the provider misbehave for them — see FAULTS.
+ * Three more fields shape their session here:
+ *
+ *   - `session_age`: they already signed in here that many seconds ago, so a
+ *     sign-in that does not insist on a fresh login reports that `auth_time`.
+ *   - `ignores_prompt`: answer from that session even when `prompt=login` or
+ *     `max_age` asked for a fresh login — a provider that waves people through.
+ *   - `no_auth_time`: leave `auth_time` out of the ID token altogether.
+ *
+ * And two the userinfo endpoint: `userinfo_only` keeps the address out of the
+ * ID token, so the app has to ask userinfo for it; `userinfo_sub` makes
+ * userinfo answer for a different subject than the token names.
+ *
+ * `POST /_discovery` lays fields over the discovery document (`{}` puts it
+ * back); `GET /_id_token?as=<key>` hands out an ID token for this client with
+ * no flow around it, as anything that ever held one could replay it; and
+ * `GET /_last_authorize` returns the query of the last authorization request.
  */
 import { createHash, createSign, generateKeyPairSync, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
@@ -73,9 +92,36 @@ function setPeople(list) {
       // Any further claims to put in the ID token — a `role`, a `groups` list.
       // The app is supposed to ignore every one of them.
       extra: p.extra ?? {},
+      session_age: typeof p.session_age === "number" ? p.session_age : null,
+      ignores_prompt: p.ignores_prompt === true,
+      no_auth_time: p.no_auth_time === true,
+      userinfo_only: p.userinfo_only === true,
+      userinfo_sub: p.userinfo_sub === undefined ? null : String(p.userinfo_sub),
     });
   }
+  loggedInAt.clear();
 }
+/** person key → when they last authenticated here, in seconds. */
+const loggedInAt = new Map();
+
+/**
+ * When this person authenticated, for an authorization request: the session
+ * they hold, unless the request insists on a fresh login and the person is not
+ * set to have that ignored.
+ */
+function authenticate(person, q) {
+  const now = Math.floor(Date.now() / 1000);
+  let at = loggedInAt.get(person.key);
+  if (at === undefined) at = person.session_age === null ? now : now - person.session_age;
+  const maxAge = q.get("max_age");
+  const insists = (q.get("prompt") ?? "").split(" ").includes("login") ||
+    (maxAge !== null && now - at > Number(maxAge));
+  if (insists && !person.ignores_prompt) at = now;
+  loggedInAt.set(person.key, at);
+  return at;
+}
+let discoveryOverrides = {};
+let lastAuthorize = null;
 setPeople([
   { key: "owner", email: process.env.STUB_OWNER_EMAIL ?? "ruben@example.org", email_verified: true, name: "Ruben Haas" },
   { key: "ayla", email: "ayla@office.example", email_verified: true, name: "Ayla Berg" },
@@ -91,7 +137,7 @@ const hits = { authorize: 0, token: 0, userinfo: 0, jwks: 0, discovery: 0 };
 
 const b64url = (input) => Buffer.from(input).toString("base64url");
 
-function idToken(person, nonce) {
+function idToken(person, nonce, authTime) {
   const now = Math.floor(Date.now() / 1000);
   const fault = person.fault;
   const claims = {
@@ -101,8 +147,9 @@ function idToken(person, nonce) {
     iat: fault === "expired" ? now - 7200 : now,
     exp: fault === "expired" ? now - 3600 : now + 300,
     ...(nonce ? { nonce: fault === "wrong_nonce" ? "not-the-nonce-you-sent" : nonce } : {}),
-    ...(person.email === undefined ? {} : { email: person.email }),
-    ...(person.email_verified === undefined ? {} : { email_verified: person.email_verified }),
+    ...(person.no_auth_time || authTime === undefined ? {} : { auth_time: authTime }),
+    ...(person.email === undefined || person.userinfo_only ? {} : { email: person.email }),
+    ...(person.email_verified === undefined || person.userinfo_only ? {} : { email_verified: person.email_verified }),
     name: person.name,
     ...person.extra,
   };
@@ -135,6 +182,7 @@ function readBody(req) {
 function authorize(url, res) {
   hits.authorize++;
   const q = url.searchParams;
+  lastAuthorize = Object.fromEntries(q);
   const redirectUri = q.get("redirect_uri") ?? "";
   // Checked before anything is sent anywhere: an unregistered redirect must
   // never be redirected *to*, even with an error.
@@ -162,6 +210,7 @@ function authorize(url, res) {
     nonce: q.get("nonce"),
     challenge: q.get("code_challenge"),
     method: q.get("code_challenge_method"),
+    authTime: authenticate(person, q),
   });
   const back = new URL(redirectUri);
   back.searchParams.set("code", code);
@@ -195,7 +244,7 @@ async function token(req, res) {
   const person = people.get(grant.person);
   const access = randomBytes(24).toString("base64url");
   tokens.set(access, person.key);
-  json(res, 200, { access_token: access, token_type: "Bearer", expires_in: 300, id_token: idToken(person, grant.nonce), scope: "openid email profile" });
+  json(res, 200, { access_token: access, token_type: "Bearer", expires_in: 300, id_token: idToken(person, grant.nonce, grant.authTime), scope: "openid email profile" });
 }
 
 const server = createServer(async (req, res) => {
@@ -203,6 +252,7 @@ const server = createServer(async (req, res) => {
   try {
     if (url.pathname === "/.well-known/openid-configuration") {
       hits.discovery++;
+      // What the suite laid over it, if anything — a document that lies.
       return json(res, 200, {
         issuer: ISSUER,
         authorization_endpoint: `${ISSUER}/authorize`,
@@ -215,6 +265,7 @@ const server = createServer(async (req, res) => {
         scopes_supported: ["openid", "email", "profile"],
         token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"],
         code_challenge_methods_supported: ["S256"],
+        ...discoveryOverrides,
       });
     }
     if (url.pathname === "/jwks") { hits.jwks++; return json(res, 200, { keys: [JWK] }); }
@@ -225,13 +276,23 @@ const server = createServer(async (req, res) => {
       const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? "");
       const person = bearer ? people.get(tokens.get(bearer[1])) : null;
       if (!person) return json(res, 401, { error: "invalid_token" });
-      return json(res, 200, { sub: person.sub, email: person.email, email_verified: person.email_verified, name: person.name });
+      return json(res, 200, { sub: person.userinfo_sub ?? person.sub, email: person.email, email_verified: person.email_verified, name: person.name });
     }
     if (url.pathname === "/_people" && req.method === "POST") {
       setPeople(JSON.parse(await readBody(req)));
       return json(res, 200, { people: people.size });
     }
     if (url.pathname === "/_hits") return json(res, 200, hits);
+    if (url.pathname === "/_discovery" && req.method === "POST") {
+      discoveryOverrides = JSON.parse(await readBody(req));
+      return json(res, 200, { ok: true });
+    }
+    if (url.pathname === "/_last_authorize") return json(res, 200, lastAuthorize ?? {});
+    if (url.pathname === "/_id_token") {
+      const person = people.get(url.searchParams.get("as") ?? "");
+      if (!person) return json(res, 404, { error: "no such person" });
+      return json(res, 200, { id_token: idToken(person, url.searchParams.get("nonce"), authenticate(person, url.searchParams)) });
+    }
     if (url.pathname === "/_reset" && req.method === "POST") {
       for (const k of Object.keys(hits)) hits[k] = 0;
       return json(res, 200, { ok: true });

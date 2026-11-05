@@ -27,11 +27,18 @@ export function SsoButton({
   label,
   next,
   variant = "primary",
+  reauth = false,
 }: {
   label: string;
   /** Where to land once signed in. Already passed through `safeRedirect`. */
   next: string;
   variant?: "primary" | "secondary";
+  /**
+   * Confirming it is still you (src/app/reauth). The server then asks the
+   * provider for a fresh login and refuses an answer that is not one; a
+   * refusal comes back to `/reauth`, which says so.
+   */
+  reauth?: boolean;
 }) {
   const t = useTranslations("waysIn.sso");
   const [busy, setBusy] = useState(false);
@@ -43,7 +50,8 @@ export function SsoButton({
     const { error } = await authClient.signIn.social({
       provider: OIDC_PROVIDER_ID,
       callbackURL: next,
-      errorCallbackURL: "/signin",
+      errorCallbackURL: reauth ? `/reauth?next=${encodeURIComponent(next)}` : "/signin",
+      ...(reauth ? { additionalData: { reauth: true } } : {}),
     });
     // On success the browser is already on its way to the provider.
     if (error) {

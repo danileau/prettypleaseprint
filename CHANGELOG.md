@@ -26,9 +26,16 @@ Notable changes. Every entry names a released version; deployments pin
 
   Three things to read before switching it on, in
   [Single sign-on](docs/deployment.md#single-sign-on): the provider can assert
-  the printer owner's address, so it must be one you control; it has to be up
-  when the app starts, or single sign-on stays off until a restart; and with
-  `oidc` alone there is no password to fall back on.
+  the printer owner's address, so it must be one you control; single sign-on
+  works only while the provider is up; and with `oidc` alone there is no
+  password to fall back on.
+
+  Confirming it is you before moving access around asks the provider for a
+  fresh login and refuses an answer that is not one, and a session opened
+  through the provider counts as recent only if the person really signed in
+  there recently. Identities are filed under the issuer as well as the
+  subject, so pointing the app at a different provider never opens an account
+  for somebody who merely shares a subject there.
 
   `npm run verify:sso` is the twelfth suite, and runs against a stand-in
   provider that can be told to lie.

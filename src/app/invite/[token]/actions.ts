@@ -15,6 +15,8 @@ import {
   USERNAME_RULE,
 } from "@/lib/auth-rules";
 import { checkInviteToken, claimingInvite } from "@/lib/invites";
+import { authMethods } from "@/lib/auth-methods";
+import { getTranslations } from "next-intl/server";
 
 const ClaimSchema = z.object({
   token: z.string().min(1),
@@ -76,6 +78,11 @@ export async function acceptInvite(
   _prev: ClaimState,
   formData: FormData,
 ): Promise<ClaimState> {
+  // Passwords are off for this deployment. The page offers no form, and the
+  // endpoint this ends at refuses (see `hooks.before` in src/lib/auth.ts);
+  // this refuses before anything is written on the way there.
+  if (!authMethods().local) return { error: (await getTranslations("passwordsOff"))("refused") };
+
   const parsed = ClaimSchema.safeParse({
     token: formData.get("token"),
     name: formData.get("name"),

@@ -23,6 +23,7 @@
  * DESTRUCTIVE: wipes users, stories and invites. Development database only.
  */
 import "./_env";
+import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 
 import { db } from "../src/lib/db";
@@ -33,6 +34,15 @@ import {
   mayProvision,
   oidcConfig,
 } from "../src/lib/auth-methods";
+import {
+  REAUTH_MAX_AGE_SECONDS,
+  authTimeVerdict,
+  discoveryProblems,
+  ssoAccountId,
+  ssoAuthenticatedAt,
+} from "../src/lib/oidc-flow";
+import { FRESH_AUTH_SECONDS } from "../src/lib/auth-rules";
+import { issuePasswordSetupUrl } from "../src/lib/password-reset";
 import { TEST_PASSWORD, ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
@@ -86,6 +96,8 @@ class Browser {
 type Person = {
   key: string; sub?: string; email?: string; email_verified?: unknown; name?: string;
   fault?: string; extra?: Record<string, unknown>;
+  session_age?: number; ignores_prompt?: boolean; no_auth_time?: boolean;
+  userinfo_only?: boolean; userinfo_sub?: string;
 };
 const setPeople = (people: Person[]) =>
   fetch(`${STUB}/_people`, { method: "POST", body: JSON.stringify(people) });
@@ -108,13 +120,17 @@ type Outcome = {
  * provider's authorization URL, the provider redirects back with a code, and
  * the app's callback either opens a session or does not.
  */
-async function sso(as: string, browser = new Browser(), callbackURL = "/board"): Promise<Outcome> {
+async function sso(
+  as: string, browser = new Browser(), callbackURL = "/board",
+  { reauth = false }: { reauth?: boolean } = {},
+): Promise<Outcome> {
   // Every run of this suite comes from one address, and the limiter counts by
   // address. It is not what is under test here; `verify:auth` owns that.
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
-  const start = await browser.post("/api/auth/sign-in/social", {
-    provider: "oidc", callbackURL, errorCallbackURL: "/signin",
-  });
+  // What the button on /reauth sends (src/components/sso-button.tsx).
+  const start = await browser.post("/api/auth/sign-in/social", reauth
+    ? { provider: "oidc", callbackURL, errorCallbackURL: `/reauth?next=${encodeURIComponent(callbackURL)}`, additionalData: { reauth: true } }
+    : { provider: "oidc", callbackURL, errorCallbackURL: "/signin" });
   const body = await start.json().catch(() => ({}));
   if (!body.url) throw new Error(`the app would not start the flow: ${start.status} ${JSON.stringify(body)}`);
 
@@ -134,6 +150,10 @@ async function sso(as: string, browser = new Browser(), callbackURL = "/board"):
 }
 
 const rendered = (html: string) => html.replace(/<!--\s*-->/g, "");
+/** What a reader sees: no scripts (the RSC payload), no styles, no tags. */
+const visibleText = (html: string) =>
+  html.replace(/<script\b[\s\S]*?<\/script>/g, " ").replace(/<style\b[\s\S]*?<\/style>/g, " ")
+    .replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000);
 
 async function invite(email: string, adminId: string) {
@@ -146,6 +166,8 @@ async function invite(email: string, adminId: string) {
     },
   });
 }
+const setDiscovery = (overrides: Record<string, unknown>) =>
+  fetch(`${STUB}/_discovery`, { method: "POST", body: JSON.stringify(overrides) });
 const userByEmail = (email: string) => db.user.findUnique({ where: { email }, include: { accounts: true } });
 const lastAudit = (action: string, subject: string) =>
   db.auditEvent.findFirst({ where: { action, subject }, orderBy: { at: "desc" } });
@@ -239,6 +261,53 @@ async function main() {
   check("linking an identity on request is closed in every mode",
         [ssoOnly, localOnly, disabledAuthPaths({ local: true, oidc: true })].every((l) => l.includes("/link-social")));
 
+  section("a discovery document is believed only if it adds up");
+
+  const goodDoc = {
+    issuer: "https://id.example/realms/office",
+    authorization_endpoint: "https://id.example/realms/office/auth",
+    token_endpoint: "https://id.example/realms/office/token",
+    userinfo_endpoint: "https://id.example/realms/office/userinfo",
+    jwks_uri: "https://id.example/realms/office/certs",
+  };
+  const issuerHttps = "https://id.example/realms/office";
+  check("a document for the configured issuer, all https, is fine",
+        discoveryProblems(goodDoc, issuerHttps).length === 0, discoveryProblems(goodDoc, issuerHttps).join("; "));
+  check("…with or without a trailing slash on either side",
+        discoveryProblems({ ...goodDoc, issuer: `${issuerHttps}/` }, issuerHttps).length === 0);
+  check("one naming another issuer is refused",
+        discoveryProblems({ ...goodDoc, issuer: "https://elsewhere.example" }, issuerHttps).some((p) => p.includes("issuer")));
+  check("and so is one naming none", discoveryProblems({ ...goodDoc, issuer: undefined }, issuerHttps).length > 0);
+  for (const key of ["authorization_endpoint", "token_endpoint", "userinfo_endpoint", "jwks_uri", "end_session_endpoint"] as const) {
+    check(`an https issuer with a plain-http ${key} is refused`,
+          discoveryProblems({ ...goodDoc, [key]: "http://id.example/x" }, issuerHttps).some((p) => p.includes(key)));
+  }
+  check("an issuer that is itself plain http (loopback, the stand-in) may have http endpoints",
+        discoveryProblems({ issuer: "http://oidc-stub:4020", authorization_endpoint: "http://oidc-stub:4020/a",
+                            token_endpoint: "http://oidc-stub:4020/t", jwks_uri: "http://oidc-stub:4020/j" },
+                          "http://oidc-stub:4020").length === 0);
+  check("a document with no keys to check tokens against is refused",
+        discoveryProblems({ ...goodDoc, jwks_uri: undefined }, issuerHttps).some((p) => p.includes("jwks_uri")));
+
+  section("an identity is filed under its issuer, and dated by it");
+
+  check("issuer and subject together, not the subject alone",
+        ssoAccountId("https://id.example/realms/office/", "42") === "https://id.example/realms/office|42");
+  check("the same subject at two issuers is two identities",
+        ssoAccountId("https://a.example", "42") !== ssoAccountId("https://b.example", "42"));
+  const nowS = Math.floor(Date.now() / 1000);
+  check("a re-authentication from seconds ago is fresh", authTimeVerdict(nowS - 5, nowS) === "fresh");
+  check(`one older than ${REAUTH_MAX_AGE_SECONDS} seconds is not`, authTimeVerdict(nowS - REAUTH_MAX_AGE_SECONDS - 1, nowS) === "stale");
+  check("nor one dated well in the future", authTimeVerdict(nowS + 3600, nowS) === "stale");
+  check("and one with no auth_time is not either — nothing to go on",
+        authTimeVerdict(undefined, nowS) === "missing" && authTimeVerdict("1700000000", nowS) === "missing");
+  check("a session opened through the provider dates from its auth_time",
+        ssoAuthenticatedAt(nowS - 3600, Date.now()).getTime() === (nowS - 3600) * 1000);
+  check("held to no later than now",
+        Math.abs(ssoAuthenticatedAt(nowS + 3600, Date.now()).getTime() - Date.now()) < 1000);
+  check("and without one is too old to count as fresh",
+        Date.now() - ssoAuthenticatedAt(undefined, Date.now()).getTime() > FRESH_AUTH_SECONDS * 1000);
+
   // ── against the running app ──────────────────────────────────────────────
   section("setup");
 
@@ -327,7 +396,9 @@ async function main() {
         ayla?.role === "client" && (await db.user.count({ where: { role: "admin" } })) === 1, ayla?.role);
   check("recorded as invited by whoever invited them", ayla?.invitedById === admin.id);
   const link = ayla?.accounts.find((a) => a.providerId === "oidc");
-  check("their identity at the provider is what opens it", link?.accountId === "sub-ayla", link?.accountId);
+  const issuer = String(((await (await fetch(`${STUB}/.well-known/openid-configuration`)).json()) as { issuer: string }).issuer);
+  check("their identity at the provider — issuer and subject — is what opens it",
+        link?.accountId === ssoAccountId(issuer, "sub-ayla"), link?.accountId);
   check("and none of the provider's tokens were kept",
         link !== undefined && link.accessToken === null && link.refreshToken === null && link.idToken === null,
         JSON.stringify({ a: link?.accessToken, r: link?.refreshToken, i: link?.idToken }));
@@ -467,11 +538,19 @@ async function main() {
   });
   const unlinked = await sso("otto");
   check("an existing account is NOT opened by an address the provider has not verified",
-        !unlinked.browser.signedIn && unlinked.error === "account_not_linked", unlinked.landed);
+        !unlinked.browser.signedIn && unlinked.error !== null, unlinked.landed);
+  check("and the answer is the very one an address nobody here has gets — it does not say who is a member",
+        unlinked.error === "email_not_verified" && unlinked.error === us.error, `${unlinked.error} vs ${us.error}`);
   check("and gains no identity at the provider",
         (await db.account.count({ where: { userId: otto.id, providerId: "oidc" } })) === 0);
-  check("the page says what to do about it",
-        rendered(await (await new Browser().raw(APP + unlinked.landed)).text()).includes("has not confirmed the address"));
+  const signinText = async (landed: string) => visibleText(await (await new Browser().raw(APP + landed)).text());
+  check("the page says what to do about it, in the same words",
+        (await signinText(unlinked.landed)).includes("has not confirmed your email address") &&
+        (await signinText(unlinked.landed)) === (await signinText(us.landed)));
+  const unlinkedCode = await new Browser().raw(`${APP}/signin?error=account_not_linked`);
+  check("even a link that names Better Auth's other code gets the same sentence",
+        (await signinText("/signin?error=account_not_linked")) === (await signinText("/signin?error=email_not_verified")),
+        `status ${unlinkedCode.status}`);
 
   section("the printer owner");
 
@@ -499,7 +578,10 @@ async function main() {
   check("half an hour later it does", !(await passes(owner.browser)));
   const reauth = rendered(await (await owner.browser.raw(`${APP}/reauth?next=/admin/invites`)).text());
   check("and single sign-on is one of the ways to", new RegExp(`Confirm with ${button}`).test(reauth), "no SSO button on /reauth");
-  const reproved = await sso("owner", owner.browser, "/admin/invites");
+  // What the button on /reauth does: a re-authentication, which asks the
+  // provider for a fresh login (see "confirming it is still you means signing
+  // in again" below).
+  const reproved = await sso("owner", owner.browser, "/admin/invites", { reauth: true });
   check("signing in again there is what makes it fresh",
         reproved.landed === "/admin/invites" && (await passes(owner.browser)), reproved.landed);
 
@@ -533,6 +615,172 @@ async function main() {
         new RegExp(`Continue with ${button}`).test(invitePage) && invitePage.includes("lena@office.example"),
         "no SSO option on the invitation page");
   check("alongside choosing a password, because both are on", invitePage.includes('type="password"'));
+
+  // ── what the review of this feature found ────────────────────────────────
+  section("an ID token on its own signs nobody in");
+
+  // `/sign-in/social` will sign somebody in on a posted ID token, with no
+  // state, no PKCE and no nonce unless the caller offers one. Anything that
+  // ever held a token this provider issued for this app could replay it.
+  const minted = ((await (await fetch(`${STUB}/_id_token?as=ayla`)).json()) as { id_token: string }).id_token;
+  for (const [why, idToken] of [
+    ["a valid ID token, posted", { token: minted }],
+    ["…with an access token for the userinfo lookup beside it", { token: minted, accessToken: "whatever-the-caller-likes" }],
+  ] as const) {
+    const b = new Browser();
+    await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+    const r = await b.post("/api/auth/sign-in/social", { provider: "oidc", idToken, callbackURL: "/board" });
+    check(`${why}: refused, and no session`, r.status === 404 && !b.signedIn, `status ${r.status}`);
+  }
+
+  section("confirming it is still you means signing in again");
+
+  const reauthPeople: Person[] = [
+    // Signed in at the provider an hour ago, and it honours prompt=login.
+    { key: "rhea", email: "rhea@office.example", email_verified: true, name: "Rhea", session_age: 3600 },
+    // Signed in an hour ago, and it answers from that session whatever it is asked.
+    { key: "vince", email: "vince@office.example", email_verified: true, name: "Vince", session_age: 3600, ignores_prompt: true },
+    // Never says when anybody authenticated.
+    { key: "nadia", email: "nadia@office.example", email_verified: true, name: "Nadia", no_auth_time: true },
+  ];
+  await setPeople([...people, ...reauthPeople]);
+  for (const p of reauthPeople) await invite(p.email!, admin.id);
+
+  const rhea = await sso("rhea");
+  check("a sign-in the provider answers from its session signs them in",
+        rhea.landed === "/board" && rhea.browser.signedIn, rhea.landed);
+  const rheaRow = await db.session.findFirst({ where: { user: { email: "rhea@office.example" } }, orderBy: { updatedAt: "desc" } });
+  check("but the session dates from when they really authenticated — an hour ago",
+        rheaRow !== null && Date.now() - rheaRow.createdAt.getTime() > 3500_000, String(rheaRow?.createdAt));
+  check("so it is not fresh enough to move access around", !(await passes(rhea.browser)));
+  const rheaAgain = await sso("rhea", rhea.browser, "/admin/invites", { reauth: true });
+  const asked = rheaAgain.authorize.searchParams;
+  check("confirming it asks the provider for a fresh login", asked.get("prompt") === "login" && asked.get("max_age") === "0",
+        `prompt=${asked.get("prompt")} max_age=${asked.get("max_age")}`);
+  check("and a provider that does log them in again makes it fresh",
+        rheaAgain.landed === "/admin/invites" && (await passes(rhea.browser)), rheaAgain.landed);
+
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  const overriding = await new Browser().post("/api/auth/sign-in/social", {
+    provider: "oidc", callbackURL: "/board", additionalData: { reauth: true },
+    additionalParams: { prompt: "none", max_age: "86400" },
+  });
+  const overURL = new URL(((await overriding.json()) as { url?: string }).url ?? "http://x/");
+  check("the page cannot ask for anything gentler: the server sets prompt and max_age",
+        overURL.searchParams.get("prompt") === "login" && overURL.searchParams.get("max_age") === "0", overURL.search);
+
+  const vince = await sso("vince");
+  const vinceUser = await userByEmail("vince@office.example");
+  const vinceSessions = await db.session.count({ where: { userId: vinceUser!.id } });
+  const vinceAgain = await sso("vince", vince.browser, "/admin/invites", { reauth: true });
+  check("a provider that answers a re-authentication from its old session is refused",
+        vinceAgain.landed.startsWith("/reauth?") && vinceAgain.error !== null &&
+        (await db.session.count({ where: { userId: vinceUser!.id } })) === vinceSessions,
+        vinceAgain.landed);
+  check("and it is still not fresh", !(await passes(vince.browser)));
+  const vincePage = visibleText(await (await vince.browser.raw(APP + vinceAgain.landed)).text());
+  check("the page says it has to ask again, rather than nothing",
+        vincePage.includes("it has to ask you to sign in there again"), vincePage.slice(0, 300));
+
+  const nadia = await sso("nadia");
+  check("a provider that never says when somebody authenticated signs them in…", nadia.browser.signedIn, nadia.landed);
+  check("…but never freshly", !(await passes(nadia.browser)));
+  const nadiaUser = await userByEmail("nadia@office.example");
+  const nadiaSessions = await db.session.count({ where: { userId: nadiaUser!.id } });
+  const nadiaAgain = await sso("nadia", nadia.browser, "/admin/invites", { reauth: true });
+  check("and cannot confirm it is them: no auth_time, no confirmation",
+        nadiaAgain.error !== null && (await db.session.count({ where: { userId: nadiaUser!.id } })) === nadiaSessions &&
+        !(await passes(nadia.browser)), nadiaAgain.landed);
+
+  section("a different provider is not the old one");
+
+  // Linked when identities were filed under the subject alone — what a
+  // previous provider's `sub-collide` would have been stored as.
+  const carla = await db.user.create({
+    data: { email: "carla@office.example", name: "Carla Old", initials: "CO", role: "client",
+            emailVerified: true, invitedById: admin.id },
+  });
+  await db.account.create({ data: { userId: carla.id, providerId: "oidc", accountId: "sub-collide" } });
+  await setPeople([...people, ...reauthPeople,
+    { key: "collide", sub: "sub-collide", email: "newcomer@elsewhere.example", email_verified: true, name: "Newcomer" }]);
+  const collide = await sso("collide");
+  const carlaSessions = await db.session.count({ where: { userId: carla.id } });
+  check("somebody who shares a subject with an old identity does not land in its account",
+        carlaSessions === 0 && collide.error === "invite_required", `${collide.landed} | Carla's sessions ${carlaSessions}`);
+
+  section("the provider's picture is not kept");
+
+  await setPeople([...people, { key: "pia", email: "pia@office.example", email_verified: true, name: "Pia",
+                                extra: { picture: "https://tracker.example/pixel.png" } }]);
+  await invite("pia@office.example", admin.id);
+  const pia = await sso("pia");
+  const piaUser = await userByEmail("pia@office.example");
+  check("a new account from a profile with a picture has no image", pia.browser.signedIn && piaUser?.image === null,
+        `${pia.landed} | image ${piaUser?.image}`);
+
+  section("userinfo is about the same person as the token");
+
+  await setPeople([...people,
+    { key: "uma", email: "uma@office.example", email_verified: true, name: "Uma", userinfo_only: true },
+    { key: "ulf", email: "ulf@office.example", email_verified: true, name: "Ulf", userinfo_only: true, userinfo_sub: "sub-somebody-else" },
+  ]);
+  await invite("uma@office.example", admin.id);
+  await invite("ulf@office.example", admin.id);
+  const uma = await sso("uma");
+  check("a provider that keeps the address to userinfo still signs people in", uma.landed === "/board" && uma.browser.signedIn, uma.landed);
+  const ulf = await sso("ulf");
+  check("but not when userinfo answers for another subject", !ulf.browser.signedIn && (await userByEmail("ulf@office.example")) === null,
+        ulf.landed);
+
+  section("a discovery document that lies is not believed");
+
+  await setDiscovery({ issuer: "https://somebody-else.example" });
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  const lying = await new Browser().post("/api/auth/sign-in/social", { provider: "oidc", callbackURL: "/board", errorCallbackURL: "/signin" });
+  const lyingBody = (await lying.json().catch(() => ({}))) as { url?: string };
+  check("a document naming another issuer: the flow does not start", lying.status === 503 && !lyingBody.url, `status ${lying.status}`);
+  await setDiscovery({});
+  const honest = await sso("uma");
+  check("and once it is honest again, it does", honest.browser.signedIn, honest.landed);
+
+  section("with passwords off, the server refuses them too");
+
+  // The stack runs both ways in, so the other mode's server side is driven in
+  // a child process with AUTH_METHODS=oidc: scripts/passwords-off-probe.ts.
+  const probeEmail = "probe@office.example";
+  const probeToken = randomBytes(24).toString("base64url");
+  const { createHash: sha } = await import("node:crypto");
+  await db.invite.create({
+    data: { email: probeEmail, tokenHash: sha("sha256").update(probeToken).digest("hex"),
+            invitedById: admin.id, expiresAt: new Date(Date.now() + 86_400_000) },
+  });
+  const quinn = await db.user.create({
+    data: { email: "quinn@office.example", name: "Quinn", initials: "QU", role: "client", emailVerified: true, invitedById: admin.id },
+  });
+  const resetToken = new URL(await issuePasswordSetupUrl(quinn.id)).searchParams.get("token")!;
+  const resetRows = () => db.verification.count({ where: { value: quinn.id } });
+  const rowsBefore = await resetRows();
+  const stdout = execFileSync("node_modules/.bin/tsx", ["--import", "./scripts/_server-only.mjs", "scripts/passwords-off-probe.ts"], {
+    encoding: "utf8",
+    env: {
+      ...process.env, AUTH_METHODS: "oidc", OIDC_ISSUER: STUB, OIDC_CLIENT_ID: "ppp", OIDC_CLIENT_SECRET: "ppp-stub-secret",
+      PROBE_INVITE_TOKEN: probeToken, PROBE_INVITE_EMAIL: probeEmail, PROBE_RESET_TOKEN: resetToken, PROBE_USER_ID: quinn.id,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const probe = JSON.parse(/^PROBE (.*)$/m.exec(stdout)?.[1] ?? "{}") as Record<string, { threw?: string; status?: unknown; returned?: unknown }>;
+  check("Better Auth's sign-up, called in process, is refused", probe.signUpEmail?.status === 404, JSON.stringify(probe.signUpEmail));
+  check("and so is its password reset", probe.resetPassword?.status === 404, JSON.stringify(probe.resetPassword));
+  check("no link to set a password is minted", (probe.issuePasswordSetupUrl?.threw ?? "").includes("Passwords are off"),
+        JSON.stringify(probe.issuePasswordSetupUrl));
+  const probeInvite = await db.invite.findFirst({ where: { email: probeEmail } });
+  check("accepting an invitation with a password writes nothing — not even the name chosen",
+        probeInvite?.name === null && probeInvite?.acceptedAt === null && (await userByEmail(probeEmail)) === null,
+        JSON.stringify({ name: probeInvite?.name, acceptInvite: probe.acceptInvite }));
+  const quinnNow = await db.user.findUnique({ where: { id: quinn.id } });
+  check("setting a password from a link writes nothing — not the username, not the link",
+        quinnNow?.username === null && (await resetRows()) === rowsBefore,
+        JSON.stringify({ username: quinnNow?.username, rows: await resetRows(), setPassword: probe.setPassword }));
 
   console.info(
     `\n${passed} checks passed, ${failures.length} failed` +

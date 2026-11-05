@@ -607,15 +607,22 @@ was watched failing with the guard removed.
 | The risk | What stops it |
 | --- | --- |
 | A forged or misdirected ID token | Verified against the provider's published keys, with issuer, audience, expiry and a per-request nonce — and `requireIdTokenVerification` makes that a condition of the provider being registered at all. A wrong signature, issuer, audience or nonce, or an expired token, signs nobody in. ★ (nonce) |
+| A genuine ID token replayed on its own | Better Auth's `/sign-in/social` will sign somebody in on a posted ID token with no state, no PKCE and the nonce optional, looking up userinfo with a caller-supplied access token. That branch is refused for every provider (404); only the redirect flow, where the nonce is bound, signs anybody in. ★ |
+| The discovery document names another issuer, or sends keys or tokens over plain HTTP | Its `issuer` must be `OIDC_ISSUER`, every endpoint must be `https://` when the issuer is, and it is re-read and re-checked each time a sign-in starts. The ID token's `iss` is held to `OIDC_ISSUER` too, not to whatever the document said. ★ |
+| Userinfo answers for somebody else | When the ID token carries no address and userinfo is asked, userinfo's `sub` must be the token's. ★ |
+| A new provider's subjects overlap the old one's | Identities are filed under issuer and subject together, so a subject at a different issuer opens nothing. ★ |
+| "Confirm it is you" is a click on a provider session left open | The re-authentication asks for `prompt=login` and `max_age=0` and is refused unless the ID token's `auth_time` is under two minutes old — or missing. A session opened through the provider dates from its `auth_time`, so an ordinary sign-in on an old provider session is not fresh either. ★ |
 | The provider vouches for a stranger | A pending invitation is still required unless the host set `OIDC_SIGNUP=open`. ★ |
 | An address the provider has not verified opens an account | `email_verified` must be the boolean `true` — not the string, not absent — both where the profile is mapped and again in the gate. ★ ★ |
 | …or takes over an existing account | Linking requires the same claim; the provider is deliberately not a "trusted provider", which would link on its say-so alone. ★ |
+| The refusal says who is a member | Better Auth answers an unverified address with `account_not_linked` when somebody has it and `email_not_verified` when nobody does. The browser is told the second in both cases, and the page says the same sentence for either. ★ |
+| The provider's picture is fetched by every browser | `picture` never reaches `image`. ★ |
 | A claim makes somebody the owner | No claim reaches `role`. Asserted with `role`, `groups` and `is_admin` all sent. |
 | A replayed or borrowed callback | State is bound to the browser that started the flow and the code is single-use: a second browser, a second use and an invented state are all refused. |
 | The flow is used as an open redirect | A `callbackURL` on another origin is refused before the provider is contacted. |
 | A signed-in person attaches an arbitrary identity | `/link-social` is closed in every mode. ★ |
 | Provider tokens leak from the database | None are stored. ★ |
-| A method that is "off" is only hidden | Its endpoints answer 404 — checked by hand in single-sign-on-only mode, and by a pure check of the list in every mode. |
+| A method that is "off" is only hidden | Its endpoints answer 404 — checked by hand in single-sign-on-only mode, and by a pure check of the list in every mode. Called in process, the same endpoints are refused by a hook, and the server actions that take a password refuse before writing — driven in a child process with `AUTH_METHODS=oidc`. ★ |
 | A suspended account comes back through the provider | Refused; no session is created. |
 
 **Accepted, and worth knowing:**
@@ -624,16 +631,27 @@ was watched failing with the guard removed.
   the owner's. This was the choice — the alternative is an owner who can never
   use single sign-on — and it makes the provider part of the trust boundary.
   The link is recorded as `auth.sso_linked` with the role.
-- **Re-authentication is as strong as the provider.** A provider that does not
-  re-prompt makes "confirm it is you" a click. `OIDC_PROMPT=login` is the
-  answer for a shared machine, and it is not the default.
+- **Re-authentication trusts the provider's `auth_time`.** A provider that
+  ignores `prompt=login` but reports an honest `auth_time` is refused; one that
+  reports a false one is believed. That is the provider being wrong about the
+  one thing it is there to say, and the same trust as everything else here.
+  `OIDC_PROMPT=login` additionally makes every ordinary sign-in ask, for a
+  shared machine; it is not the default.
 - **A second identity can link to one account.** Two subjects at the provider
   that both carry the same verified address both open that account. That is
   what trusting the provider's word for an address means.
-- **A provider that is down at start-up disables single sign-on until
-  restart**, with the button still shown. Availability, not confidentiality,
-  and loud in the log — but it is the sharpest edge here, and in `oidc`-only
-  mode it means nobody can sign in.
+- **A provider that is down means nobody signs in through it**, with the
+  button still shown; in `oidc`-only mode that is nobody at all. It recovers by
+  itself when the provider does: Better Auth (1.7.10) retries a discovery that
+  failed at start on the next request for that provider, and this app re-reads
+  the document on every sign-in. Availability, not confidentiality, and loud in
+  the log.
+- **The plugin's endpoints are the ones it read at start.** This app checks
+  the document as it is when each sign-in starts, and that the provider the
+  plugin built names the configured issuer; the plugin's token and userinfo
+  endpoints are not exposed to compare with. A document that was wrong at start
+  and right later would pass the per-sign-in check while the plugin still used
+  what it read first — the ID token's `iss` is still held to `OIDC_ISSUER`.
 - **`OIDC_ALLOW_INSECURE_ISSUER`** lets the issuer be plain `http://`. It
   exists for the suites, whose stand-in has no certificate, and must never be
   set in a deployment.
