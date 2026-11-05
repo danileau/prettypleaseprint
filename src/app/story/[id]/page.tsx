@@ -169,18 +169,19 @@ export default async function StoryPage({
               </div>
 
               {story.modelPageUrl && (
-              <div className="mt-[17.6px]">
-                <div className="mb-[4px] font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink-3">
-                  Model page
-                </div>
-                <a
+                <div className="mt-[17.6px]">
+                  <div className="mb-[4px] font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink-3">
+                    Model page
+                  </div>
+                  <a
                     href={story.modelPageUrl}
+                    title={story.modelPageUrl}
                     target="_blank"
                     rel="noopener noreferrer nofollow"
                     className="text-[16px] font-bold text-ink">
-                    {story.modelPageUrl} ↗
-                </a>
-              </div>
+                    {new URL(story.modelPageUrl).hostname} ↗
+                  </a>
+                </div>
               )}
 
               {/* Change the priority after filing — the requester's on their
