@@ -15,6 +15,10 @@ Two ways in:
   browser conditional UI, so it can sign someone in from the username field
   with no click at all.
 
+A deployment can add a third, or use it alone: **single sign-on** through an
+OpenID Connect provider it already runs. Off unless `AUTH_METHODS` names it;
+see [Single sign-on](#single-sign-on) below.
+
 The passkey is an accelerator, not the way in. That is the correction this
 model makes over the one before it: an emailed link was doing the job of a
 password while being harder to use and impossible to use at all when mail was
@@ -113,6 +117,12 @@ Open it within thirty minutes to choose a username and a password. Lost it?
 Re-run the migrator and it prints a fresh one — but only while no password has
 been set. Re-seeding never resets an existing one.
 
+Where `AUTH_METHODS` leaves `local` out there is no password to set, so the
+seed prints no link. It says instead whether the owner has connected the
+single sign-on provider — and, if not, that nobody can sign in as the owner
+and how to put that right. See
+[Going `oidc`-only](deployment.md#going-oidc-only).
+
 There is deliberately no `ADMIN_PASSWORD`. It would sit in `.env.docker`, in
 `docker inspect`, in the shell history that wrote the file and in every backup
 of the host, still valid months later. A link that expires in half an hour is a
@@ -152,6 +162,10 @@ passwords neither moved this rule nor added a second copy of it in a route
 handler to drift out of sync. `verify:auth` asserts both halves directly:
 registering an address with no pending invite is answered 403 and leaves no
 row, and so is registering an invited address without its link.
+
+A sign-in through a single sign-on provider goes through the same hook, with
+the provider's verified address standing in for the link — see
+[The invite gate, for a provider sign-in](#the-invite-gate-for-a-provider-sign-in).
 
 ### The invitation link
 
@@ -258,6 +272,9 @@ request form offers and grant nobody anything.
 `/reauth` offers both the passkey and the password on purpose. Every account
 has a password by construction and only some have a passkey, so requiring a
 passkey would leave an admin without one unable to revoke access.
+Where single sign-on is on it offers the provider as well, held to a stricter
+rule than an ordinary sign-in — see
+[Confirming it is still you, through the provider](#confirming-it-is-still-you-through-the-provider).
 
 One thing worth knowing, because it explains a spare row in `session`: Better
 Auth has no way to assert an identity without creating a session, so
@@ -267,124 +284,247 @@ minutes is not long.
 
 ### Single sign-on
 
-A deployment can sign people in through an OpenID Connect provider — Authentik,
-Keycloak, VoidAuth, Authelia, a cloud one — instead of, or alongside, the
+A deployment can sign people in through an OpenID Connect provider — Authelia,
+Authentik, Keycloak, VoidAuth, a cloud one — instead of, or alongside, the
 username and password. [Deployment](deployment.md#single-sign-on) covers
 setting it up; this is what it does and does not change.
 
-`AUTH_METHODS` names which ways in are on: `local` (the default, and what every
-existing instance keeps doing), `oidc`, or `local,oidc`. A method that is off is
-off **at the endpoint**, not merely missing from the page: with `local` left
-out, the password and passkey endpoints answer 404 to a request sent straight
-at them. Better Auth enforces that list only for HTTP requests, so the same
-endpoints called from the app's own server code (`auth.api.*`) are refused by
-a hook as well, and the server actions that take a password — accepting an
-invitation, setting one from a link, the owner minting a reset link — refuse
-before they write anything.
+#### Three modes
+
+`AUTH_METHODS` names which ways in are on, read once when the app starts
+(`authMethods` in [`src/lib/auth-methods.ts`](../src/lib/auth-methods.ts)):
+
+| `AUTH_METHODS` | Ways in |
+| --- | --- |
+| `local` — the default, and what unset means | username and password, and passkeys. What every existing instance keeps doing. |
+| `local,oidc` | both, side by side: the provider's button first, then the passkey and the password form. |
+| `oidc` | the provider alone. Nobody has a password or a passkey that works. |
+
+A name that is not a method is an error, not a quiet "nobody can sign in".
+
+**A method that is off is off at the endpoint**, not merely missing from the
+page (`disabledAuthPaths`):
+
+| Better Auth endpoint | `local` | `local,oidc` | `oidc` |
+| --- | --- | --- | --- |
+| `/sign-in/username`, `/sign-in/email`, `/sign-up/email`, `/reset-password`, `/request-password-reset`, `/change-password`, the four `/passkey/…` ceremonies | open | open | 404 |
+| `/sign-in/social` — the redirect flow | 404 | open | open |
+| `/sign-in/social` with a posted `idToken` | 404 | 404 | 404 |
+| `/link-social` | 404 | the owner only (below) | the owner only |
+| `/unlink-account` | 404 | 404 | 404 |
+
+Better Auth enforces its `disabledPaths` list only for requests that come in
+over HTTP. The same endpoints called from the app's own server code
+(`auth.api.signUpEmail`, say) go straight past it, so the first rule in
+`hooks.before` refuses them as well. And the server actions that take a
+password — accepting an invitation, setting one from a link, the owner minting
+a reset link — refuse before they write anything, while
+`issuePasswordSetupUrl` throws rather than mint a link nobody could use.
+
+#### The invite gate, for a provider sign-in
 
 **The provider replaces the password, not the guest list.** By default a new
 account still needs an invitation. What changes is the proof: locally it is the
 invitation's link; through the provider it is the provider's word that the
-address is verified. The whole rule is one pure function, `mayProvision` in
-[`src/lib/auth-methods.ts`](../src/lib/auth-methods.ts), called from the same
-single hook as before:
+address is verified. The whole rule is one pure function, `mayProvision`,
+called from the same single `validateUserInfo` hook as before:
 
-| | needs |
-| --- | --- |
-| local | a pending invitation **and** its link |
-| through the provider | a pending invitation **and** `email_verified: true` |
-| through the provider, `OIDC_SIGNUP=open` | `email_verified: true` |
+| | needs | refusal recorded as |
+| --- | --- | --- |
+| local | a pending invitation **and** its link | `no_invitation` / `no_link` |
+| through the provider | a pending invitation **and** `email_verified: true` | `no_invitation` / `unverified_email` |
+| through the provider, `OIDC_SIGNUP=open` | `email_verified: true` | `unverified_email` |
+| through the provider, single sign-on off | — | `sso_off` |
+
+Refusals go on the trail as `invite.rejected`, with `via: "oidc"` for the
+provider's door.
 
 That middle row is not finding 10 again. There, an address was something a
 stranger typed into a request. Here it is a claim in a token signed by the
 provider this deployment chose, checked against that provider's published keys
 and bound by nonce to the request that asked for it, in the redirect flow that
-is the only one this app accepts. Better Auth also offers a second branch of
-`/sign-in/social` that signs somebody in on a posted ID token — no state, no
-PKCE, a nonce only if the caller offers one, and a userinfo lookup with
-whatever access token the caller sends beside it. That branch is refused, for
-every provider. The link only ever proved
-somebody could read the mailbox; this is the same proof from a better witness.
-The claim has to be the boolean `true` — providers have been seen sending the
-string `"false"`, which is truthy — and without it the address is refused
-before anything is looked up, so the refusal says nothing about who is invited.
+is the only one this app accepts. The link only ever proved somebody could read
+the mailbox; this is the same proof from a better witness. The claim has to be
+the boolean `true` — providers have been seen sending the string `"false"`,
+which is truthy — and it is checked twice, where the profile is mapped and
+again in the gate. Without it the address is refused before anything is looked
+up, so the refusal says nothing about who is invited.
 
-`open` hands the guest list to the provider: anybody it signs in gets an
-account. That switches off the invite-only rule this app is built around, for
-that door, so a host has to ask for it by name.
+An invited person who signs in through the provider gets the invitation's role
+(the app only issues `client` ones) and is recorded as invited by whoever
+invited them; the invitation is spent, exactly as redeeming its link would
+spend it.
 
-**A member who already has an account lands in it.** The first sign-in through
-the provider with a matching, verified address links the two, and is recorded
-as `auth.sso_linked` (`how: "automatic"`). An address the provider has *not* verified links nothing
-and signs nobody in — and gets the same answer whether or not anybody here has
-that address, so the refusal does not say who is a member.
+`open` hands the guest list to the provider: anybody it signs in with a
+verified address gets a `client` account. That switches off the invite-only
+rule this app is built around, for that door, so a host has to ask for it by
+name — a misspelt value is an error, not a quiet `open`.
 
-**An identity is the issuer and the subject together.** A subject (`sub`) is
-only unique at the provider that issued it, so the link is filed under both.
-Pointing `OIDC_ISSUER` at a different provider therefore starts afresh: no
-identity from the old one opens anything, and each person's first sign-in
-through the new one links by verified address as above — or, for somebody
-without an account, needs an invitation as before. The old links stay in the
-database, inert.
+#### Who is linked, and how
 
-**Except the printer owner, who is never linked by address.** A provider that
-asserts the owner's address — verified or not — opens nothing, and is answered
-word for word as a stranger would be, so the refusal does not say whose address
-it was; the trail records it as `auth.sso_link_refused`. The owner connects the
-provider on purpose, from their own page (`/me`): *Connect …* asks them to
-confirm it is them, then runs Better Auth's explicit link flow
-(`/link-social`), which asks the provider for a fresh login and attaches only
-an identity whose verified address is the owner's own, to the account signed
-in in the browser that comes back. That is recorded as `auth.sso_linked` with
-`how: "connected"`; *Disconnect* (also after confirming) removes it, as
-`auth.sso_unlinked`; it is refused where passwords are off, since it would be
-the owner's only way in. `/link-social` answers nobody else: not a member, not
-the owner on a session older than five minutes, and not an owner already
-connected. Better Auth's own `/unlink-account`, which asks only for a session
-under a day old, is closed in every mode.
+**A member who already has an account lands in it.** Their first sign-in
+through the provider with a matching, verified address links the provider
+identity to the account, recorded as `auth.sso_linked` with
+`how: "automatic"`. An address the provider has *not* verified links nothing,
+signs nobody in, and gets the same answer whether or not anybody here has it
+(below). The provider is deliberately not one of Better Auth's "trusted
+providers", which are linked on their say-so even without a verified address.
+
+**The printer owner is never linked by address.** A provider that asserts the
+owner's address — verified or not — opens nothing, and is answered word for
+word as a stranger would be (`invite_required`), so the refusal does not say
+whose address it was. The trail records it as `auth.sso_link_refused`, and the
+audit dashboard counts it among the refusals.
+
+**The owner connects the provider on purpose, from `/me`.** The *Connect …*
+button is a server action that first asks the owner to confirm it is them
+(`requireFreshAuth`), then runs Better Auth's explicit link flow,
+`/link-social`. That flow:
+
+- answers the printer owner alone — a member gets 403 — on a session under
+  five minutes old, and not an owner who is already connected (409);
+- asks the provider for a fresh login (`prompt=login`, `max_age=0`), and holds
+  the answer to the same `auth_time` rule as re-authentication, below;
+- attaches only an identity whose verified address is the owner's own;
+- and only to the account signed in in the browser the flow comes back to,
+  which has to be the one that started it.
+
+It is recorded as `auth.sso_linked` with `how: "connected"`. If the provider
+cannot be trusted just now — its discovery document fails the checks below —
+the button comes back to `/me` saying so, rather than to an error page.
+
+**Disconnecting** is on `/me` too, after confirming it is you, and recorded as
+`auth.sso_unlinked`. It is refused where passwords are off, because it would
+remove the owner's only way in. Better Auth's own `/unlink-account`, which asks
+only for a session under a day old and that one account remain, is closed in
+every mode: anybody at the owner's open browser could otherwise have removed
+it, with no step-up and nothing on the trail.
 
 > Once connected, the provider is part of how the owner is authenticated —
 > whoever controls the owner's identity there can sign in as the owner. Point
 > this only at a provider you run or trust as much as the app itself.
 
-An invitation carries a role, and the app only ever issues `client` ones; an
-invitation is claimed through the provider by the same gate as above (pending,
-and a verified address), so it confers no more than its link would.
+**An identity is the issuer and the subject together.** A subject (`sub`) is
+only unique at the provider that issued it, so a link is filed as
+`<issuer>|<sub>`, the issuer spelt one way (`normalIssuer` in
+[`src/lib/oidc-flow.ts`](../src/lib/oidc-flow.ts)). Pointing `OIDC_ISSUER` at a
+different provider therefore starts afresh: no identity from the old one opens
+anything; members link again by verified address; the owner connects again on
+`/me`. Everything that asks "is the owner connected?" — `/me`, `/reauth`, the
+guest list, the start-up warning, the seed — counts only links to the issuer
+configured now. The old rows stay in the database, inert.
 
-**What the provider does not get to say.** Three claims reach a user row — the
-address, whether it is verified, and a name for a *new* account. Not a picture,
-which would be a URL of the provider's choosing for every browser to fetch. Not a role:
-the owner was decided by the seed and an invitee's role by their invitation, so
-a `role` or `groups` claim changes nothing. An existing account keeps its own
-name. And none of the provider's tokens are stored: the app never calls the
-provider on anybody's behalf, so they would be credentials for somebody else's
-system sitting in this database for no reason.
+Once linked, the identity is what opens the account. The address the provider
+reports is still required on every sign-in, but is not compared with the
+account's again, and a change of address at the provider does not change it
+here.
 
-**Confirming it is still you** asks the provider for a fresh login
-(`prompt=login`, `max_age=0`), and the answer counts only if its ID token says
-the person authenticated (`auth_time`) under two minutes before the token was
-issued (`iat`). Both are read off the provider's clock, so a provider whose
-clock is off is measured fairly; `iat` itself only has to be within ten minutes
-of this server's. A provider that answers from the session it already holds, or
-does not say when the person authenticated, is refused, and `/reauth` says so.
-And a session opened through the provider is dated that much before now, not
-from when the app wrote it, so an ordinary sign-in that the provider waved through on an
-hour-old session is not "recent" either — signing in again is not a way round
-the question. `OIDC_PROMPT=login` makes the provider ask for credentials on
-every sign-in as well, at the cost of the "single" in single sign-on. Unset by
-default.
+#### What the provider does not get to say
 
-**The discovery document is checked, not just read.** Its `issuer` has to be
-`OIDC_ISSUER`, and when that is `https://` so must every endpoint in it — the
-keys, the token exchange, userinfo. It is read again each time a sign-in
-starts, and a sign-in does not start while it fails those checks. When the ID
-token carries no address and userinfo has to be asked, userinfo's `sub` has to
-be the token's.
+Three things reach a user row, and only when an account is created: the
+address, that it is verified, and a name (`name`, else `preferred_username`,
+else the invitation's, else the part of the address before `@`). Everything
+else is dropped:
 
-**What single sign-on does not do here:**
+- **No role.** The owner was decided by the seed and an invitee's role by their
+  invitation, so a `role`, `groups` or `is_admin` claim changes nothing.
+- **No name change.** An existing account — a member linked automatically, the
+  owner connecting — keeps its own name, username and role.
+- **No picture.** Better Auth would copy `picture` into `user.image`: a URL of
+  the provider's choosing that nothing here shows and that a browser would be
+  sent to fetch.
+- **No tokens.** The app never calls the provider on anybody's behalf — the
+  sign-in is the whole of the relationship — so the access, refresh and ID
+  tokens would be credentials for somebody else's system, sitting in this
+  database for no reason. An account hook nulls them when a link is created,
+  and a second hook does the same on update, because Better Auth's re-link
+  path writes the tokens onto the existing row instead of creating one.
+
+#### Confirming it is still you, through the provider
+
+`/reauth` offers the provider's button wherever single sign-on is on — except
+to an owner who has not connected it, for whom it would be refused. For
+somebody who has only ever signed in through the provider it is the only
+option: they have no password to type.
+
+The question `/reauth` asks is how old the current session is (see
+[Confirming it is still you](#confirming-it-is-still-you)). A sign-in through
+the provider can be a click on a session the provider has held for hours, so
+two things make that question honest:
+
+- **Confirming asks for a fresh login.** The button marks the flow as a
+  re-authentication, and the server — not the page — sends `prompt=login` and
+  `max_age=0`. The answer counts only if its ID token says the person
+  authenticated (`auth_time`) no more than **two minutes** before the token
+  was issued (`iat`). Both are read off the provider's own clock, so a
+  provider whose clock is a few minutes out is measured fairly; `iat` itself
+  only has to be within **ten minutes** of this server's clock. A provider that
+  answers from the session it already holds, or does not say when the person
+  authenticated, is refused, no session is created, and `/reauth` says it has
+  to ask again.
+- **A session is dated by `auth_time`.** Every session opened through the
+  provider is recorded as having started `iat − auth_time` before now, not
+  when the app wrote it. An ordinary sign-in that the provider waved through
+  on an hour-old session is an hour old here, so signing in again is not a way
+  round the question; one with no usable `auth_time` is dated just past the
+  five-minute window.
+
+`OIDC_PROMPT=login` makes the provider ask for credentials on ordinary sign-ins
+too, at the cost of the "single" in single sign-on. It is unset by default, and
+it is a request to the provider rather than something the app checks; the
+dating above is what the app relies on.
+
+#### What the app checks beyond the library
+
+Better Auth's `generic-oauth` plugin verifies the ID token — signature against
+the published keys, issuer, audience, expiry, and the nonce that binds it to
+the request — and `requireIdTokenVerification` makes that a condition of the
+provider being set up at all. PKCE and state are the library's defaults and
+left on. [`src/lib/oidc-flow.ts`](../src/lib/oidc-flow.ts) adds what the
+plugin does not do:
+
+- **The discovery document is checked, not just read.** Its `issuer` has to be
+  `OIDC_ISSUER`, it has to name the authorization and token endpoints and the
+  keys, and when the issuer is `https://` so must every endpoint in it. It is
+  read again each time a sign-in starts, and a sign-in does not start while it
+  fails.
+- **The ID token's `iss` is held to `OIDC_ISSUER`**, not merely to whatever
+  issuer the document named.
+- **There has to be an ID token, naming a subject.**
+- **Userinfo is about the same person.** It is asked only when the ID token
+  carries no address, and its `sub` has to be the token's.
+- **An ID token on its own signs nobody in.** Better Auth's `/sign-in/social`
+  has a second branch that signs somebody in on a posted ID token — no state,
+  no PKCE, a nonce only if the caller offers one, and a userinfo lookup with
+  whatever access token the caller sends beside it. `/link-social` has the
+  same branch for attaching one. Both are refused, for every provider; the
+  redirect flow is the only way in.
+- **An unverified address gets one answer.** Better Auth answers it with
+  `account_not_linked` when somebody here has the address and
+  `email_not_verified` when nobody does, and only the second carried a
+  description. The auth route rewrites the first into the second and drops
+  the description, so the browser is sent to the same URL, character for
+  character, either way — and the sign-in page says the same sentence for
+  both codes.
+
+#### On the trail
+
+| Event | When | Detail |
+| --- | --- | --- |
+| `auth.sso_linked` | an identity at the provider now opens an account | `provider` (the issuer), `role`, and `how`: `automatic` for a member's first sign-in, `connected` for the owner on `/me` |
+| `auth.sso_link_refused` | a provider asserted the owner's address, and the owner has not connected it | `reason: "owner_not_connected"`, `provider` |
+| `auth.sso_unlinked` | the owner disconnected it on `/me` | `provider`, `role` |
+| `invite.rejected` | a provider sign-in that may not have an account | `reason`, `via: "oidc"` |
+| `auth.signed_in` | every session, whichever way it was opened | — |
+
+The three `auth.sso_*` events are in the *Who got in* view of `/admin/audit`,
+and `auth.sso_link_refused` is counted with the refusals at the top of it.
+
+#### What single sign-on does not do here
 
 - **Sign you out of the provider.** Signing out of this app ends this app's
-  session. Revoking access here is still what locks somebody out here.
+  session. Revoking access here is still what locks somebody out here, and a
+  suspended person signing in through the provider is refused.
 - **Give an SSO-only person a password.** They cannot use the bearer-token
   [API](api.md) from a script, because that starts with a username and
   password. With `local` on they can be given one from the guest list.
@@ -394,11 +534,15 @@ be the token's.
 
 `npm run verify:sso` drives all of it against a stand-in provider
 (`scripts/stubs/oidc-stub.mjs`) that can be told who is signing in and told to
-lie: a forged signature, a wrong audience, a replayed nonce, an unverified
-address, a session it answers from when asked to log somebody in again, no
-`auth_time`, userinfo about somebody else, a discovery document naming another
-issuer. A child process drives the server side with `AUTH_METHODS=oidc`
-(`scripts/passwords-off-probe.ts`).
+lie: a forged signature, a wrong issuer or audience, a replayed nonce, an
+expired token, an unverified address or the string `"true"`, no address, a
+session it answers from when asked to log somebody in again, no `auth_time`, a
+clock four minutes out, userinfo about somebody else, a discovery document
+naming another issuer, a bare ID token handed out with no flow around it. The
+rules in `src/lib/auth-methods.ts` and `src/lib/oidc-flow.ts` are pure and are
+checked in every mode; a child process drives the server side with
+`AUTH_METHODS=oidc` (`scripts/passwords-off-probe.ts`), because the stack under
+test runs `local,oidc`.
 
 ### Other decisions worth knowing
 
