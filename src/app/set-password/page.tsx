@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 
+import { authMethods, oidcConfig } from "@/lib/auth-methods";
 import { readResetToken } from "@/lib/password-reset";
 import { AuthShell, H1, Kicker, Lead, Notice } from "@/components/ui";
 import { SetPasswordForm } from "./set-password-form";
@@ -20,6 +22,30 @@ export default async function SetPasswordPage({
   searchParams: Promise<{ token?: string }>;
 }) {
   const { token } = await searchParams;
+
+  // Passwords are off for this deployment, so there is none to set — and the
+  // endpoint this form posts to refuses. Say so, rather than take a password
+  // from somebody and then fail to save it.
+  if (!authMethods().local) {
+    // Only this answer reads the catalogue so far; the rest of the screen
+    // moves when it does (docs/i18n.md).
+    const t = await getTranslations("setPassword.ssoOnly");
+    const waysIn = await getTranslations("waysIn");
+    return (
+      <AuthShell>
+        <Kicker>{t("kicker")}</Kicker>
+        <H1>{t("title")}</H1>
+        <Lead>{t("lead", { name: oidcConfig()?.name ?? waysIn("sso.defaultName") })}</Lead>
+        <Link
+          href="/signin"
+          className="font-bold text-[15px] text-cherry-dk underline underline-offset-2 hover:text-cherry"
+        >
+          {t("toSignin")}
+        </Link>
+      </AuthShell>
+    );
+  }
+
   const resolved = token ? await readResetToken(token) : null;
 
   if (!resolved) {

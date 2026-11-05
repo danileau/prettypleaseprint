@@ -158,10 +158,9 @@ export async function openRequest(
   if (admin) {
     await notify({
       recipientId: admin.id,
+      actorId: actor.id,
       storyId: story.id,
-      text: origin
-        ? `${actor.name} imported “${title}”.`
-        : `${actor.name} uploaded “${title}”.`,
+      message: { key: origin ? "storyImported" : "storyUploaded", values: { actor: actor.name, title } },
     });
   }
 

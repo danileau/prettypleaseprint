@@ -17,3 +17,6 @@ Pretty Please Print/
 # on their disk into the build context, when the version the lockfile pins is
 # the one that should ship.
 public/docs/
+
+# scripts/mail-locale-probe.ts's temporary catalogue, if a killed run left it.
+messages/xx.json

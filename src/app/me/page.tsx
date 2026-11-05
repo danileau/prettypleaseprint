@@ -1,3 +1,4 @@
+import { getTranslations } from "next-intl/server";
 import { mailConfigured } from "@/lib/email";
 import { setNotifyByEmail } from "@/app/actions/notifications";
 import Link from "next/link";
@@ -10,6 +11,7 @@ import { relativeTime } from "@/lib/catalog";
 import { AppHeader } from "@/components/app-header";
 import { Kicker, StatusChip } from "@/components/ui";
 import { ColorSwatch } from "@/components/color-swatch";
+import { SsoPanel } from "./sso-panel";
 
 import type { StoryStatus } from "@prisma/client";
 
@@ -39,7 +41,12 @@ const PRINTED: StoryStatus[] = ["Delivery", "Done"];
 
 type Card = { value: string; label: string; skin: string };
 
-export default async function ProfilePage() {
+export default async function ProfilePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sso?: string }>;
+}) {
+  const { sso } = await searchParams;
   const user = await requireUser("/me");
   const owner = await printerName();
   const isAdmin = user.role === "admin";
@@ -49,6 +56,7 @@ export default async function ProfilePage() {
   const mail = mailConfigured()
     ? await db.user.findUnique({ where: { id: user.id }, select: { notifyByEmail: true } })
     : null;
+  const emailWords = await getTranslations("me.email");
 
   const [stories, finished, beers, favourite, waiting, bytes] = await Promise.all([
     db.story.findMany({
@@ -130,6 +138,9 @@ export default async function ProfilePage() {
           </div>
         </div>
 
+        {/* The owner's link to the provider, which only the owner makes. */}
+        {isAdmin && <SsoPanel userId={user.id} email={user.email} status={sso} />}
+
         <div className="mb-[35.2px] grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[13.2px]">
           {cards.map((c) => (
             <div
@@ -207,12 +218,10 @@ export default async function ProfilePage() {
             className="mt-[35.2px] max-w-[780px] rounded-panel border-[3px] border-ink bg-porcelain p-[22px] shadow-stamp"
           >
             <h2 id="email-heading" className="m-0 mb-[6px] font-display text-[22px] text-ink">
-              Notifications by email
+              {emailWords("heading")}
             </h2>
             <p className="m-0 mb-[13.2px] text-[15px] leading-[1.5] text-ink-2">
-              {mail.notifyByEmail
-                ? `On. Whatever lands in your Activity panel is also sent to ${user.email}.`
-                : "Off. Notifications are in your Activity panel and nowhere else."}
+              {mail.notifyByEmail ? emailWords("on", { email: user.email }) : emailWords("off")}
             </p>
             {/* One button that says what it will do, rather than a checkbox
                 and a save: there is exactly one thing to change here. */}
@@ -222,7 +231,7 @@ export default async function ProfilePage() {
                 type="submit"
                 className="stamp cursor-pointer rounded-chip border-[3px] border-ink bg-porcelain px-[20px] py-[11px] text-[15px] font-semibold text-ink hover:bg-cream-2"
               >
-                {mail.notifyByEmail ? "Stop emailing me" : "Email them to me too"}
+                {mail.notifyByEmail ? emailWords("turnOff") : emailWords("turnOn")}
               </button>
             </form>
           </section>

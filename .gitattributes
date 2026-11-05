@@ -1,0 +1,7 @@
+# Shell runs under bash on every platform this project supports, Git Bash on
+# Windows included — and Git for Windows checks text out with CRLF by default
+# (core.autocrlf=true), which bash refuses: `set -euo pipefail\r` is not an
+# option it knows. Keep every script LF in the working tree, whatever the
+# platform's setting. The hook has no extension, so it is named.
+*.sh                 text eol=lf
+.githooks/pre-commit text eol=lf

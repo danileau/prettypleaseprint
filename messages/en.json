@@ -1,0 +1,251 @@
+{
+  "authShell": {
+    "sign": "Open · come on in"
+  },
+  "signin": {
+    "kicker": "Members only · ask at the counter",
+    "title": "What’ll it be?",
+    "lead": "Use the passkey on this device, or your username and password.",
+    "leadSso": "Use {name}, the passkey on this device, or your username and password.",
+    "leadSsoOnly": "Sign in with {name} — the same login you use elsewhere.",
+    "passwordSet": "Password saved. Sign in with it.",
+    "errors": {
+      "inviteRequired": "That address has not been invited. Pretty Please Print is invite-only — ask whoever owns the printer for a link.",
+      "invalidToken": "That link is no longer valid. Ask the printer owner for a fresh one.",
+      "tokenExpired": "That link expired. Ask the printer owner for another.",
+      "suspended": "That account has been suspended. Ask whoever owns the printer.",
+      "emailNotVerified": "Your sign-on provider has not confirmed your email address, so it cannot vouch for who you are here. Verify it there, then try again.",
+      "emailNotFound": "Your sign-on provider did not share an email address, so there is no way to tell who you are here.",
+      "providerUnverified": "Your sign-on provider’s answer could not be verified, so nobody was signed in. Try again; if it keeps happening, tell whoever owns the printer.",
+      "other": "That sign-in attempt did not go through."
+    },
+    "form": {
+      "withSso": "Sign in with {name}",
+      "withPasskey": "Sign in with a passkey",
+      "username": "Username",
+      "password": "Password",
+      "checking": "Checking…",
+      "submit": "Sign in",
+      "refused": "That username and password do not match. Try again.",
+      "tooManyAttempts": "Too many attempts. Wait a minute and try again.",
+      "passkeyRefused": "That passkey was not accepted. Use your password instead.",
+      "inviteOnly": "Pretty Please Print is invite-only — there is no sign-up. If you have not been invited yet, or you have forgotten your password, ask whoever owns the printer.",
+      "inviteOnlySso": "Pretty Please Print is invite-only. If signing in tells you that you have not been invited, ask whoever owns the printer."
+    }
+  },
+  "waysIn": {
+    "or": "or",
+    "sso": {
+      "defaultName": "single sign-on",
+      "busy": "Taking you there…",
+      "tooManyAttempts": "Too many attempts. Wait a minute and try again.",
+      "couldNotStart": "Single sign-on could not be started. Try again, or ask whoever owns the printer."
+    }
+  },
+  "header": {
+    "home": "Pretty Please Print, home",
+    "nav": {
+      "rail": "The rail",
+      "orderUp": "Order up",
+      "myOrders": "My orders",
+      "history": "History",
+      "featureRequests": "Feature requests",
+      "pass": "The pass",
+      "books": "The books",
+      "materials": "Materials",
+      "byPerson": "By person",
+      "benefits": "Benefits",
+      "guestList": "Guest list",
+      "mail": "Mail",
+      "audit": "Audit"
+    },
+    "activity": {
+      "button": "Activity",
+      "markAllRead": "Mark all read",
+      "empty": "Nothing yet.",
+      "unread": "unread"
+    },
+    "feedTitle": {
+      "owner": "New from the group",
+      "member": "Updates on your prints"
+    },
+    "account": {
+      "menuFor": "Account menu for {name}",
+      "withPassword": "Signing in with a password",
+      "passkeys": "{count, plural, one {# passkey on this account} other {# passkeys on this account}}",
+      "addFirst": "Add a passkey →",
+      "addAnother": "Add another →",
+      "docs": "API & docs →",
+      "docsHint": "Every endpoint, and a console to call them from.",
+      "signOut": "Sign out"
+    },
+    "role": {
+      "owner": "Printer owner",
+      "member": "Invited member"
+    },
+    "nudge": {
+      "title": "Tired of typing your password?",
+      "body": "Save a passkey and this device signs you in with a fingerprint — nothing to remember, nothing to phish.",
+      "setUp": "Set it up — 30 seconds",
+      "notNow": "Not now"
+    }
+  },
+  "invite": {
+    "leadLocal": "Pick a name to go by, a username and a password, and you are in.",
+    "leadSso": "Sign in with {name} and you are in.",
+    "withSso": "Continue with {name}",
+    "ssoFor": "This invitation is for <strong>{email}</strong>. Sign in there with that address and there is no password to choose here."
+  },
+  "reauth": {
+    "lead": "You are about to change who can get in. A password or a passkey confirms it is you at the keyboard and not a browser somebody left open.",
+    "leadSso": "You are about to change who can get in. Signing in with {name} again confirms it is you at the keyboard and not a browser somebody left open.",
+    "withSso": "Confirm with {name}",
+    "ssoNotConfirmed": "Signing in again with {name} did not confirm it is you: it has to ask you to sign in there again, just now. Try again, or use a passkey or your password if you have one."
+  },
+  "setPassword": {
+    "ssoOnly": {
+      "kicker": "New key, cut fresh",
+      "title": "No passwords here",
+      "lead": "This instance signs people in with {name} only, so there is no password to choose. Sign in with the address you were invited as.",
+      "toSignin": "Go to sign in →"
+    }
+  },
+  "passwordsOff": {
+    "refused": "Passwords are switched off on this instance, so there is none to set or reset."
+  },
+  "me": {
+    "sso": {
+      "kicker": "Single sign-on",
+      "connected": "Connected to {name}. Signing in there with the identity you connected opens this account.",
+      "notConnected": "Not connected. Signing in through {name} does not open the printer owner’s account until you connect it here — on purpose, so the provider cannot make itself the owner.",
+      "connect": "Connect {name}",
+      "connectNote": "You will be asked to confirm it is you, and then to sign in at the provider as {email}.",
+      "disconnect": "Disconnect {name}",
+      "onlyWayIn": "Passwords are off on this instance, so {name} is your only way in and cannot be disconnected here.",
+      "status": {
+        "connected": "{name} is connected. You can sign in through it from now on.",
+        "disconnected": "{name} is disconnected. Signing in through it no longer opens this account.",
+        "failed": "{name} could not be connected. Sign in there as {email}, with the address verified, and try again.",
+        "kept": "Passwords are off, so {name} stays connected: it is your only way in.",
+        "unavailable": "{name} could not be reached to connect it just now. Try again in a moment."
+      }
+    },
+    "email": {
+      "heading": "Notifications by email",
+      "on": "On. Whatever lands in your Activity panel is also sent to {email}.",
+      "off": "Off. Notifications are in your Activity panel and nowhere else.",
+      "turnOff": "Stop emailing me",
+      "turnOn": "Email them to me too"
+    }
+  },
+  "adminSso": {
+    "ownerNotConnected": "Passwords are off and you have not connected {name}. Nobody can sign in as the printer owner. Turn local sign-in back on, connect {name} from your page, then turn it off again."
+  },
+  "notification": {
+    "storyUploaded": "{actor} uploaded “{title}”.",
+    "storyImported": "{actor} imported “{title}”.",
+    "storyMoved": "{actor} moved “{title}” to {status, select, Requested {Requested} Accepted {Accepted} Printing {Printing} Done {Done} Delivery {Delivery} Declined {Declined} other {{status}}}.",
+    "storyDeclined": "{actor} declined “{title}”.",
+    "storyFlagged": "{actor} flagged “{title}”: {reason}",
+    "storyFlagCleared": "{actor} cleared the flag on “{title}”.",
+    "storyWithdrawn": "{actor} withdrew {ref} — “{title}”.",
+    "storyRequeued": "{actor} re-queued “{title}”.",
+    "storyPriority": "{actor} set “{title}” to {priority, select, low {low} medium {medium} high {high} other {{priority}}} priority.",
+    "storyCommented": "{actor} commented on “{title}”.",
+    "featureFiled": "{actor} filed a request — “{title}”.",
+    "featureWithdrawn": "{actor} withdrew {ref} — “{title}”.",
+    "featurePriority": "{actor} set “{title}” to {priority, select, low {low} medium {medium} high {high} other {{priority}}} priority.",
+    "featureMoved": "{actor} moved “{title}” to {status, select, Requested {Requested} Accepted {Accepted} InProgress {In progress} Shipped {Shipped} Done {Done} Declined {Declined} other {{status}}}.",
+    "featureDeclined": "{actor} declined “{title}”.",
+    "featureCommented": "{actor} commented on “{title}”."
+  },
+  "mail": {
+    "shell": {
+      "footer": "You are getting this because someone at the office runs a 3D printer and uses Pretty Please Print to keep track of who asked for what. If none of that means anything to you, ignore this — nothing happens without the link above.",
+      "fallback": "Button not working? Paste this in:"
+    },
+    "invite": {
+      "subject": "{inviter} is offering to print things for you",
+      "text": "{inviter} added you to Pretty Please Print — drop an .stl or .3mf and it goes up on the rail as a ticket.\n\nClaim your seat: {url}\n\nThe link works once and expires in {days, plural, one {# day} other {# days}}.",
+      "banner": "YOUR TABLE IS READY",
+      "heading": "You’ve been handed a 3D printer",
+      "lead": "<strong>{inviter}</strong> added you to Pretty Please Print. Drop an <mono>.stl</mono> or <mono>.3mf</mono>, say what you’re hoping for, and it goes up on the rail as a ticket you can follow.",
+      "button": "Claim your seat",
+      "pill": "ONE USE · EXPIRES IN {days, plural, one {# DAY} other {# DAYS}}"
+    },
+    "reset": {
+      "subject": "Set a new password",
+      "text": "Someone with the keys to the printer reset your Pretty Please Print password.\n\nChoose a new one: {url}\n\nThe link works once and expires in {minutes, plural, one {# minute} other {# minutes}}. It does not sign you in — you pick a password, then use it. If you did not expect this, say so before you use it.",
+      "banner": "NEW KEY · ONE USE",
+      "heading": "Set a new password",
+      "lead": "Whoever runs the printer reset your password. This link lets you pick a new one — it does <strong>not</strong> sign you in on its own.",
+      "button": "Choose a password",
+      "pill": "ONE USE · EXPIRES IN {minutes, plural, one {# MINUTE} other {# MINUTES}}",
+      "aside": "Didn’t expect this? Have a word with them before you use it. Tired of typing a password? Save a passkey once you’re back in."
+    },
+    "notification": {
+      "subject": "{ref}: {text}",
+      "banner": "ON THE RAIL",
+      "bannerRef": "ON THE RAIL · {ref}",
+      "greeting": "HEY {name}",
+      "open": "Open it",
+      "openRef": "Open {ref}",
+      "textOpen": "Open it: {url}",
+      "textWhy": "You are getting this because email notifications are on for you in Pretty Please Print. Switch them off here: {url}",
+      "aside": "It is in your Activity panel too. Rather not get these by email? <link>Switch them off</link>."
+    },
+    "test": {
+      "subject": "Test message from Pretty Please Print",
+      "text": "This is a test message, sent by {sender} from the Mail page.\n\nIf you are reading it, {passwords, select, on {invitations, password resets and notifications} other {invitations and notifications}} can reach people.",
+      "banner": "TEST · NOTHING TO DO",
+      "heading": "Mail is getting through",
+      "lead": "This is a test message, sent by <strong>{sender}</strong> from the Mail page. If you are reading it, {passwords, select, on {invitations, password resets and notifications} other {invitations and notifications}} can reach people."
+    }
+  },
+  "adminMail": {
+    "kicker": "Out the door",
+    "title": "Mail",
+    "intro": "Invitations, {passwords, select, on {password resets, } other {}}and a copy of each notification for anyone who has not switched that off. Nothing here needs mail to work — without it you hand links over yourself and notifications stay in the Activity panel.",
+    "on": "Mail is switched on",
+    "off": "Mail is switched off",
+    "sentThrough": "Sent through",
+    "noTransport": "nothing — no SMTP_URL or RESEND_API_KEY is set",
+    "badUrl": "SMTP_URL is set but is not a URL",
+    "tls": "TLS",
+    "starttls": "STARTTLS if offered",
+    "sentAs": "Sent as",
+    "fromEnv": "These come from <mono>.env.docker</mono> on the host (<mono>SMTP_URL</mono> or <mono>RESEND_API_KEY</mono>, and <mono>MAIL_FROM</mono>), not from this page — they include a password.",
+    "sendTest": "Send me a test message",
+    "goesTo": "Goes to {email} and nowhere else.",
+    "setTransport": "Set a transport first.",
+    "previewsTitle": "What people are sent",
+    "previewsIntro": "Each message as it leaves, with stand-in names and links that go nowhere. Every one also carries a plain-text version, for mail clients that will not show the other.",
+    "subject": "Subject",
+    "seeIt": "See it as sent ↗",
+    "plainText": "Plain-text version ↗",
+    "previews": {
+      "invitation": {
+        "label": "Invitation",
+        "when": "Sent when you invite somebody, and when you resend it."
+      },
+      "password-reset": {
+        "label": "Password reset",
+        "when": "Sent when you press “Forgotten password?” against somebody on the guest list."
+      },
+      "notification": {
+        "label": "Notification",
+        "when": "Sent for everything that also lands in the Activity panel — a new request, a ticket moving, a comment — to people who have not switched it off."
+      },
+      "test": {
+        "label": "Test message",
+        "when": "Sent to you, from this page."
+      }
+    },
+    "result": {
+      "none": "No mail transport is configured, so there is nowhere to send it.",
+      "refused": "The mail server did not take it: {reason}",
+      "sent": "Sent to {email}. If it does not arrive, check the spam folder before the settings.",
+      "noReason": "it gave no reason"
+    }
+  }
+}

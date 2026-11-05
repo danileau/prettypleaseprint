@@ -14,15 +14,20 @@
 #   3. creates ~/.config/ppp/slicer.conf (mode 600) for you to fill in, if it
 #      is not already there.
 #
-# macOS and Windows register a scheme differently (a .app/Info.plist and a
-# registry key respectively) — docs/prusaslicer.md has both. This installer is
-# Linux/XDG only, and says so rather than pretending to work elsewhere.
+# Windows has its own installer beside this one, install-slicer-handler.ps1,
+# and macOS registers a scheme through a .app/Info.plist that docs/prusaslicer.md
+# describes. This installer is Linux/XDG only, and says so rather than
+# pretending to work elsewhere — including under Git Bash, where it would write
+# a .desktop file that nothing reads.
 
 set -euo pipefail
 
 case "$(uname -s)" in
   Linux) : ;;
-  *) echo "This installer is Linux/XDG only. See docs/prusaslicer.md for macOS and Windows." >&2
+  MINGW* | MSYS* | CYGWIN*)
+     echo "This installer is Linux/XDG only. On Windows, run scripts\\install-slicer-handler.ps1 — see docs/prusaslicer.md." >&2
+     exit 1 ;;
+  *) echo "This installer is Linux/XDG only. See docs/prusaslicer.md for macOS." >&2
      exit 1 ;;
 esac
 
@@ -116,8 +121,14 @@ PPP_BASE="https://print.example"
 #   PPP_SLICER="prusa-slicer"                              # a binary name
 #   PPP_SLICER="$HOME/Applications/PrusaSlicer-2.9.0.AppImage"   # an AppImage
 #   PPP_SLICER="flatpak run com.prusa3d.PrusaSlicer"      # a Flatpak
-#   PPP_SLICER="orca-slicer"                              # any slicer works
-# (A path containing spaces is the one form this cannot express.)
+# PPP_SLICER is split on spaces; for a path that has spaces in it, use
+# PPP_SLICER_PATH instead, which is taken whole. Set one or the other.
+
+# Optional. Which slicer: prusa (the default), orca, elegoo, bambu or cura. It
+# decides the arguments — only PrusaSlicer is handed --single-instance — and
+# only PrusaSlicer is looked for: any other needs PPP_SLICER or PPP_SLICER_PATH.
+#   PPP_SLICER_PROFILE=orca
+#   PPP_SLICER="orca-slicer"
 
 # Optional. Where fetched models are cached (pruned after a day).
 # PPP_DOWNLOAD_DIR="$HOME/.cache/ppp/models"

@@ -17,6 +17,12 @@ cool rim behind. It reads well on filament colours from near-black to bone
 white, which is the whole job. The ground and grid moved to this palette,
 because the print bed should look like the app it sits in.
 
+Every colour the viewer draws with, lamps included, is a theme variable in
+`globals.css`, read with `getComputedStyle`; a missing one is reported rather
+than guessed. The lamps have tokens of their own, so a darker theme does not
+mean a darker lamp. Tokens only code reads sit in an `@theme static` block,
+because Tailwind drops theme variables that no class uses.
+
 It declines anything over **50 MB** (`VIEWER_MAX_BYTES`) and says so, with the
 model's size drawn against that limit so "180 MB" means something. That is not
 a limit on what may be uploaded — the cap is 250 MB — it is a limit on what a
@@ -238,6 +244,94 @@ second is a possible later source.
 (`scripts/stubs/printables-stub.mjs`), because most of the above is refusals
 and a refusal can only be tested against a far end willing to misbehave.
 
+## Single sign-on
+
+Where a deployment switches it on, people sign in through an OpenID Connect
+provider the host runs, beside or instead of the password.
+[Deployment](deployment.md#single-sign-on) covers switching it on and
+[authentication](authentication.md#single-sign-on) the rules; this is where
+the pieces live and how a sign-in passes through them.
+
+**It is Better Auth's `generic-oauth` plugin, with the app's checks around
+it.** No second auth stack and no table of its own: a linked identity is an
+`account` row with `providerId: "oidc"`, as a password is one with
+`credential`. What the app adds sits in three files:
+
+| File | What it holds |
+| --- | --- |
+| [`src/lib/auth-methods.ts`](../src/lib/auth-methods.ts) | Pure configuration and rules: which methods are on (`authMethods`), the provider's settings (`oidcConfig`), who may be given an account (`mayProvision`), which endpoints are closed (`disabledAuthPaths`). No request, no database — so `verify:sso` checks them in every mode. |
+| [`src/lib/oidc-flow.ts`](../src/lib/oidc-flow.ts) | What the plugin does not check: the discovery document (`discoveryProblems`, `currentDiscovery`), the issuer-and-subject key (`ssoAccountId`, `normalIssuer`), how long ago somebody authenticated (`authTimeVerdict`, `ssoAuthenticatedAt`), the profile step that replaces the plugin's (`ssoProfile`), and the one answer for an unverified address (`sameAnswerForUnverified`). |
+| [`src/lib/auth.ts`](../src/lib/auth.ts) | Where both are wired into Better Auth: the plugin's configuration, `hooks.before` (closed paths, posted ID tokens, who may use `/link-social`, the per-sign-in discovery check, the re-authentication mark), `validateUserInfo` (the gate, and `linkRule` for linking), and the database hooks that drop tokens and date sessions. |
+
+The screens are thin: `SsoButton` (`src/components/sso-button.tsx`) on the
+sign-in, invitation and `/reauth` pages; the owner's *Connect* and
+*Disconnect* on `/me` (`src/app/me/sso-panel.tsx`, `src/app/me/actions.ts`).
+
+**A sign-in through the provider, step by step:**
+
+1. **The button** posts to `/api/auth/sign-in/social` with `provider: "oidc"`,
+   where to land, and — on `/reauth` — a flag saying this is a
+   re-authentication.
+2. **`hooks.before`** refuses a closed path or a posted `idToken`, fetches the
+   discovery document and checks it, and refuses with 503 if it fails. For a
+   re-authentication it marks the flow in its server-side state and sets
+   `prompt=login` and `max_age=0` itself.
+3. **The plugin** (after retrying discovery, if the start-up read failed)
+   stores state, a PKCE verifier and a nonce, and answers with the
+   provider's authorization URL. The browser goes there.
+4. **At the provider** the person signs in, or is waved through on the
+   session it holds, and is sent back to `/api/auth/callback/oidc`.
+5. **The auth route** (`src/app/api/auth/[...all]/route.ts`) runs the request
+   inside `withSsoRequest`, a per-request store.
+6. **Better Auth** checks state against the browser, exchanges the code with
+   the PKCE verifier and the client secret, and verifies the ID token:
+   signature, issuer, audience, expiry, nonce.
+7. **`ssoProfile`** holds the token's `iss` to `OIDC_ISSUER`, requires a
+   `sub`, applies the `auth_time` rule if the flow was marked, asks userinfo
+   only if the token has no address (and only about the same `sub`), and
+   puts when the person authenticated into the request's store.
+   `mapProfileToUser` keeps the address, a strict `email_verified` and a name,
+   and nothing else.
+8. **The identity is looked up** under `<issuer>|<sub>` (`accountSubject`):
+   - **found:** that account is signed in;
+   - **an account has the address:** Better Auth links only on a verified
+     address, and asks `validateUserInfo` first, whose `linkRule` refuses the
+     owner;
+   - **nobody has it:** `validateUserInfo` asks `mayProvision`, and
+     `user.create.before` stamps the role and inviter from the invitation.
+9. **Database hooks** null the provider's tokens on the `account` row, record
+   `auth.sso_linked` for every new link (a new account's included), and date the new session from the
+   request's store rather than from now.
+10. **The auth route** rewrites an unverified-address refusal into the one
+    answer, and the browser lands where it was going — or on `/signin`
+    (`/reauth`, `/me`) with an `?error=` code the page explains.
+
+The owner's *Connect* is the same path entered through `/link-social`
+instead: the server action runs it after `requireFreshAuth`, step 2 also
+checks that the caller is the owner on a fresh session and not already
+connected, every connection is marked as a re-authentication, and step 8 is
+Better Auth's link path: the address must be verified and be the owner's own,
+and `linkRule` requires the browser that came back to be signed in as the
+account that started it.
+
+**Why the profile step is replaced rather than wrapped.** The plugin's own
+`getUserInfo` decodes the ID token for an address, and falls back to userinfo
+with whatever access token it holds, merging what comes back without
+comparing subjects. Replacing it is the only place to hold the issuer, the
+subject and `auth_time` to what this app needs before an account is looked
+up, and it is small enough to read in one sitting.
+
+**Why the session hook needs a per-request store.** Better Auth creates the
+session after the profile step, through a hook that sees only the session
+row. The profile step is the only place `auth_time` is known, so it leaves the
+answer in an `AsyncLocalStorage` scope the auth route opens around every
+request, and the session hook reads it back.
+
+`npm run verify:sso` runs it end to end against a stand-in provider
+(`scripts/stubs/oidc-stub.mjs`), for the reason `verify:import` has one: most
+of what matters is what the app refuses, and only a far end willing to
+misbehave can show that.
+
 ## Decisions taken against the handoff
 
 The handoff contradicts itself in two places and leaves three things open.
@@ -453,12 +547,14 @@ side:
 prisma/
   schema.prisma          auth tables (Better Auth's shapes) + domain models
   migrations/            one directory per change; each must leave the previous image working
-  seed.ts                bootstraps the single admin, prints its setup link
+  seed.ts                bootstraps the single admin, prints its setup link (or, SSO-only, whether the owner is connected)
   reset-token.ts         set-password token format, shared with the app
 src/lib/
   auth.ts                Better Auth config — the invite gate lives here
   auth-client.ts         browser client (username, passkey, admin)
   auth-rules.ts          username and password rules, shared with the forms
+  auth-methods.ts        which ways in are on, and who may be given an account
+  oidc-flow.ts           what single sign-on checks beyond the library: discovery, issuer, subject, auth_time
   authz.ts               requireUser/requireAdmin, notify, the printer owner
   scope.ts               pure authorisation rules: scopes, the two status flows
   reauth.ts              "sign in again" before handing out access
@@ -488,7 +584,14 @@ src/lib/
   csp.ts                 Content-Security-Policy builder + nonce
   safe-redirect.ts       redirect targets, decided by a URL parser
   client-ip.ts           whose address the audit trail believes
+  contributors.ts        who is credited on /about; generated by `npm run contributors`
   db.ts, runtime.ts      the Prisma client; build-phase detection
+src/i18n/                the request's language and its messages — see docs/i18n.md
+  locales.ts             the languages (English only), and the order a second one will be chosen in
+  request.ts             next-intl's per-request config: English, from en.json
+  server.ts              getClientMessages: one screen's groups, for its NextIntlClientProvider
+  client-groups.ts       which message groups each screen sends its client components
+messages/                en.json: the source of truth, and so far the only catalogue
 src/app/
   signin/  reauth/       sign-in; the re-authentication prompt
   invite/[token]/        the registration page and its server action
@@ -500,7 +603,8 @@ src/app/
   story/[id]/            a ticket: viewer, facts, priority, conversation
   story/[id]/again/      the request form again, filled in from an old ticket
   history/               finished prints, filterable, with "Print again"
-  me/                    your own tickets and the profile card
+  me/                    your own tickets and the profile card; the owner's single sign-on panel
+  about/                 what the app is, its licence and source, who made it
   frr/                   the feature-request track: board, new, queue, [id]
   docs/                  the Swagger console (a route, not a page)
   actions/               server actions — thin adapters over src/lib
@@ -511,7 +615,7 @@ src/app/admin/           the printer owner's pages; 404 for anyone else
   benefits/              the benefits catalogue
   audit/                 the dashboard and the log
 src/app/api/
-  auth/[...all]/         every Better Auth endpoint
+  auth/[...all]/         every Better Auth endpoint, inside the per-request SSO store
   upload/                the multipart door onto intake.ts
   import/                the link door: list a model's files, import one
   stories/               list, read, withdraw
@@ -521,17 +625,19 @@ src/app/api/
   notifications/         the Activity feed
   openapi.json/          the document
   health/                the only endpoint with no session
-src/components/          shared pieces: cards, chips, the viewer, the pickers
+src/components/          shared pieces: cards, chips, the viewer, the pickers, the SSO button
 scripts/
   deploy-wizard.sh       on the host: pick an image, read the upgrade notes, verify, deploy, roll back
   release-wizard.sh      in a checkout: a release from the changelog to the published images
   full-test.sh           the whole local run: gates, a fresh stack, every suite
-  tests/                 the three shell scripts above, tested in sandboxes
+  tests/                 the three shell scripts above and the slicer helper, tested in sandboxes
   verify-models.ts       validator vs. hostile fixtures
   verify-auth.ts         registration, sign-in and password reset
+  verify-sso.ts          single sign-on, and everything a provider can get wrong
+  passwords-off-probe.ts verify:sso's child process: the server side with AUTH_METHODS=oidc
   verify-upload.ts       upload -> board -> ticket, and printing again
   verify-import.ts       a model from a link, and every way the far end can misbehave
-  stubs/                 the stand-in for Printables that suite runs against
+  stubs/                 stand-ins for Printables and for an OIDC provider
   verify-queue.ts        the queue, the flow, priority, prints by person
   verify-frr.ts          the feature-request track, filed and triaged
   verify-benefits.ts     the owner-managed benefits catalogue
@@ -544,6 +650,8 @@ scripts/
   use-container-env.ts   points the host-side suites at the running stack
   vendor-swagger.ts      copies Swagger UI into public/docs at build time
   export-storage.ts      the one-shot copy of models out of the old object store
-  install-slicer-handler.sh, prusa-open.sh   the "Open in PrusaSlicer" helper
+  update-contributors.ts regenerates src/lib/contributors.ts from main's history
+  prusa-open.sh          the "Open in PrusaSlicer" helper: fetches the model, opens the slicer
+  install-slicer-handler.sh, .ps1   registers ppp:// for it, on Linux and on Windows
   screenshot.ts          the main screens to PNG
 ```

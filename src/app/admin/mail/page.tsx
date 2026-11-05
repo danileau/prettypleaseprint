@@ -1,5 +1,9 @@
+import { getTranslations } from "next-intl/server";
+
+import { authMethods } from "@/lib/auth-methods";
 import { requireAdmin } from "@/lib/authz";
-import { MAIL_PREVIEWS, mailStatus } from "@/lib/email";
+import { db } from "@/lib/db";
+import { mailPreview, mailPreviewNames, mailStatus, voiceFor } from "@/lib/email";
 import { AppHeader } from "@/components/app-header";
 import { Button, Kicker, Notice } from "@/components/ui";
 import { Toast } from "@/components/toast";
@@ -22,12 +26,46 @@ export const dynamic = "force-dynamic";
 export default async function MailPage({
   searchParams,
 }: {
-  searchParams: Promise<{ toast?: string; error?: string }>;
+  searchParams: Promise<{ test?: string; locale?: string }>;
 }) {
   const user = await requireAdmin();
-  const { toast, error } = await searchParams;
+  const { test, locale } = await searchParams;
+  const t = await getTranslations("adminMail");
+  // What the test message came to (./actions.ts), from a fixed set of codes.
+  // A refusal is worded with what the mail server said, read from this
+  // owner's own latest failure on the trail — never from the URL.
+  const refusal =
+    test === "refused"
+      ? await db.auditEvent.findFirst({
+          where: { action: "mail.test_failed", actorId: user.id },
+          orderBy: { at: "desc" },
+          select: { detail: true },
+        })
+      : null;
+  const reason = (refusal?.detail as { reason?: unknown } | null)?.reason;
+  const toast = test === "sent" ? t("result.sent", { email: user.email }) : null;
+  const error =
+    test === "none"
+      ? t("result.none")
+      : test === "refused"
+        ? t("result.refused", { reason: typeof reason === "string" ? reason : t("result.noReason") })
+        : null;
   const status = mailStatus();
   const on = status.transport !== "none";
+  const passwords = authMethods().local;
+  // The previews are written in a language of the owner's choosing — what
+  // somebody who picked it on their profile is sent. English unless asked.
+  const voice = await voiceFor(locale);
+  const inLocale = voice.lang === "en" ? "" : `?locale=${encodeURIComponent(voice.lang)}`;
+  const server =
+    status.server === null
+      ? t("noTransport")
+      : status.server.kind === "resend"
+        ? "Resend"
+        : status.server.kind === "smtp-unparsable"
+          ? t("badUrl")
+          : `${status.server.host}${status.server.port ? `:${status.server.port}` : ""} (${status.server.tls ? t("tls") : t("starttls")})`;
+  const mono = (chunks: React.ReactNode) => <span className="font-mono">{chunks}</span>;
 
   return (
     <>
@@ -35,13 +73,10 @@ export default async function MailPage({
       <main className="mx-auto w-full max-w-[1180px] px-[26.4px] pb-[80px] pt-[35.2px]">
         {toast && <Toast>{toast}</Toast>}
         <div className="max-w-[780px]">
-          <Kicker>Out the door</Kicker>
-          <h1 className="m-0 mb-[13.2px] text-[46px] leading-[0.98] text-ink">Mail</h1>
+          <Kicker>{t("kicker")}</Kicker>
+          <h1 className="m-0 mb-[13.2px] text-[46px] leading-[0.98] text-ink">{t("title")}</h1>
           <p className="m-0 mb-[26.4px] text-[16.5px] leading-[1.5] text-ink-2 text-pretty">
-            Invitations, password resets, and a copy of each notification for
-            anyone who has not switched that off. Nothing here needs mail to
-            work — without it you hand links over yourself and notifications
-            stay in the Activity panel.
+            {t("intro", { passwords: passwords ? "on" : "off" })}
           </p>
 
           {error && (
@@ -56,69 +91,63 @@ export default async function MailPage({
             className="rounded-panel border-[3px] border-ink bg-porcelain p-[22px] shadow-stamp"
           >
             <h2 id="mail-status" className="m-0 mb-[13.2px] font-display text-[22px] text-ink">
-              {on ? "Mail is switched on" : "Mail is switched off"}
+              {on ? t("on") : t("off")}
             </h2>
             <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-[22px] gap-y-[8.8px] text-[15px]">
-              <dt className="font-mono text-[11.5px] font-bold uppercase tracking-[0.08em] text-ink-3">Sent through</dt>
+              <dt className="font-mono text-[11.5px] font-bold uppercase tracking-[0.08em] text-ink-3">{t("sentThrough")}</dt>
               <dd className="m-0 font-bold text-ink" data-mail-transport={status.transport}>
-                {status.server ?? "nothing — no SMTP_URL or RESEND_API_KEY is set"}
+                {server}
               </dd>
-              <dt className="font-mono text-[11.5px] font-bold uppercase tracking-[0.08em] text-ink-3">Sent as</dt>
+              <dt className="font-mono text-[11.5px] font-bold uppercase tracking-[0.08em] text-ink-3">{t("sentAs")}</dt>
               <dd className="m-0 break-words font-bold text-ink">{status.from}</dd>
             </dl>
             <p className="m-0 mt-[13.2px] text-[13.5px] leading-[1.5] text-ink-2">
-              These come from <span className="font-mono">.env.docker</span> on the
-              host (<span className="font-mono">SMTP_URL</span> or{" "}
-              <span className="font-mono">RESEND_API_KEY</span>, and{" "}
-              <span className="font-mono">MAIL_FROM</span>), not from this page —
-              they include a password.
+              {t.rich("fromEnv", { mono })}
             </p>
 
             <form action={sendTestMailAction} className="mt-[17.6px] flex flex-wrap items-center gap-[13.2px]">
               <Button type="submit" variant="secondary" disabled={!on}>
-                Send me a test message
+                {t("sendTest")}
               </Button>
               <span className="text-[13.5px] text-ink-2">
-                {on ? `Goes to ${user.email} and nowhere else.` : "Set a transport first."}
+                {on ? t("goesTo", { email: user.email }) : t("setTransport")}
               </span>
             </form>
           </section>
 
           {/* ---- what it says ---- */}
-          <h2 className="m-0 mb-[13.2px] mt-[35.2px] font-display text-[26px] text-ink">What people are sent</h2>
+          <h2 className="m-0 mb-[13.2px] mt-[35.2px] font-display text-[26px] text-ink">{t("previewsTitle")}</h2>
           <p className="m-0 mb-[17.6px] text-[15px] leading-[1.5] text-ink-2">
-            Each message as it leaves, with stand-in names and links that go
-            nowhere. Every one also carries a plain-text version, for mail
-            clients that will not show the other.
+            {t("previewsIntro")}
           </p>
           <div className="flex flex-col gap-[13.2px]">
-            {Object.entries(MAIL_PREVIEWS).map(([name, preview]) => {
-              const mail = preview.build();
+            {mailPreviewNames(passwords).map((name) => {
+              const mail = mailPreview(name, voice, passwords)!;
               return (
                 <article
                   key={name}
                   className="rounded-panel border-[3px] border-ink bg-porcelain p-[22px]"
                 >
-                  <h3 className="m-0 font-display text-[19px] text-ink">{preview.label}</h3>
-                  <p className="m-0 mt-[4px] text-[14px] leading-[1.5] text-ink-2">{preview.when}</p>
-                  <p className="m-0 mt-[11px] font-mono text-[12px] uppercase tracking-[0.04em] text-ink-3">Subject</p>
+                  <h3 className="m-0 font-display text-[19px] text-ink">{t(`previews.${name}.label`)}</h3>
+                  <p className="m-0 mt-[4px] text-[14px] leading-[1.5] text-ink-2">{t(`previews.${name}.when`)}</p>
+                  <p className="m-0 mt-[11px] font-mono text-[12px] uppercase tracking-[0.04em] text-ink-3">{t("subject")}</p>
                   <p className="m-0 break-words text-[15px] font-bold text-ink">{mail.subject}</p>
                   <p className="m-0 mt-[13.2px] flex flex-wrap gap-[17.6px] text-[14.5px] font-bold">
                     <a
-                      href={`/admin/mail/preview/${name}`}
+                      href={`/admin/mail/preview/${name}${inLocale}`}
                       target="_blank"
                       rel="noreferrer"
                       className="text-cherry-dk underline underline-offset-4 hover:text-cherry"
                     >
-                      See it as sent ↗
+                      {t("seeIt")}
                     </a>
                     <a
-                      href={`/admin/mail/preview/${name}?as=text`}
+                      href={`/admin/mail/preview/${name}${inLocale ? `${inLocale}&` : "?"}as=text`}
                       target="_blank"
                       rel="noreferrer"
                       className="text-ink-2 underline underline-offset-4 hover:text-cherry-dk"
                     >
-                      Plain-text version ↗
+                      {t("plainText")}
                     </a>
                   </p>
                 </article>

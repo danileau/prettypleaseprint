@@ -17,6 +17,8 @@ import { db } from "@/lib/db";
 import { record } from "@/lib/audit";
 import { isUniqueViolation } from "@/lib/invites";
 import { readResetToken, restorePasswordSetupLink } from "@/lib/password-reset";
+import { authMethods } from "@/lib/auth-methods";
+import { getTranslations } from "next-intl/server";
 
 const SetPasswordSchema = z.object({
   token: z.string().min(1),
@@ -57,6 +59,11 @@ export async function setPassword(
   _prev: SetPasswordState,
   formData: FormData,
 ): Promise<SetPasswordState> {
+  // Passwords are off for this deployment. The page offers no form, and the
+  // endpoint this ends at refuses (see `hooks.before` in src/lib/auth.ts);
+  // this refuses before anything is written on the way there.
+  if (!authMethods().local) return { error: (await getTranslations("passwordsOff"))("refused") };
+
   const rawUsername = formData.get("username");
   const parsed = SetPasswordSchema.safeParse({
     token: formData.get("token"),

@@ -206,8 +206,9 @@ export async function createFeature(actor: Actor, input: unknown) {
   if (owner && owner.id !== actor.id) {
     await notify({
       recipientId: owner.id,
+      actorId: actor.id,
       featureId: feature.id,
-      text: `${actor.name} filed a request — “${title}”.`,
+      message: { key: "featureFiled", values: { actor: actor.name, title } },
     });
   }
 
@@ -253,7 +254,11 @@ export async function withdrawFeature(actor: Actor, id: number) {
   await db.featureRequest.delete({ where: { id: feature.id } });
 
   if (owner && feature.status === "Requested" && owner.id !== actor.id) {
-    await notify({ recipientId: owner.id, text: `${actor.name} withdrew ${ref} — “${feature.title}”.` });
+    await notify({
+      recipientId: owner.id,
+      actorId: actor.id,
+      message: { key: "featureWithdrawn", values: { actor: actor.name, ref, title: feature.title } },
+    });
   }
 
   await record({
@@ -315,8 +320,9 @@ export async function changeFeaturePriority(actor: Actor, id: number, rawPriorit
   if (recipientId && recipientId !== actor.id) {
     await notify({
       recipientId,
+      actorId: actor.id,
       featureId: feature.id,
-      text: `${firstName(actor.name)} set “${feature.title}” to ${priority} priority.`,
+      message: { key: "featurePriority", values: { actor: firstName(actor.name), title: feature.title, priority } },
     });
   }
 
@@ -352,8 +358,9 @@ export async function advanceFeature(actor: Actor, id: number) {
 
   await notify({
     recipientId: feature.requesterId,
+    actorId: actor.id,
     featureId: feature.id,
-    text: `${firstName(actor.name)} moved “${feature.title}” to ${featureLabel(next)}.`,
+    message: { key: "featureMoved", values: { actor: firstName(actor.name), title: feature.title, status: next } },
   });
   await record({
     action: "feature.status_changed",
@@ -387,8 +394,9 @@ export async function declineFeature(actor: Actor, id: number) {
 
   await notify({
     recipientId: feature.requesterId,
+    actorId: actor.id,
     featureId: feature.id,
-    text: `${firstName(actor.name)} declined “${feature.title}”.`,
+    message: { key: "featureDeclined", values: { actor: firstName(actor.name), title: feature.title } },
   });
   await record({
     action: "feature.declined",
@@ -462,8 +470,9 @@ export async function addFeatureComment(actor: Actor, id: number, rawBody: unkno
   if (recipientId && recipientId !== actor.id) {
     await notify({
       recipientId,
+      actorId: actor.id,
       featureId: feature.id,
-      text: `${firstName(actor.name)} commented on “${feature.title}”.`,
+      message: { key: "featureCommented", values: { actor: firstName(actor.name), title: feature.title } },
     });
   }
 

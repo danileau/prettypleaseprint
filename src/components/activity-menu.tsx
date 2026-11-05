@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { useTranslations } from "next-intl";
 import { markAllRead, markRead } from "@/app/actions/notifications";
 
 export type FeedItem = {
@@ -26,6 +27,7 @@ export function ActivityMenu({
   unread: number;
   title: string;
 }) {
+  const t = useTranslations("header.activity");
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const wrap = useRef<HTMLDivElement>(null);
@@ -55,7 +57,7 @@ export function ActivityMenu({
         aria-haspopup="true"
         className="stamp flex cursor-pointer items-center gap-[8px] rounded-chip border-[3px] border-ink bg-cream px-[15px] py-[6px] font-mono text-[12px] font-bold uppercase tracking-[0.08em] text-ink hover:bg-sun"
       >
-        Activity
+        {t("button")}
         <span
           className={`inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full px-[6px] text-[12px] font-bold tabular-nums ${
             unread ? "bg-cherry-dk text-cream" : "bg-chrome text-ink-2"
@@ -78,7 +80,7 @@ export function ActivityMenu({
                 onClick={() => startTransition(() => void markAllRead())}
                 className="cursor-pointer rounded-chip border-2 border-ink bg-cream-2 px-[10px] py-[2px] font-mono text-[11px] font-bold uppercase text-ink hover:bg-sun disabled:opacity-50"
               >
-                Mark all read
+                {t("markAllRead")}
               </button>
             )}
           </div>
@@ -86,7 +88,7 @@ export function ActivityMenu({
           <div className="flex max-h-[330px] flex-col gap-[4.4px] overflow-auto">
             {items.length === 0 && (
               <p className="m-0 px-[4px] py-[11px] font-mono text-[12px] uppercase text-ink-3">
-                Nothing yet.
+                {t("empty")}
               </p>
             )}
             {items.map((item) => (
@@ -122,7 +124,7 @@ export function ActivityMenu({
                   </span>
                   <span className="mt-[2px] block font-mono text-[11px] text-ink-3">
                     {item.when}
-                    {item.read ? "" : " · unread"}
+                    {item.read ? "" : ` · ${t("unread")}`}
                   </span>
                 </span>
               </button>

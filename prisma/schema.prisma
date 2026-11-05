@@ -68,6 +68,13 @@ model User {
   banReason  String?
   banExpires DateTime?
 
+  /// The language this person chooses, as a code from LOCALES in
+  /// src/i18n/locales.ts; null is "no choice". Plain text rather than an enum,
+  /// so that dropping a language is not a migration: whatever reads it checks
+  /// the value against the list. Nothing reads or writes it yet — the choice
+  /// on /me will, in the order src/i18n/locales.ts gives.
+  preferredLocale String?
+
   sessions Session[]
   accounts Account[]
   passkeys Passkey[]

@@ -375,8 +375,9 @@ export async function advanceStory(actor: Actor, id: number) {
 
   await notify({
     recipientId: story.uploaderId,
+    actorId: actor.id,
     storyId: story.id,
-    text: `${firstName(actor.name)} moved “${story.title}” to ${next}.`,
+    message: { key: "storyMoved", values: { actor: firstName(actor.name), title: story.title, status: next } },
   });
   await record({
     action: "story.status_changed",
@@ -413,8 +414,9 @@ export async function declineStory(actor: Actor, id: number) {
 
   await notify({
     recipientId: story.uploaderId,
+    actorId: actor.id,
     storyId: story.id,
-    text: `${firstName(actor.name)} declined “${story.title}”.`,
+    message: { key: "storyDeclined", values: { actor: firstName(actor.name), title: story.title } },
   });
   await record({
     action: "story.declined",
@@ -458,8 +460,9 @@ export async function flagStory(actor: Actor, id: number, rawReason: unknown) {
 
   await notify({
     recipientId: story.uploaderId,
+    actorId: actor.id,
     storyId: story.id,
-    text: `${firstName(actor.name)} flagged “${story.title}”: ${reason}`,
+    message: { key: "storyFlagged", values: { actor: firstName(actor.name), title: story.title, reason } },
   });
   await record({
     action: "story.flagged",
@@ -496,8 +499,9 @@ export async function clearFlag(actor: Actor, id: number) {
 
   await notify({
     recipientId: story.uploaderId,
+    actorId: actor.id,
     storyId: story.id,
-    text: `${firstName(actor.name)} cleared the flag on “${story.title}”.`,
+    message: { key: "storyFlagCleared", values: { actor: firstName(actor.name), title: story.title } },
   });
   await record({
     action: "story.flag_cleared",
@@ -589,7 +593,8 @@ export async function withdrawStory(actor: Actor, id: number) {
   ) {
     await notify({
       recipientId: owner.id,
-      text: `${actor.name} withdrew ${ref} — “${story.title}”.`,
+      actorId: actor.id,
+      message: { key: "storyWithdrawn", values: { actor: actor.name, ref, title: story.title } },
     });
   }
 
@@ -733,8 +738,9 @@ export async function requeueStory(
   if (owner && owner.id !== actor.id) {
     await notify({
       recipientId: owner.id,
+      actorId: actor.id,
       storyId: created.id,
-      text: `${actor.name} re-queued “${title}”.`,
+      message: { key: "storyRequeued", values: { actor: actor.name, title } },
     });
   }
 
@@ -809,8 +815,9 @@ export async function changeStoryPriority(actor: Actor, id: number, rawPriority:
   if (recipientId && recipientId !== actor.id) {
     await notify({
       recipientId,
+      actorId: actor.id,
       storyId: story.id,
-      text: `${firstName(actor.name)} set “${story.title}” to ${priority} priority.`,
+      message: { key: "storyPriority", values: { actor: firstName(actor.name), title: story.title, priority } },
     });
   }
 
@@ -888,8 +895,9 @@ export async function addComment(actor: Actor, id: number, rawBody: unknown) {
   if (recipientId && recipientId !== actor.id) {
     await notify({
       recipientId,
+      actorId: actor.id,
       storyId: story.id,
-      text: `${firstName(actor.name)} commented on “${story.title}”.`,
+      message: { key: "storyCommented", values: { actor: firstName(actor.name), title: story.title } },
     });
   }
 

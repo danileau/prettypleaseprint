@@ -6,7 +6,15 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { featureRef, storyRef, storyScope, type Actor } from "@/lib/scope";
-import { mailConfigured, notificationEmail, sendMail } from "@/lib/email";
+import {
+  mailConfigured,
+  notificationEmail,
+  notificationText,
+  sendMail,
+  voiceFor,
+  type NotificationMessage,
+} from "@/lib/email";
+import { english } from "@/i18n/catalogue";
 
 // The pure rules live in `scope.ts` so they can be imported without pulling in
 // `server-only`. Re-exported here so callers have one import to reach for.
@@ -135,17 +143,27 @@ export const printerName = cache(async (): Promise<string> => {
 
 export async function notify(opts: {
   recipientId: string;
+  /**
+   * Who did it. Nobody is emailed about their own action — the owner moving
+   * their own upload along, say. The Activity row is written as before.
+   */
+  actorId: string;
   storyId?: number;
   /** A feature request this is about, for the 'frr' track. */
   featureId?: number;
-  text: string;
+  /**
+   * What happened, as a key under `notification` in the catalogue and its
+   * values. The Activity panel stores it as an English sentence, as it always
+   * has; the email is written from the key, in the recipient's language.
+   */
+  message: NotificationMessage;
 }): Promise<void> {
   await db.notification.create({
     data: {
       recipientId: opts.recipientId,
       storyId: opts.storyId ?? null,
       featureId: opts.featureId ?? null,
-      text: opts.text,
+      text: notificationText(english, opts.message),
     },
   });
 
@@ -167,15 +185,17 @@ export async function notify(opts: {
  */
 async function emailNotification(opts: {
   recipientId: string;
+  actorId: string;
   storyId?: number;
   featureId?: number;
-  text: string;
+  message: NotificationMessage;
 }): Promise<void> {
   if (!mailConfigured()) return;
+  if (opts.recipientId === opts.actorId) return;
 
   const recipient = await db.user.findUnique({
     where: { id: opts.recipientId },
-    select: { email: true, name: true, notifyByEmail: true, banned: true },
+    select: { email: true, name: true, notifyByEmail: true, banned: true, preferredLocale: true },
   });
   // Somebody whose access was revoked hears nothing more from this app.
   if (!recipient || !recipient.notifyByEmail || recipient.banned) return;
@@ -190,10 +210,11 @@ async function emailNotification(opts: {
         : { url: null, ref: null };
 
   await sendMail(
-    notificationEmail({
+    // In the recipient's language — not the actor's, and not the request's.
+    notificationEmail(await voiceFor(recipient.preferredLocale), {
       to: recipient.email,
       recipientName: recipient.name,
-      text: opts.text,
+      message: opts.message,
       ...target,
       settingsUrl: at("/me#email"),
     }),

@@ -1,20 +1,40 @@
 import { redirect } from "next/navigation";
+import { NextIntlClientProvider } from "next-intl";
+import { getTranslations } from "next-intl/server";
 import { currentUser } from "@/lib/authz";
 import { AuthShell, H1, Kicker, Lead, Notice } from "@/components/ui";
 import { SignInForm } from "./signin-form";
 import { safeRedirect } from "@/lib/safe-redirect";
+import { CLIENT_GROUPS } from "@/i18n/client-groups";
+import { getClientMessages } from "@/i18n/server";
+import { authMethods, oidcConfig } from "@/lib/auth-methods";
 
-const ERRORS: Record<string, string> = {
-  invite_required:
-    "That address has not been invited. Pretty Please Print is invite-only — ask whoever owns the printer for a link.",
-  INVALID_TOKEN: "That link is no longer valid. Ask the printer owner for a fresh one.",
-  TOKEN_EXPIRED: "That link expired. Ask the printer owner for another.",
-  banned: "That account has been suspended. Ask whoever owns the printer.",
-  BANNED_USER: "That account has been suspended. Ask whoever owns the printer.",
-};
-
-/** Set by /set-password once a new one has been chosen. */
-const PASSWORD_SET = "Password saved. Sign in with it.";
+/**
+ * The `?error=` codes this page explains, and which message explains each.
+ *
+ * The codes are other people's — Better Auth's, and this app's invite hook —
+ * and arrive in the URL, so they are looked up in this table and never used
+ * to build a message key: `?error=` is whatever a link says it is. Own-property
+ * only, so `?error=toString` gets the generic sentence like any other unknown.
+ */
+const ERRORS = {
+  invite_required: "inviteRequired",
+  INVALID_TOKEN: "invalidToken",
+  TOKEN_EXPIRED: "tokenExpired",
+  banned: "suspended",
+  BANNED_USER: "suspended",
+  // Single sign-on. The provider vouching for the address is what stands in
+  // for a password here, so "it has not" is its own sentence rather than a
+  // shrug — it is the one of these somebody can go and fix.
+  // One answer for an unverified address whether or not somebody here has it:
+  // which of these two Better Auth sends depends on exactly that, so telling
+  // them apart would say who is a member. The auth route rewrites the first
+  // into the second as well (`sameAnswerForUnverified`).
+  account_not_linked: "emailNotVerified",
+  email_not_verified: "emailNotVerified",
+  email_not_found: "emailNotFound",
+  unable_to_get_user_info: "providerUnverified",
+} as const;
 
 export default async function SignInPage({
   searchParams,
@@ -26,29 +46,44 @@ export default async function SignInPage({
   const user = await currentUser();
   if (user) redirect(safeRedirect(next));
 
+  const t = await getTranslations("signin");
+  const shell = await getTranslations("authShell");
+  const waysIn = await getTranslations("waysIn");
+
+  const methods = authMethods();
+  const sso = oidcConfig();
+  const ssoName = sso ? (sso.name ?? waysIn("sso.defaultName")) : null;
+
   return (
-    <AuthShell>
-      <Kicker>Members only · ask at the counter</Kicker>
-      <H1>What&rsquo;ll it be?</H1>
+    <AuthShell sign={shell("sign")}>
+      <Kicker>{t("kicker")}</Kicker>
+      <H1>{t("title")}</H1>
       <Lead>
-        Use the passkey on this device, or your username and password.
+        {!methods.local
+          ? t("leadSsoOnly", { name: ssoName ?? waysIn("sso.defaultName") })
+          : ssoName
+            ? t("leadSso", { name: ssoName })
+            : t("lead")}
       </Lead>
 
       {reset && (
         <div className="mb-[22px]">
-          <Notice tone="good">{PASSWORD_SET}</Notice>
+          {/* Set by /set-password once a new one has been chosen. */}
+          <Notice tone="good">{t("passwordSet")}</Notice>
         </div>
       )}
 
       {error && (
         <div className="mb-[22px]">
           <Notice tone="warn">
-            {ERRORS[error] ?? "That sign-in attempt did not go through."}
+            {t(`errors.${Object.hasOwn(ERRORS, error) ? ERRORS[error as keyof typeof ERRORS] : "other"}`)}
           </Notice>
         </div>
       )}
 
-      <SignInForm next={safeRedirect(next)} />
+      <NextIntlClientProvider messages={await getClientMessages(CLIENT_GROUPS.signin)} timeZone="UTC">
+        <SignInForm next={safeRedirect(next)} local={methods.local} ssoName={ssoName} />
+      </NextIntlClientProvider>
     </AuthShell>
   );
 }

@@ -1,11 +1,17 @@
 import { redirect } from "next/navigation";
+import { NextIntlClientProvider } from "next-intl";
+import { getTranslations } from "next-intl/server";
 
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/authz";
 import { isFreshAuth } from "@/lib/reauth";
-import { AuthShell, H1, Kicker, Lead } from "@/components/ui";
+import { AuthShell, H1, Kicker, Lead, Notice } from "@/components/ui";
 import { ReauthForm } from "./reauth-form";
 import { safeRedirect } from "@/lib/safe-redirect";
+import { authMethods, oidcConfig } from "@/lib/auth-methods";
+import { CLIENT_GROUPS } from "@/i18n/client-groups";
+import { currentIssuerAccounts } from "@/lib/oidc-flow";
+import { getClientMessages } from "@/i18n/server";
 
 /**
  * "Confirm it's you" before the actions that move access around.
@@ -18,14 +24,29 @@ import { safeRedirect } from "@/lib/safe-redirect";
 export default async function ReauthPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; error?: string }>;
 }) {
-  const { next } = await searchParams;
+  const { next, error } = await searchParams;
   const target = safeRedirect(next);
 
   // You have to be somebody before you can prove you are still them.
   const user = await requireUser(`/reauth?next=${encodeURIComponent(target)}`);
   if (await isFreshAuth()) redirect(target);
+
+  // Only what single sign-on adds to this screen reads the catalogue so far;
+  // the rest of it moves when the screen does (docs/i18n.md).
+  const t = await getTranslations("reauth");
+  const waysIn = await getTranslations("waysIn");
+  const methods = authMethods();
+  const sso = oidcConfig();
+  // The printer owner is never linked by address, so for an owner who has not
+  // connected the provider on /me, signing in through it confirms nothing — it
+  // is refused. Not offered, then.
+  const ownerUnconnected =
+    sso !== null &&
+    user.role === "admin" &&
+    (await db.user.count({ where: { id: user.id, accounts: { some: currentIssuerAccounts(sso.issuer) } } })) === 0;
+  const ssoName = sso && !ownerUnconnected ? (sso.name ?? waysIn("sso.defaultName")) : null;
 
   const row = await db.user.findUnique({
     where: { id: user.id },
@@ -37,15 +58,29 @@ export default async function ReauthPage({
       <Kicker>One more time, please</Kicker>
       <H1>Is that still you?</H1>
       <Lead>
-        You are about to change who can get in. A password or a passkey confirms
-        it is you at the keyboard and not a browser somebody left open.
+        {methods.local
+          ? t("lead")
+          : t("leadSso", { name: ssoName ?? waysIn("sso.defaultName") })}
       </Lead>
 
-      <ReauthForm
-        next={target}
-        username={row?.username ?? ""}
-        displayUsername={row?.displayUsername ?? row?.username ?? ""}
-      />
+      {/* A confirmation through the provider that came back refused — most
+          often one that answered from the session it held instead of asking
+          again (`ssoProfile` in src/lib/oidc-flow.ts). */}
+      {error && ssoName && (
+        <div className="mb-[22px]">
+          <Notice tone="warn">{t("ssoNotConfirmed", { name: ssoName })}</Notice>
+        </div>
+      )}
+
+      <NextIntlClientProvider messages={await getClientMessages(CLIENT_GROUPS.reauth)} timeZone="UTC">
+        <ReauthForm
+          next={target}
+          username={row?.username ?? ""}
+          displayUsername={row?.displayUsername ?? row?.username ?? ""}
+          local={methods.local}
+          ssoLabel={ssoName ? t("withSso", { name: ssoName }) : null}
+        />
+      </NextIntlClientProvider>
     </AuthShell>
   );
 }

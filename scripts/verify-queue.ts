@@ -10,9 +10,13 @@ import "./_env";
  *
  * DESTRUCTIVE: wipes users and stories. Development database only.
  */
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+
 import { db } from "../src/lib/db";
 import { clientIpFrom, ipSource } from "../src/lib/client-ip";
 import { BOARD, nextStatus, storyRef as storyRefOf } from "../src/lib/scope";
+import { CONTRIBUTORS } from "../src/lib/contributors";
 import { ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
@@ -724,6 +728,41 @@ async function main() {
   check("and signed-in ones",
         (await (await ruben.go(`${APP}/board`)).text()).includes("Source · AGPL-3.0"));
 
+  // The credits page beside it: linked from that same footer, but behind
+  // sign-in like any other page — the footer reaching signed-out visitors must
+  // not turn into a way past the gate.
+  check("the footer links to the About page",
+        anonPage.includes('href="/about"'));
+  const anonAbout = await new Browser().raw(`${APP}/about`);
+  check("and /about sends a signed-out visitor to sign-in",
+        anonAbout.status >= 300 && anonAbout.status < 400 &&
+        (anonAbout.headers.get("location") ?? "").includes("/signin"),
+        `status ${anonAbout.status} location ${anonAbout.headers.get("location")}`);
+  // A cookie that merely exists gets past the middleware; this is the page's
+  // own requireUser being tested, the same way A01-forge does for the board.
+  const forgedAbout = new Browser();
+  forgedAbout.jar.set("ppp.session_token", "not-a-real-token");
+  forgedAbout.jar.set("__Secure-ppp.session_token", "not-a-real-token");
+  const forgedAboutBody = await (await forgedAbout.go(`${APP}/about`)).text();
+  check("and so does a forged session cookie",
+        !forgedAboutBody.includes("Who made it"),
+        "a cookie nobody issued rendered the credits page");
+
+  const about = await (await ruben.go(`${APP}/about`)).text();
+  const aboutMain = /<main[\s\S]*?<\/main>/.exec(about)?.[0] ?? "";
+  // Per person, inside <main>: the source link and the footer are github.com
+  // URLs too, so "some github link is on the page" would pass with no one on it.
+  const uncredited = CONTRIBUTORS.filter(
+    (p) => !aboutMain.includes(`href="https://github.com/${encodeURIComponent(p.login)}"`),
+  ).map((p) => p.login);
+  check("and renders for a signed-in one, linking every contributor's GitHub profile",
+        aboutMain.includes("Who made it") && CONTRIBUTORS.length > 0 && uncredited.length === 0,
+        CONTRIBUTORS.length === 0 ? "src/lib/contributors.ts is empty"
+          : `missing: ${uncredited.join(", ") || "(the page did not render)"}`);
+  check("with no e-mail address on it",
+        !/[\w.+-]+@[\w-]+\.[a-z]{2,}/i.test(aboutMain || "<main>"),
+        "the contributors list must hold logins, names and months only");
+
   const iconRes = await new Browser().raw(`${APP}/icon.svg`);
   check("the favicon is served, not redirected to sign-in",
         iconRes.status === 200 &&
@@ -829,6 +868,14 @@ async function main() {
   check("nobody is emailed about their own action",
         !(await inbox(ayla.email)).some((m) => /teal|comment/i.test(m.Subject)));
 
+  // The owner moving their own ticket along: the Activity row is written as
+  // it always was, but nobody is emailed about what they did themselves.
+  await emptyInbox();
+  const ownOrder = await makeStory(admin.id, "Owner's own spacer");
+  const ownMove = await ruben.raw(`${APP}/api/stories/${ownOrder.id}/advance`, json({}));
+  check("the owner accepts their own ticket", ownMove.status === 200, `status ${ownMove.status}`);
+  check("and is not emailed about it", (await arrives(admin.email, /spacer/, 2500)) === null);
+
   section("a person can switch their own off");
 
   let profile = await (await client.go(`${APP}/me`)).text();
@@ -889,13 +936,96 @@ async function main() {
 
   await emptyInbox();
   const sent = await ruben.submit(`${APP}/admin/mail`, mailHtml, formIndexContaining(mailHtml, "Send me a test message"), {});
-  check("the test message is sent, and the page says to whom",
-        decodeURIComponent((sent.headers.get("location") ?? "").replace(/\+/g, " ")).includes(`Sent to ${admin.email}`),
-        `${sent.status} ${sent.headers.get("location")}`);
+  check("the test message is sent, and the page is told so by a code, not a sentence",
+        (sent.headers.get("location") ?? "").endsWith("/admin/mail?test=sent"), `${sent.status} ${sent.headers.get("location")}`);
+  check("which it words, saying to whom",
+        rendered(await (await ruben.go(`${APP}/admin/mail?test=sent`)).text()).includes(`Sent to ${admin.email}`));
   const test = await arrives(admin.email, /Test message/);
   check("it arrives, at the owner's own address", test !== null && test.HTML.includes("Mail is getting through"));
   check("and nowhere else", (await (await fetch(`${MAILPIT}/api/v1/messages?limit=50`)).json()).messages.length === 1);
   check("sending it is on the trail", (await db.auditEvent.count({ where: { action: "mail.test_sent", subject: admin.email } })) === 1);
+
+  // A refusal shows the mail server's own words — from the trail, where the
+  // action recorded them, not from the address bar.
+  await db.auditEvent.create({
+    data: { action: "mail.test_failed", actorId: admin.id, actorEmail: admin.email, subject: admin.email,
+            detail: { reason: "535 Authentication credentials invalid" } },
+  });
+  const refusedPage = rendered(await (await ruben.go(`${APP}/admin/mail?test=refused`)).text());
+  check("a refused test message is shown with the server's answer, read from the trail",
+        refusedPage.includes("The mail server did not take it: 535 Authentication credentials invalid"));
+  // What the page shows, not the router payload — which carries the address
+  // the page was asked for, as data and never as text.
+  const shown = (html: string) => html.replace(/<script[\s\S]*?<\/script>/g, "").replace(/<[^>]+>/g, " ");
+  const planted = shown(await (await ruben.go(
+    `${APP}/admin/mail?test=refused&error=${encodeURIComponent("Your session expired, sign in at evil.example")}` +
+    `&toast=${encodeURIComponent("Sent to evil.example")}&reason=evil.example`,
+  )).text());
+  check("words in a link someone else made do not reach the Mail page", !planted.includes("evil.example"));
+
+  section("mail is written in the recipient's language");
+
+  // The stack ships English alone, so the app's own `notify` is driven in a
+  // child process with a second catalogue it writes and removes
+  // (scripts/mail-locale-probe.ts, which also says what that does not cover).
+  // A recipient who chose it is written to in it; one who chose nothing is
+  // not; a key it lacks, or has broken, reads in English.
+  await db.user.update({ where: { id: ayla.id }, data: { preferredLocale: "xx" } });
+  await emptyInbox();
+  let probeOut = "";
+  try {
+    probeOut = execFileSync("node_modules/.bin/tsx", ["--import", "./scripts/_server-only.mjs", "scripts/mail-locale-probe.ts"], {
+      encoding: "utf8",
+      env: { ...process.env, SMTP_URL: "smtp://127.0.0.1:1025", MAILPIT_URL: MAILPIT,
+             PROBE_STORY_ID: String(mailed.id), PROBE_RECIPIENTS: `${ayla.id},${admin.id}`, PROBE_ACTOR_ID: "somebody-else" },
+      // Its errors — a send that failed — belong in this log.
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+  } finally {
+    await db.user.update({ where: { id: ayla.id }, data: { preferredLocale: null } });
+  }
+  const probed = JSON.parse(/^PROBE (.*)$/m.exec(probeOut)?.[1] ?? "{}") as { unlisted?: string };
+  check("a catalogue on disk for a language not in LOCALES is not used", probed.unlisted === "en", JSON.stringify(probed));
+  check("the probe leaves no catalogue behind", !existsSync("messages/xx.json"));
+  const theirs = await arrives(ayla.email, /Probe bracket/);
+  check("somebody who chose a language is emailed in it",
+        theirs?.Subject === `PPP-${100 + mailed.id}: Ruben a déplacé « Probe bracket » vers Impression.`, theirs?.Subject ?? "nothing arrived");
+  check("…marked as that language", theirs?.HTML.includes('lang="xx"') === true);
+  check("…with English for whatever that catalogue does not have yet",
+        theirs?.HTML.includes(`Ouvrir PPP-${100 + mailed.id}`) === true && theirs?.HTML.includes("Switch them off") === true);
+  check("…and for a message it has broken, never the key's name",
+        theirs?.HTML.includes("HEY AYLA") === true && !theirs?.HTML.includes("mail.notification"), theirs?.HTML.match(/(HEY|SALUT|mail\.)[^<]{0,30}/)?.[0]);
+  const ownerCopy = await arrives(admin.email, /Probe bracket/);
+  check("while somebody who chose nothing gets English, from the same event",
+        ownerCopy?.Subject === `PPP-${100 + mailed.id}: Ruben moved “Probe bracket” to Printing.`,
+        ownerCopy?.Subject ?? `nothing arrived; inbox: ${JSON.stringify((await inbox(admin.email)).map((m) => m.Subject))}`);
+  check("the Activity panel keeps the English sentence for both",
+        (await db.notification.count({ where: { text: "Ruben moved “Probe bracket” to Printing." } })) === 2);
+
+  const { voiceFor, mailPreview, mailPreviewNames, testEmail } = await import("../src/lib/email");
+  for (const odd of ["../en", "xx/../../package", "EN", "zz", "xx"]) {
+    check(`a preferredLocale of "${odd}" is written in English`, (await voiceFor(odd)).lang === "en");
+  }
+
+  const { NOTIFICATION_VALUES } = await import("../src/lib/email");
+  const { partsOf } = await import("../src/i18n/message-parts");
+  const enCatalogue = JSON.parse(readFileSync("messages/en.json", "utf8")) as { notification: Record<string, string> };
+  const drift = Object.entries(enCatalogue.notification).filter(
+    ([key, message]) =>
+      partsOf(message).args.join() !== [...((NOTIFICATION_VALUES as Record<string, readonly string[]>)[key] ?? [])].sort().join(),
+  );
+  check("every notification's values, as notify is typed, are its English placeholders",
+        drift.length === 0, drift.map(([k]) => k).join(", "));
+
+  section("with passwords off, no mail offers one");
+
+  const english = await voiceFor(null);
+  check("the Mail page lists no password-reset message", !mailPreviewNames(false).includes("password-reset"));
+  check("and there is no preview of one to open", mailPreview("password-reset", english, false) === null);
+  check("with passwords on, there is", mailPreview("password-reset", english, true) !== null);
+  const testOff = testEmail(english, { to: "x@office.example", sentBy: "R", passwords: false });
+  check("the test message does not promise password resets",
+        !/password/i.test(testOff.text) && !/password/i.test(testOff.html), testOff.text);
 
   console.info(
     `\n${passed} checks passed, ${failures.length} failed` +
