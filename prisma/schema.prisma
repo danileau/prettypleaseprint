@@ -68,11 +68,11 @@ model User {
   banReason  String?
   banExpires DateTime?
 
-  /// The language this person chooses, as a code from LOCALES in
-  /// src/i18n/locales.ts; null is "no choice". Plain text rather than an enum,
-  /// so that dropping a language is not a migration: whatever reads it checks
-  /// the value against the list. Nothing reads or writes it yet — the choice
-  /// on /me will, in the order src/i18n/locales.ts gives.
+  /// The language this person chose on /me: the name of a file in messages/
+  /// (`fr` for messages/fr.json); null is "no choice". Plain text rather than
+  /// an enum, so that adding or dropping a language is not a migration:
+  /// whatever reads it checks the value against the files the build has, and
+  /// passes over one it no longer has (src/i18n/locales.ts).
   preferredLocale String?
 
   sessions Session[]

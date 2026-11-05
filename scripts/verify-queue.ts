@@ -973,12 +973,12 @@ async function main() {
 
   section("mail is written in the recipient's language");
 
-  // The stack ships English alone, so the app's own `notify` is driven in a
-  // child process with a second catalogue it writes and removes
-  // (scripts/mail-locale-probe.ts, which also says what that does not cover).
-  // A recipient who chose it is written to in it; one who chose nothing is
-  // not; a key it lacks, or has broken, reads in English.
-  await db.user.update({ where: { id: ayla.id }, data: { preferredLocale: "xx" } });
+  // The app's own `notify`, driven in a child process with a catalogue of the
+  // test's own that it writes and removes (scripts/mail-locale-probe.ts, which
+  // also says what that does not cover). A recipient who chose it is written
+  // to in it; one who chose nothing is not; a key it lacks, or has broken,
+  // reads in English.
+  await db.user.update({ where: { id: ayla.id }, data: { preferredLocale: "vo" } });
   await emptyInbox();
   let probeOut = "";
   try {
@@ -992,13 +992,15 @@ async function main() {
   } finally {
     await db.user.update({ where: { id: ayla.id }, data: { preferredLocale: null } });
   }
-  const probed = JSON.parse(/^PROBE (.*)$/m.exec(probeOut)?.[1] ?? "{}") as { unlisted?: string };
-  check("a catalogue on disk for a language not in LOCALES is not used", probed.unlisted === "en", JSON.stringify(probed));
-  check("the probe leaves no catalogue behind", !existsSync("messages/xx.json"));
+  const probed = JSON.parse(/^PROBE (.*)$/m.exec(probeOut)?.[1] ?? "{}") as { absent?: string; present?: string };
+  check("a language with no file in messages/ is written in English", probed.absent === "en", JSON.stringify(probed));
+  check("and the same code is a language once its file is there, with nothing else changed",
+        probed.present === "vo", JSON.stringify(probed));
+  check("the probe leaves no catalogue behind", !existsSync("messages/vo.json"));
   const theirs = await arrives(ayla.email, /Probe bracket/);
   check("somebody who chose a language is emailed in it",
         theirs?.Subject === `PPP-${100 + mailed.id}: Ruben a déplacé « Probe bracket » vers Impression.`, theirs?.Subject ?? "nothing arrived");
-  check("…marked as that language", theirs?.HTML.includes('lang="xx"') === true);
+  check("…marked as that language", theirs?.HTML.includes('lang="vo"') === true);
   check("…with English for whatever that catalogue does not have yet",
         theirs?.HTML.includes(`Ouvrir PPP-${100 + mailed.id}`) === true && theirs?.HTML.includes("Switch them off") === true);
   check("…and for a message it has broken, never the key's name",
@@ -1011,7 +1013,7 @@ async function main() {
         (await db.notification.count({ where: { text: "Ruben moved “Probe bracket” to Printing." } })) === 2);
 
   const { voiceFor, mailPreview, mailPreviewNames, testEmail } = await import("../src/lib/email");
-  for (const odd of ["../en", "xx/../../package", "EN", "zz", "xx"]) {
+  for (const odd of ["../en", "xx/../../package", "EN", "zz", "xx", "vo"]) {
     check(`a preferredLocale of "${odd}" is written in English`, (await voiceFor(odd)).lang === "en");
   }
 

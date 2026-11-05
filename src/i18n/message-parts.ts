@@ -1,4 +1,45 @@
-/* Pure: imported by scripts/check-messages.ts and the suites. */
+/* Pure: imported by scripts/check-messages.ts, the suites and ./catalogue.ts. */
+
+import { createTranslator } from "next-intl";
+
+/**
+ * Why `message` cannot be formatted in `locale`, or null when it can: the
+ * error next-intl itself raises — an unclosed brace, a plural with no `other`,
+ * a tag never closed — when it is formatted with a stand-in for every argument
+ * and tag `partsOf` finds.
+ *
+ * The one test, read twice: `check:messages` fails on it, and ./catalogue.ts
+ * replaces such a message with English for that key when it loads a
+ * catalogue, so a page shows English rather than the key's name — on the
+ * server and in client components alike, since both are sent the catalogue as
+ * loaded.
+ *
+ * The stand-in is `1` for every argument, because it suits each kind there is:
+ * a plain `{name}`, a `plural` or `selectordinal`, a `number` or `date`, and a
+ * `select`, which takes it as no branch in particular and goes to `other`.
+ * Tags get a function returning what they wrap.
+ */
+export function formatProblem(message: string, locale: string): string | null {
+  let problem: string | null = null;
+  const t = createTranslator({
+    locale,
+    messages: { m: message } as never,
+    onError: (error) => {
+      problem ??= error.message;
+    },
+    getMessageFallback: () => "",
+  });
+  const { args, tags } = partsOf(message);
+  const values: Record<string, unknown> = {};
+  for (const arg of args) values[arg] = 1;
+  for (const tag of tags) values[tag] = (chunks: string) => chunks;
+  try {
+    (t.markup as unknown as (key: string, values: Record<string, unknown>) => string)("m", values);
+  } catch (error) {
+    problem ??= (error as Error).message;
+  }
+  return problem;
+}
 
 /**
  * What a translation has to keep from English: the names of an ICU message's

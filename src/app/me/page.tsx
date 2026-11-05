@@ -12,6 +12,7 @@ import { AppHeader } from "@/components/app-header";
 import { Kicker, StatusChip } from "@/components/ui";
 import { ColorSwatch } from "@/components/color-swatch";
 import { SsoPanel } from "./sso-panel";
+import { LanguagePanel } from "./language-panel";
 
 import type { StoryStatus } from "@prisma/client";
 
@@ -44,18 +45,20 @@ type Card = { value: string; label: string; skin: string };
 export default async function ProfilePage({
   searchParams,
 }: {
-  searchParams: Promise<{ sso?: string }>;
+  searchParams: Promise<{ sso?: string; language?: string }>;
 }) {
-  const { sso } = await searchParams;
+  const { sso, language } = await searchParams;
   const user = await requireUser("/me");
   const owner = await printerName();
   const isAdmin = user.role === "admin";
   const scope = storyScope(user);
+  const mine = await db.user.findUnique({
+    where: { id: user.id },
+    select: { notifyByEmail: true, preferredLocale: true },
+  });
   // Only worth asking where there is mail to send. Without a transport the
   // switch would be a promise the deployment cannot keep.
-  const mail = mailConfigured()
-    ? await db.user.findUnique({ where: { id: user.id }, select: { notifyByEmail: true } })
-    : null;
+  const mail = mailConfigured() ? mine : null;
   const emailWords = await getTranslations("me.email");
 
   const [stories, finished, beers, favourite, waiting, bytes] = await Promise.all([
@@ -236,6 +239,8 @@ export default async function ProfilePage({
             </form>
           </section>
         )}
+
+        <LanguagePanel preference={mine?.preferredLocale ?? null} status={language} />
       </main>
     </>
   );

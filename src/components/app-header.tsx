@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import type { Actor } from "@/lib/scope";
 import { relativeTime } from "@/lib/catalog";
 import { CLIENT_GROUPS } from "@/i18n/client-groups";
-import { getClientMessages } from "@/i18n/server";
+import { getClientMessages, relativeTimeVoice } from "@/i18n/server";
 import { Brand } from "@/components/ui";
 import { ActivityMenu, type FeedItem } from "@/components/activity-menu";
 import { UserMenu } from "@/components/user-menu";
@@ -63,7 +63,7 @@ export async function AppHeader({
   user: Actor;
   active: string;
 }) {
-  const [notifications, passkeyCount, t, clientMessages] = await Promise.all([
+  const [notifications, passkeyCount, t, clientMessages, timeVoice] = await Promise.all([
     db.notification.findMany({
       where: { recipientId: user.id },
       orderBy: { createdAt: "desc" },
@@ -72,15 +72,17 @@ export async function AppHeader({
     db.passkey.count({ where: { userId: user.id } }),
     getTranslations("header"),
     getClientMessages(CLIENT_GROUPS.header),
+    relativeTimeVoice(),
   ]);
 
   // `text` is written once, in English, when the notification is created; it
   // is a sentence, not a message key, and stays English until notifications
-  // store a key and its values instead.
+  // store a key and its values instead. `when` is written here, in the
+  // request's language, and reaches the menu as a finished string.
   const items: FeedItem[] = notifications.map((n) => ({
     id: n.id,
     text: n.text,
-    when: relativeTime(n.createdAt),
+    when: relativeTime(n.createdAt, timeVoice),
     read: n.read,
     storyId: n.storyId,
     featureId: n.featureId,

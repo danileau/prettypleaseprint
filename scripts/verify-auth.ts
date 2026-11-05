@@ -14,6 +14,7 @@
  * Point it at a development database only.
  */
 import "./_env";
+import { readdirSync, readFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { db } from "../src/lib/db";
 import { createInvite, mailConfigured } from "../src/lib/invites";
@@ -629,12 +630,15 @@ async function main() {
   check("a second admin row is rejected by the partial unique index", rejected);
 
   // ------------------------------------------------------------------------
-  section("15. translation plumbing: English, word for word, for everyone");
-  // The sign-in page and the header now read their words from messages/en.json.
-  // English is the only language, so the job here is to pin that the words did
-  // not change, and that no browser can get anything else. Every string the
-  // two screens render is in messages/en.json; these are the ones the server
-  // renders, so the ones a check on the HTML can see.
+  section("15. languages: English word for word, and every file in messages/ for whoever asks");
+  // The sign-in page and the header read their words from messages/. English
+  // is what every suite reads and what a request asking for nothing gets, so
+  // the first job is to pin that its words did not change. The second is the
+  // same for every language that ships — whatever files messages/ holds, none
+  // named here: asked for by a browser, or chosen on /me, a language renders
+  // its own words under its own `lang`, and leaks no more than English does.
+  // These are the strings the server renders, so the ones a check on the HTML
+  // can see.
   const signinIn = async (acceptLanguage?: string, query = "") => {
     const headers: Record<string, string> = acceptLanguage ? { "accept-language": acceptLanguage } : {};
     return (await new Browser().go(`${APP}/signin${query}`, { headers })).text();
@@ -664,7 +668,10 @@ async function main() {
   check("and says so: <html lang=\"en\">", htmlLang(plain) === "en", `lang=${htmlLang(plain)}`);
   check("and its source carries none of the header's words — no menu, no owner's label",
         !["Sign out", "Printer owner", "New from the group", "Guest list", "Mark all read"].some((s) => plain.includes(s)));
-  for (const header of ["en-GB,en;q=0.9", "fr-FR,fr;q=0.9,en;q=0.8", "de-DE,de;q=0.9", "*", "fr;q=0, en", "x-klingon"]) {
+  // English whatever else ships: English asked for, anything, a private-use
+  // tag no catalogue can have (check:messages refuses a language Intl cannot
+  // name), and garbage.
+  for (const header of ["en-GB,en;q=0.9", "*", "qaa-ZZ, qaa;q=0.9", "x-klingon", "q=0.9;;,", "en;q=abc, ,;"]) {
     const page = await signinIn(header);
     const text = visibleText(page);
     check(`Accept-Language "${header}" renders exactly the same English text, under lang="en"`,
@@ -690,9 +697,213 @@ async function main() {
   check("and its labels for assistive technology too",
         ownerHtml.includes('aria-label="Pretty Please Print, home"') &&
           ownerHtml.includes(`aria-label="Account menu for ${admin.name}"`));
-  const ownerFrench = visibleText(await queue("fr-FR,fr;q=0.9"));
-  check("and the same labels for a browser asking for French",
-        NAV.every((s) => ownerFrench.includes(s)), ownerFrench.slice(0, 300));
+
+  // Every language there is, read off the directory the image was built from
+  // — the same rule the app follows, and no code named here. What a language
+  // shows for a key is its own string, or English where it has none yet: the
+  // catalogues are laid over English key by key.
+  const CODES = readdirSync("messages").filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -".json".length)).sort();
+  const catalogue = (code: string) => JSON.parse(readFileSync(`messages/${code}.json`, "utf8")) as unknown;
+  const at = (tree: unknown, path: string) =>
+    path.split(".").reduce<unknown>((node, key) => (node && typeof node === "object" ? (node as Record<string, unknown>)[key] : undefined), tree);
+  const words = (code: string, path: string) => {
+    const own = at(catalogue(code), path);
+    const text = typeof own === "string" && own !== "" ? own : (at(catalogue("en"), path) as string);
+    return text.replace(/\s+/g, " ");
+  };
+  const OWNER_ONLY = ["header.role.owner", "header.feedTitle.owner", "header.nav.guestList", "header.nav.byPerson"];
+  const HEADER_ONLY = ["header.account.signOut", "header.activity.markAllRead", ...OWNER_ONLY];
+  const OWNER_NAV = ["pass", "rail", "books", "materials", "byPerson", "benefits", "guestList", "audit"].map((k) => `header.nav.${k}`);
+  const MEMBER_NAV = ["rail", "orderUp", "myOrders", "history", "featureRequests"].map((k) => `header.nav.${k}`);
+  const missingWords = (code: string, text: string, keys: string[]) => keys.filter((k) => !text.includes(words(code, k)));
+  const leakedWords = (code: string, html: string, keys: string[]) => keys.filter((k) => html.includes(words(code, k)));
+  check("messages/ holds English, the source", CODES.includes("en"), CODES.join(", "));
+
+  const { offeredLocales, instanceDefault, layOver, pageMessageHandling } = await import("../src/i18n/catalogue");
+  const { resolveLocale, negotiate, languageName } = await import("../src/i18n/locales");
+  const { previewLocaleQuery, voiceFor } = await import("../src/lib/email");
+  check("the app offers exactly the files in messages/", JSON.stringify(offeredLocales()) === JSON.stringify(CODES),
+        `${offeredLocales().join(", ")} against ${CODES.join(", ")}`);
+
+  await clearRateLimit();
+  const member = new Browser();
+  await signInWithPassword(member, APP, "ayla", NEW_PASSWORD);
+  check("a member is signed in for the language checks", signedIn(member));
+  const aylaRow = await db.user.findUniqueOrThrow({ where: { email: AYLA } });
+  const board = async (acceptLanguage: string) =>
+    (await member.go(`${APP}/board`, { headers: { "accept-language": acceptLanguage } })).text();
+  // Two items in her Activity menu, for the times the header writes beside
+  // them: one from three hours ago, one from just now. The menu opens on the
+  // client, so the strings are in the page's payload rather than its text.
+  const TIMED = "Language suite: a timed notification";
+  await db.notification.createMany({
+    data: [
+      { recipientId: aylaRow.id, text: TIMED, createdAt: new Date(Date.now() - 3 * 3_600_000) },
+      { recipientId: aylaRow.id, text: TIMED, createdAt: new Date() },
+    ],
+  });
+  const threeHoursAgo = (code: string) =>
+    code === "en" ? "3 hours ago" : new Intl.RelativeTimeFormat(code, { numeric: "auto" }).format(-3, "hour");
+
+  for (const code of CODES) {
+    // Another language for the browser to ask for, so a preference that is
+    // honoured is told apart from a browser that happens to agree.
+    const other = CODES.find((c) => c !== code) ?? "qaa";
+
+    const signin = await signinIn(code);
+    const signinText = visibleText(signin);
+    const signinMissing = missingWords(code, signinText, ["authShell.sign", "signin.kicker", "signin.title", "signin.form.submit"]);
+    check(`[${code}] Accept-Language "${code}": the sign-in page is in it, under lang="${code}"`,
+          htmlLang(signin) === code && signinMissing.length === 0,
+          `lang=${htmlLang(signin)}; missing ${signinMissing.map((k) => `${k} "${words(code, k)}"`).join(", ")}`);
+    const signinLeaks = leakedWords(code, signin, HEADER_ONLY);
+    check(`[${code}] and its source carries none of the header's words in that language`,
+          signinLeaks.length === 0, signinLeaks.join(", "));
+    if (!code.includes("-")) {
+      const regional = await signinIn(`qaa, ${code}-ZZ;q=0.8, ${other};q=0.5`);
+      check(`[${code}] a regional variant with no file of its own gets "${code}", by quality`,
+            htmlLang(regional) === code, `lang=${htmlLang(regional)}`);
+    }
+    if (code !== "en") {
+      const refusedLang = await signinIn(`${code};q=0, en;q=0.5`);
+      check(`[${code}] "${code};q=0" is never served`, htmlLang(refusedLang) === "en", `lang=${htmlLang(refusedLang)}`);
+      const upper = await signinIn(`${code};Q=0.9, en;q=0.5`);
+      check(`[${code}] "Q=" counts as "q=" (RFC 9110: case-insensitive)`, htmlLang(upper) === code, `lang=${htmlLang(upper)}`);
+    }
+
+    const ownerPage = await queue(code);
+    const ownerMissing = missingWords(code, visibleText(ownerPage), [...OWNER_NAV, "header.activity.button"]);
+    check(`[${code}] the owner's header follows the browser: lang="${code}", its navigation in it`,
+          htmlLang(ownerPage) === code && ownerMissing.length === 0,
+          `lang=${htmlLang(ownerPage)}; missing ${ownerMissing.map((k) => words(code, k)).join(" | ")}`);
+    check(`[${code}] and its label for assistive technology`,
+          unescapeHtml(ownerPage).includes(`aria-label="${words(code, "header.home")}"`));
+
+    await db.user.update({ where: { id: aylaRow.id }, data: { preferredLocale: code } });
+    const chosen = await board(other);
+    const memberMissing = missingWords(code, visibleText(chosen), MEMBER_NAV);
+    check(`[${code}] a member who chose it gets it, though the browser asks for "${other}"`,
+          htmlLang(chosen) === code && memberMissing.length === 0,
+          `lang=${htmlLang(chosen)}; missing ${memberMissing.map((k) => words(code, k)).join(" | ")}`);
+    check(`[${code}] the header's times are in it: "${threeHoursAgo(code)}", "${words(code, "time.justNow")}"`,
+          chosen.includes(threeHoursAgo(code)) && chosen.includes(words(code, "time.justNow")) &&
+            (code === "en" || !chosen.includes("3 hours ago")),
+          (chosen.match(/"when":"[^"]*"/g) ?? chosen.match(/when[^,]{0,40}/g) ?? []).slice(0, 4).join(" "));
+    const memberLeaks = leakedWords(code, chosen, OWNER_ONLY);
+    check(`[${code}] and the owner's words in it are nowhere in the member's page source`,
+          memberLeaks.length === 0, memberLeaks.map((k) => `${k} "${words(code, k)}"`).join(", "));
+
+    // A language saved and since removed — here, one there never was.
+    await db.user.update({ where: { id: aylaRow.id }, data: { preferredLocale: "qaa" } });
+    const passedOver = await board(code);
+    check(`[${code}] a stored language with no file is passed over for the browser's`,
+          htmlLang(passedOver) === code, `lang=${htmlLang(passedOver)}`);
+  }
+  await db.user.update({ where: { id: aylaRow.id }, data: { preferredLocale: null } });
+  await db.notification.deleteMany({ where: { recipientId: aylaRow.id, text: TIMED } });
+
+  // The picker on /me: the files, each in its own name, and nothing else.
+  const mePage = async () => (await member.go(`${APP}/me`)).text();
+  const pickerOf = (html: string) => formContaining(html, 'name="locale"') ?? "";
+  const picker = pickerOf(await mePage());
+  const options = [...picker.matchAll(/<option\b([^>]*)>([^<]*)<\/option>/g)].map((m) => ({
+    value: /value="([^"]*)"/.exec(m[1]!)?.[1],
+    lang: /lang="([^"]*)"/.exec(m[1]!)?.[1],
+    label: unescapeHtml(m[2]!),
+  }));
+  check("/me offers \"Follow my browser\" and then exactly the files in messages/",
+        JSON.stringify(options.map((o) => o.value)) === JSON.stringify(["", ...CODES]),
+        JSON.stringify(options.map((o) => o.value)));
+  check("each by its name in itself, marked as that language",
+        options.slice(1).every((o) => o.lang === o.value && o.label === languageName(o.value!) && o.label !== o.value),
+        options.map((o) => `${o.value}=${o.label}`).join(", "));
+  check("with no choice made, \"Follow my browser\" is the one selected",
+        /<option[^>]*value=""[^>]*selected/.test(picker));
+
+  for (const code of CODES) {
+    const saved = await member.submit(`${APP}/me`, pickerOf(await mePage()), { locale: code });
+    const stored = (await db.user.findUniqueOrThrow({ where: { id: aylaRow.id } })).preferredLocale;
+    check(`[${code}] choosing it on /me is saved`, saved.status >= 300 && saved.status < 400 && stored === code,
+          `status ${saved.status}, stored ${stored}`);
+    const after = await mePage();
+    check(`[${code}] and the page comes back in it`,
+          htmlLang(after) === code && visibleText(after).includes(words(code, "me.language.heading")) &&
+            new RegExp(`<option[^>]*value="${code}"[^>]*selected`).test(pickerOf(after)),
+          `lang=${htmlLang(after)}`);
+  }
+  const followed = await member.submit(`${APP}/me`, pickerOf(await mePage()), { locale: "" });
+  check("\"Follow my browser\" stores no choice",
+        followed.status >= 300 && followed.status < 400 &&
+          (await db.user.findUniqueOrThrow({ where: { id: aylaRow.id } })).preferredLocale === null);
+  for (const forged of ["qaa", "../en", "EN", " en", "__proto__"]) {
+    const refusedSave = await member.submit(`${APP}/me`, pickerOf(await mePage()), { locale: forged });
+    check(`a posted "${forged}", which the page never offered, is refused and nothing is saved`,
+          (refusedSave.headers.get("location") ?? "").includes("language=refused") &&
+            (await db.user.findUniqueOrThrow({ where: { id: aylaRow.id } })).preferredLocale === null,
+          `${refusedSave.status} ${refusedSave.headers.get("location")}`);
+  }
+  check("and the page says so",
+        visibleText(await (await member.go(`${APP}/me?language=refused`)).text()).includes(words("en", "me.language.refused")));
+
+  // The instance default and the order, in process: the stack under test sets
+  // no DEFAULT_LOCALE, so that English stays what every suite reads.
+  const savedDefault = process.env.DEFAULT_LOCALE;
+  const logged: string[] = [];
+  const realWarn = console.warn;
+  console.warn = (...args: unknown[]) => void logged.push(args.join(" "));
+  try {
+    for (const code of CODES) {
+      process.env.DEFAULT_LOCALE = code;
+      check(`[${code}] DEFAULT_LOCALE="${code}" is the instance default`, instanceDefault() === code);
+      check(`[${code}] which comes after the person and the browser, and before English`,
+            resolveLocale({ preference: null, acceptLanguage: "qaa", instanceDefault: code, offered: CODES }) === code &&
+              resolveLocale({ preference: null, acceptLanguage: "en", instanceDefault: code, offered: CODES }) === "en" &&
+              resolveLocale({ preference: "en", acceptLanguage: code, instanceDefault: code, offered: CODES }) === "en");
+      check(`[${code}] the Mail page links an English preview with ?locale=en when the default is "${code}", and the preview honours it`,
+            (await previewLocaleQuery("en")) === (code === "en" ? "" : "?locale=en") &&
+              (await previewLocaleQuery(code)) === "" &&
+              (await voiceFor("en")).lang === "en" && (await voiceFor(null)).lang === code);
+      if (code === "en") continue;
+      check(`[${code}] a browser that refused "${code}" is not served it as the default: English`,
+            resolveLocale({ preference: null, acceptLanguage: `${code};q=0`, instanceDefault: code, offered: CODES }) === "en" &&
+              resolveLocale({ preference: null, acceptLanguage: `*;q=0, qaa`, instanceDefault: code, offered: CODES }) === "en");
+      check(`[${code}] …and English, the complete one, when it refused English too`,
+            resolveLocale({ preference: null, acceptLanguage: `${code};q=0, en;q=0`, instanceDefault: code, offered: CODES }) === "en");
+      check(`[${code}] a regional range does not reach a language refused by name ("${code}-ZZ, ${code};q=0")`,
+            negotiate(`${code}-ZZ, ${code};q=0`, CODES).locale === null &&
+              negotiate(`${code}-ZZ, *;q=0`, CODES).locale === code);
+    }
+    delete process.env.DEFAULT_LOCALE;
+    check("with no DEFAULT_LOCALE, an English preview's link carries no ?locale=, as before",
+          (await previewLocaleQuery("en")) === "");
+
+    // A translated message next-intl cannot format is English, never its key.
+    const brokenAt = CODES.find((c) => c !== "en") ?? "fr";
+    const laid = layOver(brokenAt, { mail: { notification: { greeting: "SALUT {name", openRef: "OUVRIR {ref}" } } });
+    const englishMail = (catalogue("en") as { mail: { notification: { greeting: string } } }).mail.notification;
+    check("a translated message that cannot be formatted is laid over as English, the others kept",
+          laid.mail.notification.greeting === englishMail.greeting && laid.mail.notification.openRef === "OUVRIR {ref}");
+    check("…and said once in the log, naming the key",
+          logged.filter((l) => l.includes("mail.notification.greeting cannot be formatted")).length === 1, logged.join(" | "));
+    layOver(brokenAt, { mail: { notification: { greeting: "SALUT {name" } } });
+    check("…once, however often it is loaded",
+          logged.filter((l) => l.includes("mail.notification.greeting cannot be formatted")).length === 1);
+    check("what a page shows for a message that still fails is its English, not its key",
+          pageMessageHandling.getMessageFallback({ namespace: "signin", key: "title", error: { code: "FORMATTING_ERROR" } }) ===
+            words("en", "signin.title"));
+    process.env.DEFAULT_LOCALE = "qaa";
+    const first = instanceDefault();
+    const second = instanceDefault();
+    check("DEFAULT_LOCALE naming no file in messages/ is ignored rather than fatal", first === null && second === null);
+    check("…with one warning in the log, not one per request",
+          logged.filter((l) => l.includes('DEFAULT_LOCALE="qaa" is ignored')).length === 1, logged.join(" | "));
+    process.env.DEFAULT_LOCALE = "not a language";
+    check("…and so is one that is not a language tag at all", instanceDefault() === null);
+  } finally {
+    console.warn = realWarn;
+    if (savedDefault === undefined) delete process.env.DEFAULT_LOCALE;
+    else process.env.DEFAULT_LOCALE = savedDefault;
+  }
 
   // ------------------------------------------------------------------------
   console.info(
