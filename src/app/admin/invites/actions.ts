@@ -9,7 +9,7 @@ import { requireFreshAuth } from "@/lib/reauth";
 import { authMethods } from "@/lib/auth-methods";
 import { getTranslations } from "next-intl/server";
 import { record } from "@/lib/audit";
-import { passwordResetEmail, sendMail } from "@/lib/email";
+import { passwordResetEmail, sendMail, voiceFor } from "@/lib/email";
 import {
   createInvite,
   InviteError,
@@ -144,7 +144,7 @@ export async function resetPasswordAction(
 
   const target = await db.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, name: true },
+    select: { id: true, email: true, name: true, preferredLocale: true },
   });
   if (!target) return { error: "No such member." };
 
@@ -164,7 +164,7 @@ export async function resetPasswordAction(
   let delivered = false;
   try {
     delivered = await sendMail(
-      passwordResetEmail({
+      passwordResetEmail(await voiceFor(target.preferredLocale), {
         to: target.email,
         url,
         expiresInMinutes: RESET_TTL_MINUTES,

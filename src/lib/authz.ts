@@ -5,7 +5,16 @@ import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { storyScope, type Actor } from "@/lib/scope";
+import { featureRef, storyRef, storyScope, type Actor } from "@/lib/scope";
+import {
+  mailConfigured,
+  notificationEmail,
+  notificationText,
+  sendMail,
+  voiceFor,
+  type NotificationMessage,
+} from "@/lib/email";
+import { english } from "@/i18n/catalogue";
 
 // The pure rules live in `scope.ts` so they can be imported without pulling in
 // `server-only`. Re-exported here so callers have one import to reach for.
@@ -134,19 +143,82 @@ export const printerName = cache(async (): Promise<string> => {
 
 export async function notify(opts: {
   recipientId: string;
+  /**
+   * Who did it. Nobody is emailed about their own action — the owner moving
+   * their own upload along, say. The Activity row is written as before.
+   */
+  actorId: string;
   storyId?: number;
   /** A feature request this is about, for the 'frr' track. */
   featureId?: number;
-  text: string;
+  /**
+   * What happened, as a key under `notification` in the catalogue and its
+   * values. The Activity panel stores it as an English sentence, as it always
+   * has; the email is written from the key, in the recipient's language.
+   */
+  message: NotificationMessage;
 }): Promise<void> {
   await db.notification.create({
     data: {
       recipientId: opts.recipientId,
       storyId: opts.storyId ?? null,
       featureId: opts.featureId ?? null,
-      text: opts.text,
+      text: notificationText(english, opts.message),
     },
   });
+
+  // Not awaited. The row above is the notification; the email is a copy of it,
+  // and whoever just accepted a print should not wait on a mail server to be
+  // told so — nor have the action fail because one is having a bad afternoon.
+  void emailNotification(opts).catch((error) => {
+    console.error("[mail] a notification could not be emailed", error);
+  });
+}
+
+/**
+ * The same notification, by mail — where there is a transport, the person has
+ * not switched it off, and they still have access.
+ *
+ * Every notification in the app is raised through `notify`, so this is the one
+ * place that decides who gets mail. A new kind of notification is emailed the
+ * day it is written, to the same people and on the same terms.
+ */
+async function emailNotification(opts: {
+  recipientId: string;
+  actorId: string;
+  storyId?: number;
+  featureId?: number;
+  message: NotificationMessage;
+}): Promise<void> {
+  if (!mailConfigured()) return;
+  if (opts.recipientId === opts.actorId) return;
+
+  const recipient = await db.user.findUnique({
+    where: { id: opts.recipientId },
+    select: { email: true, name: true, notifyByEmail: true, banned: true, preferredLocale: true },
+  });
+  // Somebody whose access was revoked hears nothing more from this app.
+  if (!recipient || !recipient.notifyByEmail || recipient.banned) return;
+
+  const base = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
+  const at = (path: string) => new URL(path, base).toString();
+  const target =
+    opts.storyId !== undefined
+      ? { url: at(`/story/${opts.storyId}`), ref: storyRef(opts.storyId) }
+      : opts.featureId !== undefined
+        ? { url: at(`/frr/${opts.featureId}`), ref: featureRef(opts.featureId) }
+        : { url: null, ref: null };
+
+  await sendMail(
+    // In the recipient's language — not the actor's, and not the request's.
+    notificationEmail(await voiceFor(recipient.preferredLocale), {
+      to: recipient.email,
+      recipientName: recipient.name,
+      message: opts.message,
+      ...target,
+      settingsUrl: at("/me#email"),
+    }),
+  );
 }
 
 /** Notifications are per recipient, and scoped the same way stories are. */

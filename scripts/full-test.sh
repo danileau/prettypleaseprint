@@ -23,7 +23,8 @@
 #      raises the stack under its own project name on a data directory outside
 #      the repository.
 #   4. The nine integration suites in CI's order, all of them even after one
-#      fails, then the two image pins CI keeps.
+#      fails, then the two image pins CI keeps, and that the app's bundle has
+#      every catalogue in messages/.
 #   5. Takes the stack down, removes its data, puts the three env files back
 #      exactly as they were and gives the set-aside stack its names back,
 #      starting again what was running — on success, on failure and on Ctrl-C.
@@ -86,7 +87,7 @@ while [ $# -gt 0 ]; do
     --only) [ $# -ge 2 ] || die "--only needs a quoted list of suites"; ONLY="$2"; ONLY_GIVEN=1; shift 2 ;;
     --restore) MODE="restore"; shift ;;
     --preflight) MODE="preflight"; shift ;;
-    -h|--help) sed -n '2,68p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,69p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown arg: $1" ;;
   esac
 done
@@ -586,6 +587,23 @@ no_npm_in_images() {
   done
   echo "neither image ships npm"
 }
+# Mail is written in its recipient's language by importing messages/<code>.json
+# at run time (src/i18n/catalogue.ts), which the bundler can only honour for
+# the files it saw at build time. This holds the built app to the checkout:
+# the server bundle's map of catalogues names every messages/*.json.
+messages_bundled() {
+  local want got
+  want="$(cd messages && ls ./*.json | sort -u)"
+  got="$(docker run --rm --entrypoint sh "$(image_prefix)/ppp-app:$LOCAL_TAG" \
+    -c 'grep -rhoE "\"\./[A-Za-z0-9_-]+\.json\":" .next/server' | sed 's/^"//; s/":$//' | sort -u)"
+  if [ "$want" != "$got" ]; then
+    echo "the app's catalogue map does not match messages/:"
+    echo "  messages/: $(echo $want)"
+    echo "  in image:  $(echo $got)"
+    return 1
+  fi
+  echo "every catalogue is in the bundle: $(echo $got)"
+}
 migrator_runs() {
   docker run --rm --entrypoint sh "$(image_prefix)/ppp-migrate:$LOCAL_TAG" \
     -c './node_modules/.bin/prisma --version >/dev/null && ./node_modules/.bin/tsx --version >/dev/null'
@@ -603,6 +621,7 @@ if [ "$healthy" -eq 1 ]; then
       step "${suite/:/-}" npm run -s "$suite" || true
     done
     step no-npm-in-images no_npm_in_images || true
+    step messages-bundled messages_bundled || true
     step migrator-runs migrator_runs || true
   fi
 fi

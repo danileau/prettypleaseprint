@@ -98,6 +98,7 @@ case "${1:-}" in
       *" rm -rf /o/data "*) [ ! -e "$S/rm-fail" ] || exit 1; rm -rf "${4%:/o}/data"; exit 0 ;;
       *"command -v npm"*) [ -e "$S/npm-in-image" ] && exit 0; exit 1 ;;
       *"prisma --version"*) exit 0 ;;
+      *".next/server"*) [ -e "$S/messages-unbundled" ] && exit 0; printf '"./en.json":\n"./en.json":\n'; exit 0 ;;
     esac ;;
 esac
 echo "unexpected: docker $*" >&2
@@ -189,6 +190,7 @@ new_sandbox() {
   cp "$SCRIPT" "$T/repo/scripts/full-test.sh"
   ( cd "$T/repo" || exit 1
     : >docker-compose.prod.yml; : >docker-compose.build.yml; : >docker-compose.test.yml
+    mkdir messages; printf '{}\n' >messages/en.json
     printf '%s\n' 'DB_PASSWORD="CHANGE-ME"' 'PPP_REGISTRY="ghcr.io/octo"' 'PPP_TAG="latest"' 'DATA_ROOT="./data"' >.env.docker.example
     printf '%s\n' '# the developer'"'"'s own' 'MINE=dev-env' >.env; chmod 600 .env
     printf '%s\n' 'MINE=dev-env-backup' >.env.backup; chmod 640 .env.backup
@@ -362,7 +364,7 @@ ft
 t "32 the whole run passes and puts all three env files back, content and mode"
 rc 0; restored; out "DONE failed=0"; no_out "PARTIAL RUN"
 out "restored .env, .env.backup, .env.docker; stack down; logs in $LOGS"
-eq "steps that passed" "$(grep -c PASS "$LOGS/summary.txt")" "23"
+eq "steps that passed" "$(grep -c PASS "$LOGS/summary.txt")" "24"
 eq "the suites, in order" "$(suites_run)" "$ALL_SUITES"
 
 t "39 up and down are both aimed at the project ppp-fulltest with the three files and the profile"
@@ -497,6 +499,11 @@ t "an image that ships npm again fails the run"
 new_sandbox; touch "$T/stub/state/npm-in-image"
 ft
 rc 1; out "FAIL no-npm-in-images"; restored
+
+t "an app image whose bundle lacks a catalogue in messages/ fails the run"
+new_sandbox; touch "$T/stub/state/messages-unbundled"
+ft
+rc 1; out "FAIL messages-bundled"; restored
 
 t "F6 a data directory that cannot be removed is said, with the command, and not called clean"
 new_sandbox; touch "$T/stub/state/rm-fail"

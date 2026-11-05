@@ -7,9 +7,18 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Upgrading from v0.4.0
 
-- **Nothing to set, and no migration.** Single sign-on stays off until
-  `AUTH_METHODS` names it; an instance that does not set it signs people in
-  exactly as before. Read
+- **1 database migration runs by itself**, in the `migrate` container:
+  `20261105120000_notify_by_email`. It adds one column with a default and
+  nothing else, and was tested old → new → old on one database with the
+  published image, so the deploy wizard's automatic rollback still lands on a
+  working app.
+- **Mail starts carrying notifications.** Where a host has set up mail
+  (`SMTP_URL` or `RESEND_API_KEY`), everybody now gets a copy of their
+  Activity panel by email, unless they switch it off on their profile. Without a mail transport nothing changes.
+  Open **Mail** as the owner and send yourself a test message after the
+  upgrade.
+- **Nothing to set.** Single sign-on stays off until `AUTH_METHODS` names it;
+  an instance that does not set it signs people in exactly as before. Read
   [Single sign-on](docs/deployment.md#single-sign-on) before turning it on.
 
 ### Added
@@ -63,6 +72,33 @@ Notable changes. Every entry names a released version; deployments pin
   `npm run verify:sso` is the twelfth suite, and runs against a stand-in
   provider that can be told to lie. What two reviews of the feature found, and
   what is accepted, is in [the security notes](docs/security-audit.md#single-sign-on).
+
+- **Notifications by email, and a Mail page for the owner.** Where a host has
+  set up mail, whatever lands in somebody's Activity panel is also sent to
+  their inbox — a new request, a ticket moving, a flag, a comment, on both the
+  print and the feature-request side — with a button straight to the ticket.
+  Each person can switch it off on their profile; somebody whose access was
+  revoked is sent nothing. The email is a copy, not the record: it is sent
+  without being waited for, and a mail server having a bad afternoon cannot
+  slow down or fail the action that caused it.
+
+  **Mail**, in the owner's menu, answers what could not be answered before
+  without causing a real event. *Is it set up* — which server, sent as whom,
+  never the connection string. *Does it arrive* — **Send me a test message**
+  goes to the owner's own address and reports the server's own answer when it
+  fails. *What are people sent* — every message the app can send, as it is
+  sent and in plain text, with stand-in data.
+
+  Every message is written from the message catalogue. Once more than English
+  ships, each person's mail follows their own language, and an invitation the
+  instance's default; today all of it is English.
+  With passwords off (`AUTH_METHODS=oidc`) no reset is sent or previewed.
+
+  Without a mail transport nothing changes: links are handed over as before
+  and notifications stay in the app.
+  [Setting up mail](docs/deployment.md#setting-up-mail) has the SMTP details,
+  including the one that catches everybody — an `@` in the username has to be
+  `%40`.
 
 ## v0.4.0
 

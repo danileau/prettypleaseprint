@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { Prisma, type Invite, type Role } from "@prisma/client";
 import { db } from "@/lib/db";
 import { generateToken, hashToken } from "@/lib/tokens";
-import { inviteEmail, mailConfigured, sendMail } from "@/lib/email";
+import { inviteEmail, mailConfigured, sendMail, voiceFor } from "@/lib/email";
 
 export const INVITE_TTL_DAYS = 7;
 
@@ -124,7 +124,8 @@ export async function createInvite(opts: {
 
   const url = inviteUrl(token);
   const delivered = await sendMail(
-    inviteEmail({
+    // Somebody not yet here has chosen no language: the instance's default.
+    inviteEmail(await voiceFor(null), {
       to: email,
       url,
       inviterName: invite.invitedBy.name,
@@ -160,7 +161,8 @@ export async function resendInvite(inviteId: string): Promise<CreatedInvite> {
 
   const url = inviteUrl(token);
   const delivered = await sendMail(
-    inviteEmail({
+    // Somebody not yet here has chosen no language: the instance's default.
+    inviteEmail(await voiceFor(null), {
       to: invite.email,
       url,
       inviterName: existing.invitedBy.name,
