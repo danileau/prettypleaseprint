@@ -611,7 +611,7 @@ was watched failing with the guard removed.
 | The discovery document names another issuer, or sends keys or tokens over plain HTTP | Its `issuer` must be `OIDC_ISSUER`, every endpoint must be `https://` when the issuer is, and it is re-read and re-checked each time a sign-in starts. The ID token's `iss` is held to `OIDC_ISSUER` too, not to whatever the document said. ★ |
 | Userinfo answers for somebody else | When the ID token carries no address and userinfo is asked, userinfo's `sub` must be the token's. ★ |
 | A new provider's subjects overlap the old one's | Identities are filed under issuer and subject together, so a subject at a different issuer opens nothing. ★ |
-| "Confirm it is you" is a click on a provider session left open | The re-authentication asks for `prompt=login` and `max_age=0` and is refused unless the ID token's `auth_time` is under two minutes old — or missing. A session opened through the provider dates from its `auth_time`, so an ordinary sign-in on an old provider session is not fresh either. ★ |
+| "Confirm it is you" is a click on a provider session left open | The re-authentication asks for `prompt=login` and `max_age=0` and is refused unless the ID token says the person authenticated under two minutes before it was issued (`iat − auth_time`, both on the provider's clock, with `iat` within ten minutes of this server's) — or does not say. A session opened through the provider dates from its `auth_time`, so an ordinary sign-in on an old provider session is not fresh either. ★ |
 | The provider vouches for a stranger | A pending invitation is still required unless the host set `OIDC_SIGNUP=open`. ★ |
 | An address the provider has not verified opens an account | `email_verified` must be the boolean `true` — not the string, not absent — both where the profile is mapped and again in the gate. ★ ★ |
 | …or takes over an existing account | Linking requires the same claim; the provider is deliberately not a "trusted provider", which would link on its say-so alone. ★ |
@@ -621,6 +621,8 @@ was watched failing with the guard removed.
 | A claim makes somebody the owner | No claim reaches `role`. Asserted with `role`, `groups` and `is_admin` all sent. |
 | A replayed or borrowed callback | State is bound to the browser that started the flow and the code is single-use: a second browser, a second use and an invented state are all refused. |
 | The flow is used as an open redirect | A `callbackURL` on another origin is refused before the provider is contacted. |
+| Somebody at the owner's open browser removes their single sign-on | Better Auth's `/unlink-account` is closed in every mode. Disconnecting is on `/me`: a fresh sign-in, refused with passwords off, and on the trail. ★ |
+| Provider tokens arrive on a re-link | Re-linking a connected owner is refused, and an account update hook strips tokens as the create hook does. ★ |
 | A signed-in person attaches an arbitrary identity | `/link-social` answers the owner alone, on a fresh session, for an identity with the owner's own verified address; a member gets 403, and it is closed where single sign-on is off. ★ |
 | Provider tokens leak from the database | None are stored. ★ |
 | A method that is "off" is only hidden | Its endpoints answer 404 — checked by hand in single-sign-on-only mode, and by a pure check of the list in every mode. Called in process, the same endpoints are refused by a hook, and the server actions that take a password refuse before writing — driven in a child process with `AUTH_METHODS=oidc`. ★ |
@@ -648,12 +650,18 @@ was watched failing with the guard removed.
   failed at start on the next request for that provider, and this app re-reads
   the document on every sign-in. Availability, not confidentiality, and loud in
   the log.
-- **The plugin's endpoints are the ones it read at start.** This app checks
-  the document as it is when each sign-in starts, and that the provider the
-  plugin built names the configured issuer; the plugin's token and userinfo
-  endpoints are not exposed to compare with. A document that was wrong at start
-  and right later would pass the per-sign-in check while the plugin still used
-  what it read first — the ID token's `iss` is still held to `OIDC_ISSUER`.
+- **The plugin's endpoints are the ones it read when it built the provider.**
+  This app checks the document as it is when each sign-in starts, and — when
+  the plugin has already built the provider — that it names the configured
+  issuer. When the plugin's start-up discovery failed, the provider is built by
+  the plugin's own retry, which runs *after* this app's hook on the same
+  request, so that one comparison is skipped for it. What still holds either
+  way: the plugin verifies the ID token against the issuer its document named,
+  and this app then requires the token's `iss` to be `OIDC_ISSUER`, so no
+  sign-in completes through a provider built from a document naming another
+  issuer. Its token and userinfo endpoints are not exposed to compare; a
+  document that changed them between the check and the build is trusted that
+  far.
 - **`OIDC_ALLOW_INSECURE_ISSUER`** lets the issuer be plain `http://`. It
   exists for the suites, whose stand-in has no certificate, and must never be
   set in a deployment.

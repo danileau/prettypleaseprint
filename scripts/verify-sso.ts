@@ -35,8 +35,10 @@ import {
   oidcConfig,
 } from "../src/lib/auth-methods";
 import {
+  CLOCK_SKEW_SECONDS,
   REAUTH_MAX_AGE_SECONDS,
   authTimeVerdict,
+  normalIssuer,
   discoveryProblems,
   ssoAccountId,
   ssoAuthenticatedAt,
@@ -96,7 +98,7 @@ class Browser {
 type Person = {
   key: string; sub?: string; email?: string; email_verified?: unknown; name?: string;
   fault?: string; extra?: Record<string, unknown>;
-  session_age?: number; ignores_prompt?: boolean; no_auth_time?: boolean;
+  session_age?: number; ignores_prompt?: boolean; no_auth_time?: boolean; clock_offset?: number;
   userinfo_only?: boolean; userinfo_sub?: string;
 };
 const setPeople = (people: Person[]) =>
@@ -258,6 +260,8 @@ async function main() {
   const localOnly = disabledAuthPaths({ local: true, oidc: false });
   check("local only: the provider endpoints are closed and passwords are not",
         localOnly.includes("/sign-in/social") && !localOnly.includes("/sign-in/username"), localOnly.join(" "));
+  check("Better Auth's own unlinking is closed in every mode — disconnecting is /me's, with a step-up",
+        [ssoOnly, localOnly, disabledAuthPaths({ local: true, oidc: true })].every((l) => l.includes("/unlink-account")));
   check("linking an identity on request is closed where single sign-on is off",
         localOnly.includes("/link-social"));
   check("and open where it is on — for the owner alone, gated in the hook (below)",
@@ -297,18 +301,31 @@ async function main() {
         ssoAccountId("https://id.example/realms/office/", "42") === "https://id.example/realms/office|42");
   check("the same subject at two issuers is two identities",
         ssoAccountId("https://a.example", "42") !== ssoAccountId("https://b.example", "42"));
+  check("one issuer, however it is spelt: case, default port, trailing slash",
+        ssoAccountId("HTTPS://ID.Example:443/realms/office//", "42") === "https://id.example/realms/office|42" &&
+        normalIssuer("http://oidc-stub:80/") === "http://oidc-stub");
+  check("but a different path is a different issuer",
+        ssoAccountId("https://id.example/realms/other", "42") !== ssoAccountId("https://id.example/realms/office", "42"));
   const nowS = Math.floor(Date.now() / 1000);
-  check("a re-authentication from seconds ago is fresh", authTimeVerdict(nowS - 5, nowS) === "fresh");
-  check(`one older than ${REAUTH_MAX_AGE_SECONDS} seconds is not`, authTimeVerdict(nowS - REAUTH_MAX_AGE_SECONDS - 1, nowS) === "stale");
-  check("nor one dated well in the future", authTimeVerdict(nowS + 3600, nowS) === "stale");
+  const at = (iat: number, authTime: unknown) => ({ iat, auth_time: authTime });
+  check("a re-authentication seconds before the token was issued is fresh", authTimeVerdict(at(nowS, nowS - 5), nowS) === "fresh");
+  check(`one ${REAUTH_MAX_AGE_SECONDS}+ seconds before it is not`,
+        authTimeVerdict(at(nowS, nowS - REAUTH_MAX_AGE_SECONDS - 1), nowS) === "stale");
+  check("measured on the provider's clock: four minutes ahead or behind, a fresh login is fresh",
+        authTimeVerdict(at(nowS + 240, nowS + 238), nowS) === "fresh" && authTimeVerdict(at(nowS - 240, nowS - 242), nowS) === "fresh");
+  check("and an old one on a clock running ahead is not made fresh by it",
+        authTimeVerdict(at(nowS + 400, nowS), nowS) === "stale");
+  check(`a token not issued within ${CLOCK_SKEW_SECONDS / 60} minutes of now by this clock is not believed`,
+        authTimeVerdict(at(nowS - CLOCK_SKEW_SECONDS - 60, nowS - CLOCK_SKEW_SECONDS - 61), nowS) === "stale");
+  check("nor one that says somebody authenticated after it was issued", authTimeVerdict(at(nowS, nowS + 30), nowS) === "stale");
   check("and one with no auth_time is not either — nothing to go on",
-        authTimeVerdict(undefined, nowS) === "missing" && authTimeVerdict("1700000000", nowS) === "missing");
-  check("a session opened through the provider dates from its auth_time",
-        ssoAuthenticatedAt(nowS - 3600, Date.now()).getTime() === (nowS - 3600) * 1000);
-  check("held to no later than now",
-        Math.abs(ssoAuthenticatedAt(nowS + 3600, Date.now()).getTime() - Date.now()) < 1000);
-  check("and without one is too old to count as fresh",
-        Date.now() - ssoAuthenticatedAt(undefined, Date.now()).getTime() > FRESH_AUTH_SECONDS * 1000);
+        authTimeVerdict({ iat: nowS }, nowS) === "missing" && authTimeVerdict(at(nowS, "1700000000"), nowS) === "missing");
+  check("a session opened through the provider dates from how long before the token they authenticated",
+        ssoAuthenticatedAt(at(nowS, nowS - 3600), nowS * 1000).getTime() === (nowS - 3600) * 1000);
+  check("on the provider's clock: a login 400 s before the token, from a clock running ahead, is 400 s old",
+        ssoAuthenticatedAt(at(nowS + 400, nowS), nowS * 1000).getTime() === (nowS - 400) * 1000);
+  check("and without an auth_time it is too old to count as fresh",
+        Date.now() - ssoAuthenticatedAt({ iat: nowS }, Date.now()).getTime() > FRESH_AUTH_SECONDS * 1000);
 
   // ── against the running app ──────────────────────────────────────────────
   section("setup");
@@ -543,7 +560,7 @@ async function main() {
   check("an existing account is NOT opened by an address the provider has not verified",
         !unlinked.browser.signedIn && unlinked.error !== null, unlinked.landed);
   check("and the answer is the very one an address nobody here has gets — it does not say who is a member",
-        unlinked.error === "email_not_verified" && unlinked.error === us.error, `${unlinked.error} vs ${us.error}`);
+        unlinked.error === "email_not_verified" && unlinked.landed === us.landed, `${unlinked.landed} vs ${us.landed}`);
   check("and gains no identity at the provider",
         (await db.account.count({ where: { userId: otto.id, providerId: "oidc" } })) === 0);
   const signinText = async (landed: string) => visibleText(await (await new Browser().raw(APP + landed)).text());
@@ -630,6 +647,17 @@ async function main() {
         startUrl !== undefined && (await ownerLinks()) === 0 && /error=/.test(swappedOut?.landed ?? ""),
         `${startRes.status} ${swappedOut?.landed}`);
 
+  await setDiscovery({ issuer: "https://somebody-else.example" });
+  const whileDown = await deskSignIn();
+  const downAction = actionIn(await (await whileDown.raw(`${APP}/me`)).text(), connectLabel);
+  const down = downAction ? await submit(whileDown, downAction) : null;
+  await setDiscovery({});
+  check("while the provider cannot be trusted, the button comes back to /me and says so — not an error page",
+        down?.headers.get("location") === "/me?sso=unavailable" && (await ownerLinks()) === 0,
+        `${down?.status} ${down?.headers.get("location")}`);
+  check("in words",
+        visibleText(await (await whileDown.raw(`${APP}/me?sso=unavailable`)).text()).includes("could not be reached to connect it"));
+
   const fresh2 = await deskSignIn();
   const action2 = actionIn(await (await fresh2.raw(`${APP}/me`)).text(), connectLabel);
   const go = action2 ? await submit(fresh2, action2) : null;
@@ -645,6 +673,12 @@ async function main() {
         ((await lastAudit("auth.sso_linked", admin.email))?.detail as { how?: string; role?: string } | null)?.how === "connected" &&
         ((await lastAudit("auth.sso_linked", admin.email))?.detail as { role?: string } | null)?.role === "admin");
   check("/me now says so", visibleText(await (await fresh2.raw(`${APP}/me`)).text()).includes(`Connected to ${button}`));
+  const unlinkTry = await fresh2.post("/api/auth/unlink-account", { providerId: "oidc" });
+  check("Better Auth's own unlinking answers 404, and the link stays",
+        unlinkTry.status === 404 && (await ownerLinks()) === 1, `status ${unlinkTry.status}`);
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  const relink = await fresh2.post("/api/auth/link-social", { provider: "oidc", callbackURL: "/me" });
+  check("and connecting again once connected is refused", relink.status === 409, `status ${relink.status}`);
 
   const owner = await sso("owner");
   const adminNow = await db.user.findUnique({ where: { id: admin.id }, include: { accounts: true } });
@@ -782,6 +816,25 @@ async function main() {
         nadiaAgain.error !== null && (await db.session.count({ where: { userId: nadiaUser!.id } })) === nadiaSessions &&
         !(await passes(nadia.browser)), nadiaAgain.landed);
 
+  section("how long ago is measured on the provider's clock");
+
+  const clockPeople: Person[] = [
+    { key: "clara", email: "clara@office.example", email_verified: true, name: "Clara", clock_offset: 240 },
+    { key: "cleo", email: "cleo@office.example", email_verified: true, name: "Cleo", clock_offset: -240 },
+    { key: "chad", email: "chad@office.example", email_verified: true, name: "Chad", clock_offset: 400, session_age: 400 },
+  ];
+  await setPeople([...people, ...reauthPeople, ...clockPeople]);
+  for (const p of clockPeople) await invite(p.email!, admin.id);
+  for (const [key, why] of [["clara", "four minutes ahead"], ["cleo", "four minutes behind"]] as const) {
+    const first = await sso(key);
+    const again = await sso(key, first.browser, "/admin/invites", { reauth: true });
+    check(`a provider whose clock is ${why}: a fresh login confirms it is them`,
+          again.landed === "/admin/invites" && (await passes(first.browser)), again.landed);
+  }
+  const chad = await sso("chad");
+  check("and a login 400 seconds old on a clock 400 seconds ahead is not taken for a fresh one",
+        chad.browser.signedIn && !(await passes(chad.browser)), chad.landed);
+
   section("a different provider is not the old one");
 
   // Linked when identities were filed under the subject alone — what a
@@ -852,6 +905,21 @@ async function main() {
   const afterOff = await sso("owner");
   check("after which the provider opens nothing again", !afterOff.browser.signedIn, afterOff.landed);
 
+  const staleOwner = await deskSignIn();
+  await db.session.updateMany({ where: { userId: admin.id }, data: { createdAt: ago(30) } });
+  const ownerReauth = visibleText(await (await staleOwner.raw(`${APP}/reauth?next=/admin/invites`)).text());
+  check("an owner who has not connected the provider is not offered it to confirm with",
+        !ownerReauth.includes(`Confirm with ${button}`) && ownerReauth.includes("Is that still you?"), ownerReauth.slice(0, 300));
+
+  // A link from before OIDC_ISSUER changed: filed under the old issuer, it
+  // opens nothing, so it must not make the owner look connected.
+  await db.account.create({ data: { userId: admin.id, providerId: "oidc", accountId: "https://old-provider.example|sub-owner" } });
+  const afterMove = await deskSignIn();
+  const movedMe = visibleText(await (await afterMove.raw(`${APP}/me`)).text());
+  check("a link to a provider this instance no longer uses does not count as connected",
+        movedMe.includes("Not connected") && !movedMe.includes(`Connected to ${button}`), movedMe.slice(0, 300));
+  await db.account.deleteMany({ where: { userId: admin.id, providerId: "oidc" } });
+
   section("with passwords off, the server refuses them too");
 
   // The stack runs both ways in, so the other mode's server side is driven in
@@ -868,12 +936,13 @@ async function main() {
   });
   const resetToken = new URL(await issuePasswordSetupUrl(quinn.id)).searchParams.get("token")!;
   const resetRows = () => db.verification.count({ where: { value: quinn.id } });
+  const quinnLink = await db.account.create({ data: { userId: quinn.id, providerId: "oidc", accountId: "probe|sub-quinn" } });
   const rowsBefore = await resetRows();
   const stdout = execFileSync("node_modules/.bin/tsx", ["--import", "./scripts/_server-only.mjs", "scripts/passwords-off-probe.ts"], {
     encoding: "utf8",
     env: {
       ...process.env, AUTH_METHODS: "oidc", OIDC_ISSUER: STUB, OIDC_CLIENT_ID: "ppp", OIDC_CLIENT_SECRET: "ppp-stub-secret",
-      PROBE_INVITE_TOKEN: probeToken, PROBE_INVITE_EMAIL: probeEmail, PROBE_RESET_TOKEN: resetToken, PROBE_USER_ID: quinn.id,
+      PROBE_ACCOUNT_ID: quinnLink.id, PROBE_INVITE_TOKEN: probeToken, PROBE_INVITE_EMAIL: probeEmail, PROBE_RESET_TOKEN: resetToken, PROBE_USER_ID: quinn.id,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -886,6 +955,11 @@ async function main() {
   check("accepting an invitation with a password writes nothing — not even the name chosen",
         probeInvite?.name === null && probeInvite?.acceptedAt === null && (await userByEmail(probeEmail)) === null,
         JSON.stringify({ name: probeInvite?.name, acceptInvite: probe.acceptInvite }));
+  const quinnLinkNow = await db.account.findUnique({ where: { id: quinnLink.id } });
+  check("Better Auth updating a linked account with the provider's tokens stores none of them",
+        probe.updateAccount?.threw === undefined && quinnLinkNow !== null &&
+        quinnLinkNow.accessToken === null && quinnLinkNow.refreshToken === null && quinnLinkNow.idToken === null,
+        JSON.stringify({ probe: probe.updateAccount, a: quinnLinkNow?.accessToken, r: quinnLinkNow?.refreshToken, i: quinnLinkNow?.idToken }));
   const quinnNow = await db.user.findUnique({ where: { id: quinn.id } });
   check("setting a password from a link writes nothing — not the username, not the link",
         quinnNow?.username === null && (await resetRows()) === rowsBefore,

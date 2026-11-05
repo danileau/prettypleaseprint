@@ -23,9 +23,23 @@ import { FRESH_AUTH_SECONDS } from "@/lib/auth-rules";
 // Discovery
 // ---------------------------------------------------------------------------
 
-/** Trailing slashes are the one difference two spellings of an issuer may have. */
+/**
+ * One spelling of an issuer, for comparing and for filing identities under:
+ * the URL as `new URL` reads it — scheme and host in lower case, a default
+ * port dropped — without trailing slashes. Not a URL at all, it is left as it
+ * is (and matches nothing it should not).
+ */
+export function normalIssuer(issuer: string): string {
+  try {
+    const u = new URL(issuer);
+    return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return issuer.replace(/\/+$/, "");
+  }
+}
+
 export const sameIssuer = (a: unknown, b: unknown) =>
-  typeof a === "string" && typeof b === "string" && a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+  typeof a === "string" && typeof b === "string" && normalIssuer(a) === normalIssuer(b);
 
 const ENDPOINTS = [
   "authorization_endpoint",
@@ -110,17 +124,47 @@ export async function currentDiscovery(cfg: OidcConfig): Promise<Discovery> {
  * small integers, usernames — would open the old provider's people's accounts
  * to whoever holds the same subject at the new one.
  */
-export const ssoAccountId = (issuer: string, sub: string) => `${issuer.replace(/\/+$/, "")}|${sub}`;
+export const ssoAccountId = (issuer: string, sub: string) => `${normalIssuer(issuer)}|${sub}`;
+
+/**
+ * The accounts linked through the provider configured *now*: an identity
+ * filed under another issuer — before `OIDC_ISSUER` changed — opens nothing,
+ * so it does not count as connected either.
+ */
+export const currentIssuerAccounts = (issuer: string) => ({
+  providerId: "oidc",
+  accountId: { startsWith: ssoAccountId(issuer, "") },
+});
 
 /** How recently a re-authentication through the provider must have happened. */
 export const REAUTH_MAX_AGE_SECONDS = 120;
-/** How far ahead of this server's clock the provider's may be. */
-const CLOCK_SKEW_SECONDS = 60;
+/**
+ * How far the provider's clock may be from this server's. Generous: it only
+ * decides whether an ID token was issued around now at all — how long ago the
+ * person authenticated is measured on the provider's own clock (below).
+ */
+export const CLOCK_SKEW_SECONDS = 600;
 /** The key, in the flow's server-side state, that marks it as a re-authentication. */
 export const REAUTH_MARK = "pppReauth";
 
+const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+
 /**
- * Does this ID token's `auth_time` stand for the person at the keyboard now?
+ * How long before the ID token was issued the person authenticated, in
+ * seconds — `iat - auth_time`, both read off the provider's clock, so a
+ * provider whose clock runs ahead of or behind this server's is measured
+ * fairly. Null when the token does not say, says nonsense (authenticated after
+ * it was issued), or was not issued around now by this server's clock.
+ */
+export function authAgeAtIssue(claims: { iat?: unknown; auth_time?: unknown }, nowSeconds: number): number | null {
+  const { iat, auth_time: authTime } = claims;
+  if (!finite(iat) || !finite(authTime) || authTime > iat) return null;
+  if (Math.abs(iat - nowSeconds) > CLOCK_SKEW_SECONDS) return null;
+  return iat - authTime;
+}
+
+/**
+ * Does this ID token stand for somebody who signed in at the provider just now?
  *
  * Only asked of a re-authentication, which asked the provider for a fresh login
  * (`prompt=login`, `max_age=0`). A provider that ignored that and answered from
@@ -128,10 +172,13 @@ export const REAUTH_MARK = "pppReauth";
  * report it at all leaves nothing to go on. Both are refused: the whole point
  * of re-authenticating is that somebody typed something just now.
  */
-export function authTimeVerdict(authTime: unknown, nowSeconds: number): "fresh" | "stale" | "missing" {
-  if (typeof authTime !== "number" || !Number.isFinite(authTime)) return "missing";
-  if (authTime > nowSeconds + CLOCK_SKEW_SECONDS) return "stale";
-  return nowSeconds - authTime <= REAUTH_MAX_AGE_SECONDS ? "fresh" : "stale";
+export function authTimeVerdict(
+  claims: { iat?: unknown; auth_time?: unknown },
+  nowSeconds: number,
+): "fresh" | "stale" | "missing" {
+  if (!finite(claims.auth_time) || !finite(claims.iat)) return "missing";
+  const age = authAgeAtIssue(claims, nowSeconds);
+  return age !== null && age <= REAUTH_MAX_AGE_SECONDS ? "fresh" : "stale";
 }
 
 /**
@@ -140,14 +187,14 @@ export function authTimeVerdict(authTime: unknown, nowSeconds: number): "fresh" 
  *
  * Not the moment the session row was written: the provider may have signed
  * somebody in from a session it held for hours, with nobody typing anything.
- * The provider's `auth_time`, then, held to no later than now. Without one the
- * session is old enough not to count as fresh — a sign-in nobody can date is
- * not evidence that somebody is at the keyboard.
+ * So: now, less how long before issuing the token the person authenticated
+ * (`authAgeAtIssue`, on the provider's clock). Without that the session is
+ * old enough not to count as fresh — a sign-in nobody can date is not evidence
+ * that somebody is at the keyboard.
  */
-export function ssoAuthenticatedAt(authTime: unknown, nowMs: number): Date {
-  if (typeof authTime === "number" && Number.isFinite(authTime)) {
-    return new Date(Math.min(authTime * 1000, nowMs));
-  }
+export function ssoAuthenticatedAt(claims: { iat?: unknown; auth_time?: unknown }, nowMs: number): Date {
+  const age = authAgeAtIssue(claims, nowMs / 1000);
+  if (age !== null) return new Date(nowMs - age * 1000);
   return new Date(nowMs - (FRESH_AUTH_SECONDS + 1) * 1000);
 }
 
@@ -204,12 +251,12 @@ export async function ssoProfile(tokens: Tokens, cfg: OidcConfig, log: (message:
   const state = await getOAuthState();
   const reauth = (state?.serverContext as Record<string, unknown> | undefined)?.[REAUTH_MARK] === true;
   if (reauth) {
-    const verdict = authTimeVerdict(claims.auth_time, Date.now() / 1000);
+    const verdict = authTimeVerdict(claims, Date.now() / 1000);
     if (verdict !== "fresh") {
       return refuse(
         verdict === "missing"
           ? "a re-authentication came back with no auth_time"
-          : `a re-authentication came back with an auth_time of ${JSON.stringify(claims.auth_time)}, not just now`,
+          : `a re-authentication came back with auth_time ${JSON.stringify(claims.auth_time)} and iat ${JSON.stringify(claims.iat)}, not a login just now`,
       );
     }
   }
@@ -235,7 +282,7 @@ export async function ssoProfile(tokens: Tokens, cfg: OidcConfig, log: (message:
   }
 
   const store = ssoRequest();
-  if (store) store.authenticatedAt = ssoAuthenticatedAt(claims.auth_time, Date.now());
+  if (store) store.authenticatedAt = ssoAuthenticatedAt(claims, Date.now());
 
   return {
     ...profile,
@@ -248,14 +295,20 @@ export async function ssoProfile(tokens: Tokens, cfg: OidcConfig, log: (message:
 
 /**
  * Better Auth answers an unverified address in two ways: `email_not_verified`
- * when nobody has the address, `account_not_linked` when somebody does. The
+ * when nobody has the address, `account_not_linked` when somebody does — and
+ * only the first carries an `error_description`, from this app's own gate. The
  * difference is whether the address is a member here, so the browser is told
- * the first in both cases.
+ * the same thing, character for character, in both cases: the first code, and
+ * no description (the page explains the code; the description is not shown).
  */
 export function sameAnswerForUnverified(res: Response): Response {
   const location = res.headers.get("location");
-  if (!location || !/[?&]error=account_not_linked(&|$)/.test(location)) return res;
+  if (!location || !/[?&]error=(account_not_linked|email_not_verified)(&|$)/.test(location)) return res;
+  const url = new URL(location, "http://relative.invalid");
+  url.searchParams.set("error", "email_not_verified");
+  url.searchParams.delete("error_description");
+  const rewritten = url.origin === "http://relative.invalid" ? `${url.pathname}${url.search}${url.hash}` : url.toString();
   const headers = new Headers(res.headers);
-  headers.set("location", location.replace(/([?&]error=)account_not_linked(?=&|$)/, "$1email_not_verified"));
+  headers.set("location", rewritten);
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }

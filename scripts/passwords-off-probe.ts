@@ -7,6 +7,9 @@
  *
  *   tsx --import ./scripts/_server-only.mjs scripts/passwords-off-probe.ts
  *
+ * Also the one check that needs the app's own Better Auth instance in hand:
+ * that updating a linked account stores none of the provider's tokens.
+ *
  * `disabledPaths` closes the HTTP endpoints. These are the doors beside them:
  * Better Auth's endpoints called in process (`auth.api.*`), and the server
  * actions that call them or write on the way. The parent sets up an invitation
@@ -57,6 +60,16 @@ async function main() {
     resetPassword: await attempt(() =>
       auth.api.resetPassword({ body: { token: process.env.PROBE_RESET_TOKEN!, newPassword: password } }),
     ),
+    // What Better Auth's link path does to an identity already attached: the
+    // account update hook is what keeps the tokens out (not a passwords-off
+    // matter, but this is where the app's own Better Auth instance is at hand).
+    updateAccount: await attempt(async () => {
+      const ctx = await auth.$context;
+      await ctx.internalAdapter.updateAccount(process.env.PROBE_ACCOUNT_ID!, {
+        accessToken: "leaked-access", refreshToken: "leaked-refresh", idToken: "leaked-id",
+      });
+      return "updated";
+    }),
   };
   console.log(`PROBE ${JSON.stringify(out)}`);
 }

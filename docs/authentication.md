@@ -337,8 +337,11 @@ confirm it is them, then runs Better Auth's explicit link flow
 an identity whose verified address is the owner's own, to the account signed
 in in the browser that comes back. That is recorded as `auth.sso_linked` with
 `how: "connected"`; *Disconnect* (also after confirming) removes it, as
-`auth.sso_unlinked`. `/link-social` answers nobody else: not a member, and not
-the owner on a session older than five minutes.
+`auth.sso_unlinked`; it is refused where passwords are off, since it would be
+the owner's only way in. `/link-social` answers nobody else: not a member, not
+the owner on a session older than five minutes, and not an owner already
+connected. Better Auth's own `/unlink-account`, which asks only for a session
+under a day old, is closed in every mode.
 
 > Once connected, the provider is part of how the owner is authenticated —
 > whoever controls the owner's identity there can sign in as the owner. Point
@@ -358,12 +361,14 @@ provider on anybody's behalf, so they would be credentials for somebody else's
 system sitting in this database for no reason.
 
 **Confirming it is still you** asks the provider for a fresh login
-(`prompt=login`, `max_age=0`), and the answer counts only if its ID token says,
-in `auth_time`, that the person authenticated in the last two minutes. A
-provider that answers from the session it already holds, or does not say when
-the person authenticated, is refused, and `/reauth` says so. And a session
-opened through the provider dates from that `auth_time`, not from when the app
-wrote it, so an ordinary sign-in that the provider waved through on an
+(`prompt=login`, `max_age=0`), and the answer counts only if its ID token says
+the person authenticated (`auth_time`) under two minutes before the token was
+issued (`iat`). Both are read off the provider's clock, so a provider whose
+clock is off is measured fairly; `iat` itself only has to be within ten minutes
+of this server's. A provider that answers from the session it already holds, or
+does not say when the person authenticated, is refused, and `/reauth` says so.
+And a session opened through the provider is dated that much before now, not
+from when the app wrote it, so an ordinary sign-in that the provider waved through on an
 hour-old session is not "recent" either — signing in again is not a way round
 the question. `OIDC_PROMPT=login` makes the provider ask for credentials on
 every sign-in as well, at the cost of the "single" in single sign-on. Unset by

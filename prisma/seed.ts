@@ -105,8 +105,19 @@ async function main() {
   // from `src/`. The app itself refuses a value this would misread.
   const methods = (process.env.AUTH_METHODS ?? "local").toLowerCase().split(",").map((m) => m.trim());
   if (!methods.includes("local")) {
+    // Linked through the provider configured now — `issuer|sub`, the issuer
+    // spelt as `normalIssuer` in src/lib/oidc-flow.ts spells it (repeated
+    // here: this image has no src/). A link from before OIDC_ISSUER changed
+    // opens nothing.
+    let issuer = (process.env.OIDC_ISSUER ?? "").trim();
+    try {
+      const u = new URL(issuer);
+      issuer = `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
+    } catch {
+      issuer = issuer.replace(/\/+$/, "");
+    }
     const connected = await db.account.findFirst({
-      where: { userId: admin.id, providerId: "oidc" },
+      where: { userId: admin.id, providerId: "oidc", accountId: { startsWith: `${issuer}|` } },
       select: { id: true },
     });
     if (connected) {
@@ -119,9 +130,10 @@ async function main() {
       console.error(
         `\n!! Sign-in here is single sign-on only (AUTH_METHODS=${process.env.AUTH_METHODS}),\n` +
           `!! and ${admin.email} has not connected the provider. Nobody can sign in as\n` +
-          "!! the printer owner. Start with AUTH_METHODS=\"local,oidc\", set the owner's\n" +
-          "!! password from the link this prints, connect the provider on /me, and only\n" +
-          "!! then take local out. See docs/deployment.md, Single sign-on.",
+          "!! the printer owner. Set AUTH_METHODS=\"local,oidc\" and run this again:\n" +
+          "!! it then prints a link to set the owner's password. Sign in with it,\n" +
+          "!! connect the provider on /me, and only then take local out.\n" +
+          "!! See docs/deployment.md, Single sign-on.",
       );
     }
     return;

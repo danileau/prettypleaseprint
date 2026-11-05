@@ -1,7 +1,8 @@
 import { getTranslations } from "next-intl/server";
 
 import { db } from "@/lib/db";
-import { OIDC_PROVIDER_ID, authMethods, oidcConfig } from "@/lib/auth-methods";
+import { authMethods, oidcConfig } from "@/lib/auth-methods";
+import { currentIssuerAccounts } from "@/lib/oidc-flow";
 import { Button, Kicker, Notice } from "@/components/ui";
 import { connectSsoAction, disconnectSsoAction } from "./actions";
 
@@ -18,13 +19,16 @@ export async function SsoPanel({ userId, email, status }: { userId: string; emai
   const waysIn = await getTranslations("waysIn");
   const name = sso.name ?? waysIn("sso.defaultName");
   const local = authMethods().local;
-  const connected = (await db.account.count({ where: { userId, providerId: OIDC_PROVIDER_ID } })) > 0;
+  // Through the provider configured now: a link from before `OIDC_ISSUER`
+  // changed opens nothing, so it is not a connection.
+  const connected = (await db.account.count({ where: { userId, ...currentIssuerAccounts(sso.issuer) } })) > 0;
 
   const notices: Record<string, { tone: "good" | "warn" | "info"; text: string }> = {
     connected: { tone: "good", text: t("status.connected", { name }) },
     disconnected: { tone: "info", text: t("status.disconnected", { name }) },
     failed: { tone: "warn", text: t("status.failed", { name, email }) },
     kept: { tone: "warn", text: t("status.kept", { name }) },
+    unavailable: { tone: "warn", text: t("status.unavailable", { name }) },
   };
   const notice = status && Object.hasOwn(notices, status) ? notices[status] : undefined;
 
@@ -42,7 +46,7 @@ export async function SsoPanel({ userId, email, status }: { userId: string; emai
       {connected ? (
         <>
           <p className="m-0 mb-[13.2px] text-[15.5px] leading-[1.5] text-ink">
-            {t("connected", { name, email })}
+            {t("connected", { name })}
           </p>
           {local ? (
             <form action={disconnectSsoAction}>

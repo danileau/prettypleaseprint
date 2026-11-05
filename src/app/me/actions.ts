@@ -25,16 +25,26 @@ export async function connectSsoAction(): Promise<void> {
   await requireAdmin();
   if (!oidcConfig()) redirect("/me");
   await requireFreshAuth("/me");
-  const res = await auth.api.linkSocialAccount({
-    headers: await headers(),
-    body: {
-      provider: OIDC_PROVIDER_ID,
-      callbackURL: "/me?sso=connected",
-      errorCallbackURL: "/me?sso=failed",
-      disableRedirect: true,
-    },
-  });
-  redirect(res.url);
+  let url: string;
+  try {
+    const res = await auth.api.linkSocialAccount({
+      headers: await headers(),
+      body: {
+        provider: OIDC_PROVIDER_ID,
+        callbackURL: "/me?sso=connected",
+        errorCallbackURL: "/me?sso=failed",
+        disableRedirect: true,
+      },
+    });
+    url = res.url;
+  } catch (error) {
+    // Refused before the provider is reached — it cannot be read just now
+    // (503), or the gate said no (already connected, the session aged out
+    // between the check above and this). Said on /me, not as an error page.
+    console.error("connecting single sign-on did not start", error);
+    redirect("/me?sso=unavailable");
+  }
+  redirect(url);
 }
 
 /**

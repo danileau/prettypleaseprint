@@ -534,7 +534,12 @@ Things to know before switching it on — the first three can lock people out:
   Identities are filed under the issuer and the subject, so nobody's old link
   carries over: each person's first sign-in through the new provider links
   their account again by verified address, and somebody with no account here
-  needs an invitation as usual. Nothing is deleted.
+  needs an invitation as usual. Nothing is deleted. **The printer owner is
+  the exception:** never linked by address, they are not connected to the new
+  provider until they press *Connect …* on `/me` again — and `/me`, the guest
+  list and the start-up log all count only links to the issuer configured
+  now. So with `oidc` alone, change the issuer only after switching back to
+  `local,oidc` and reconnecting; otherwise nobody can sign in as the owner.
 - **`AUTH_METHODS="oidc"` has no way in when the provider is away.** There are
   no passwords to fall back on, the owner's included. Run `local,oidc` until
   you trust the arrangement, and consider leaving it that way.

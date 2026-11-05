@@ -32,6 +32,7 @@ import { record } from "@/lib/audit";
 import {
   REAUTH_MARK,
   currentDiscovery,
+  currentIssuerAccounts,
   sameIssuer,
   ssoAccountId,
   ssoProfile,
@@ -152,7 +153,7 @@ async function linkRule(
  */
 if (!isBuildPhase && oidc && !methods.local) {
   void db.account
-    .count({ where: { providerId: OIDC_PROVIDER_ID, user: { role: "admin" } } })
+    .count({ where: { ...currentIssuerAccounts(oidc.issuer), user: { role: "admin" } } })
     .then((n) => {
       if (n === 0) {
         console.error(
@@ -248,14 +249,24 @@ export const auth = betterAuth({
         if (role !== "admin" || !(age >= 0 && age <= FRESH_AUTH_SECONDS * 1000)) {
           throw new APIError("FORBIDDEN", { message: "Connect single sign-on from /me, on a fresh sign-in." });
         }
+        // Once is enough. A second link would only re-attach the same
+        // identity — and Better Auth's re-link path writes the provider's
+        // tokens onto the row (the account update hook strips them as well).
+        if (oidc && (await db.account.count({ where: { userId: session!.user.id, ...currentIssuerAccounts(oidc.issuer) } })) > 0) {
+          throw new APIError("CONFLICT", { message: "Single sign-on is already connected." });
+        }
       }
 
       if (!oidc || body.provider !== OIDC_PROVIDER_ID) return;
 
       // The discovery document as it stands now, checked: its issuer is the
       // configured one and nothing in it is plain HTTP behind an https issuer.
-      // And the provider the plugin built at start-up was built from one that
-      // named the same issuer.
+      // And the provider the plugin built was built from one that named the
+      // same issuer — when it has built one: after a failed start-up
+      // discovery the plugin builds it in its own hook, which runs after this
+      // one. Either way the ID token's `iss` is held to OIDC_ISSUER in
+      // `ssoProfile`, after the plugin has held it to the document's issuer,
+      // so no sign-in completes through a provider built from another's.
       const discovery = await currentDiscovery(oidc);
       const built = (ctx.context.socialProviders as Array<{ id: string; issuer?: string }>).find(
         (p) => p.id === OIDC_PROVIDER_ID,
@@ -367,12 +378,12 @@ export const auth = betterAuth({
     /**
      * Left at a day, and deliberately not doing the job its name suggests.
      *
-     * `freshAge` gates exactly two Better Auth endpoints — `/unlink-account`
-     * and `/list-sessions` — and this app exposes neither. It is NOT the
-     * re-authentication control for this app's own destructive actions; that
-     * is `requireFreshPasskey` in `src/lib/reauth.ts`, which asks for a passkey
-     * touch rather than trusting the age of a session that may have been
-     * captured. Kept at a day so the two library endpoints stay sane.
+     * `freshAge` gates exactly two Better Auth endpoints: `/unlink-account`,
+     * which `disabledAuthPaths` closes in every mode, and `/list-sessions`,
+     * which lists only the caller's own. It is NOT the re-authentication
+     * control for this app's own destructive actions; that is
+     * `requireFreshAuth` in `src/lib/reauth.ts`, at five minutes. Kept at a day
+     * so the library endpoint stays sane.
      */
     freshAge: 60 * 60 * 24,
 
@@ -598,6 +609,27 @@ export const auth = betterAuth({
             subject: user.email,
             detail: { provider: oidc?.issuer ?? null, role: user.role, how: state?.link ? "connected" : "automatic" },
           });
+        },
+      },
+      update: {
+        /**
+         * And none on an update either. Better Auth's link path, for an
+         * identity that is already attached, writes the tokens it was handed
+         * onto the existing row rather than creating one — which the create
+         * hook above never sees.
+         */
+        async before(account) {
+          if (!("accessToken" in account || "refreshToken" in account || "idToken" in account)) return;
+          return {
+            data: {
+              ...account,
+              ...("accessToken" in account ? { accessToken: null } : {}),
+              ...("refreshToken" in account ? { refreshToken: null } : {}),
+              ...("idToken" in account ? { idToken: null } : {}),
+              ...("accessTokenExpiresAt" in account ? { accessTokenExpiresAt: null } : {}),
+              ...("refreshTokenExpiresAt" in account ? { refreshTokenExpiresAt: null } : {}),
+            },
+          };
         },
       },
     },

@@ -6,7 +6,8 @@ import { requireAdmin } from "@/lib/authz";
 import { INVITE_TTL_DAYS } from "@/lib/invites";
 import { RESET_TTL_MINUTES } from "@/lib/password-reset";
 import { getTranslations } from "next-intl/server";
-import { OIDC_PROVIDER_ID, authMethods, oidcConfig } from "@/lib/auth-methods";
+import { authMethods, oidcConfig } from "@/lib/auth-methods";
+import { currentIssuerAccounts } from "@/lib/oidc-flow";
 import { AppHeader } from "@/components/app-header";
 import { Kicker, Notice, StatusChip } from "@/components/ui";
 import { InviteForm } from "./invite-form";
@@ -77,7 +78,7 @@ export default async function InvitesPage() {
   const ownerStranded =
     sso !== null &&
     !authMethods().local &&
-    (await db.account.count({ where: { providerId: OIDC_PROVIDER_ID, user: { role: "admin" } } })) === 0;
+    (await db.account.count({ where: { ...currentIssuerAccounts(sso.issuer), user: { role: "admin" } } })) === 0;
   const ssoWords = ownerStranded ? await getTranslations() : null;
 
   return (

@@ -214,7 +214,12 @@ export function mayProvision(r: ProvisionRequest): { ok: true } | { ok: false; r
  * request sent straight at them gets nowhere.
  */
 export function disabledAuthPaths(methods: Record<AuthMethod, boolean>): string[] {
-  const off: string[] = [];
+  // Closed in every mode. Better Auth's own unlinking asks only for a session
+  // under a day old (`freshAge`) and that one account remain — so anybody at
+  // an open browser could remove the owner's single sign-on, with no step-up,
+  // no trail, and in `oidc`-only mode no way back in. Disconnecting is the
+  // server action on /me (src/app/me/actions.ts), which asks for all three.
+  const off: string[] = ["/unlink-account"];
   if (!methods.local) {
     off.push(
       "/sign-in/username",

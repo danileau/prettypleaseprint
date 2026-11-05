@@ -132,12 +132,11 @@ export async function resetPasswordAction(
   _prev: InviteFormState,
   formData: FormData,
 ): Promise<InviteFormState> {
+  const admin = await requireAdmin();
   // Passwords are off for this deployment: there is none to reset, and the
   // link would lead to an endpoint that refuses. The guest list offers no
   // control for it; this refuses before a link is minted.
   if (!authMethods().local) return { error: (await getTranslations("passwordsOff"))("refused") };
-
-  const admin = await requireAdmin();
   // A reset link is the ability to become somebody else. This is the single
   // most valuable thing a captured admin session could be pointed at.
   await requireFreshAuth("/admin/invites");

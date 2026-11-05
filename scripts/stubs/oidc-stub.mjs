@@ -36,6 +36,9 @@
  *   - `ignores_prompt`: answer from that session even when `prompt=login` or
  *     `max_age` asked for a fresh login — a provider that waves people through.
  *   - `no_auth_time`: leave `auth_time` out of the ID token altogether.
+ *   - `clock_offset`: this many seconds ahead of the real time (behind, if
+ *     negative) is what the provider's clock says — for `iat`, `exp` and
+ *     `auth_time` alike, as a provider on a badly set machine would.
  *
  * And two the userinfo endpoint: `userinfo_only` keeps the address out of the
  * ID token, so the app has to ask userinfo for it; `userinfo_sub` makes
@@ -95,6 +98,7 @@ function setPeople(list) {
       session_age: typeof p.session_age === "number" ? p.session_age : null,
       ignores_prompt: p.ignores_prompt === true,
       no_auth_time: p.no_auth_time === true,
+      clock_offset: typeof p.clock_offset === "number" ? p.clock_offset : 0,
       userinfo_only: p.userinfo_only === true,
       userinfo_sub: p.userinfo_sub === undefined ? null : String(p.userinfo_sub),
     });
@@ -109,8 +113,11 @@ const loggedInAt = new Map();
  * they hold, unless the request insists on a fresh login and the person is not
  * set to have that ignored.
  */
+/** What the provider's clock says, for this person's flows, in seconds. */
+const clock = (person) => Math.floor(Date.now() / 1000) + person.clock_offset;
+
 function authenticate(person, q) {
-  const now = Math.floor(Date.now() / 1000);
+  const now = clock(person);
   let at = loggedInAt.get(person.key);
   if (at === undefined) at = person.session_age === null ? now : now - person.session_age;
   const maxAge = q.get("max_age");
@@ -138,7 +145,7 @@ const hits = { authorize: 0, token: 0, userinfo: 0, jwks: 0, discovery: 0 };
 const b64url = (input) => Buffer.from(input).toString("base64url");
 
 function idToken(person, nonce, authTime) {
-  const now = Math.floor(Date.now() / 1000);
+  const now = clock(person);
   const fault = person.fault;
   const claims = {
     iss: fault === "wrong_issuer" ? "https://somebody-else.example" : ISSUER,

@@ -10,6 +10,7 @@ import { ReauthForm } from "./reauth-form";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { authMethods, oidcConfig } from "@/lib/auth-methods";
 import { CLIENT_GROUPS } from "@/i18n/client-groups";
+import { currentIssuerAccounts } from "@/lib/oidc-flow";
 import { getClientMessages } from "@/i18n/server";
 
 /**
@@ -38,7 +39,14 @@ export default async function ReauthPage({
   const waysIn = await getTranslations("waysIn");
   const methods = authMethods();
   const sso = oidcConfig();
-  const ssoName = sso ? (sso.name ?? waysIn("sso.defaultName")) : null;
+  // The printer owner is never linked by address, so for an owner who has not
+  // connected the provider on /me, signing in through it confirms nothing — it
+  // is refused. Not offered, then.
+  const ownerUnconnected =
+    sso !== null &&
+    user.role === "admin" &&
+    (await db.user.count({ where: { id: user.id, accounts: { some: currentIssuerAccounts(sso.issuer) } } })) === 0;
+  const ssoName = sso && !ownerUnconnected ? (sso.name ?? waysIn("sso.defaultName")) : null;
 
   const row = await db.user.findUnique({
     where: { id: user.id },
