@@ -266,7 +266,9 @@ async function main() {
   await db.account.deleteMany({ where: { userId: admin.id, providerId: "oidc" } });
 
   const signinPage = rendered(await (await new Browser().raw(`${APP}/signin`)).text());
-  const button = /Sign in with ([^<]+)</.exec(signinPage)?.[1]?.trim();
+  // The button's own text, between its tags: the page's RSC payload carries the
+  // form's messages too, and "Sign in with {name}" there is not a button.
+  const button = />\s*Sign in with ([^<{]+)</.exec(signinPage)?.[1]?.trim();
   if (!button || button === "a passkey") {
     throw new Error(
       "This app does not have single sign-on switched on, so there is nothing to verify.\n" +

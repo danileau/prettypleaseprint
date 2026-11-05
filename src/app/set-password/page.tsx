@@ -1,6 +1,7 @@
-import { authMethods, oidcConfig } from "@/lib/auth-methods";
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 
+import { authMethods, oidcConfig } from "@/lib/auth-methods";
 import { readResetToken } from "@/lib/password-reset";
 import { AuthShell, H1, Kicker, Lead, Notice } from "@/components/ui";
 import { SetPasswordForm } from "./set-password-form";
@@ -26,20 +27,20 @@ export default async function SetPasswordPage({
   // endpoint this form posts to refuses. Say so, rather than take a password
   // from somebody and then fail to save it.
   if (!authMethods().local) {
+    // Only this answer reads the catalogue so far; the rest of the screen
+    // moves when it does (docs/i18n.md).
+    const t = await getTranslations("setPassword.ssoOnly");
+    const waysIn = await getTranslations("waysIn");
     return (
       <AuthShell>
-        <Kicker>New key, cut fresh</Kicker>
-        <H1>No passwords here</H1>
-        <Lead>
-          This instance signs people in with {oidcConfig()?.name ?? "single sign-on"} only,
-          so there is no password to choose. Sign in with the address you were
-          invited as.
-        </Lead>
+        <Kicker>{t("kicker")}</Kicker>
+        <H1>{t("title")}</H1>
+        <Lead>{t("lead", { name: oidcConfig()?.name ?? waysIn("sso.defaultName") })}</Lead>
         <Link
           href="/signin"
           className="font-bold text-[15px] text-cherry-dk underline underline-offset-2 hover:text-cherry"
         >
-          Go to sign in →
+          {t("toSignin")}
         </Link>
       </AuthShell>
     );

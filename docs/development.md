@@ -9,7 +9,7 @@
 | Framework | Next.js 15 (App Router), React 19, TypeScript |
 | Auth | [Better Auth](https://better-auth.com) 1.7 — username/password, passkeys, breach check, admin plugin |
 | Data | Prisma 6 → PostgreSQL 17 |
-| Styling | Tailwind v4, design tokens from the handoff as CSS variables |
+| Styling | Tailwind v4; every colour is a theme variable in `globals.css`, none written out where it is used (e-mails excepted: a mail client has no CSS variables) |
 | Local infra | Docker Compose: Postgres, Mailpit (mail). Model files go to `./data/uploads` — there is no storage service |
 
 Chosen to match the existing house style (`huere-siech` is Next 15 + Prisma,
@@ -78,7 +78,7 @@ as four gates that can be required by name in branch protection:
 
 | Gate | What it does |
 | --- | --- |
-| `guard` | typecheck, the secret scanner over every tracked file, the markdown link check, and the wizards' own tests (`scripts/tests/*.test.sh`, each in a sandbox with stubbed `docker`, `gh` and `curl`) |
+| `guard` | typecheck, the secret scanner over every tracked file, the markdown link check, and the shell scripts' own tests (`scripts/tests/*.test.sh`: the two wizards, the full local run and the slicer helper, each in a sandbox where `docker`, `gh`, `curl` or the slicer are stubs) |
 | `models` | the upload validator against hostile fixtures — no server needed |
 | `verify` | raises the real compose stack and runs all eleven integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
 | `trivy` | filesystem scan for vulnerabilities, secrets and misconfiguration; HIGH/CRITICAL fail |
@@ -110,13 +110,17 @@ Checks that need no server, all of them in CI's `guard` job:
 npm run typecheck                  # tsc --noEmit
 npm run check:secrets -- --all     # credential shapes across every tracked file
 npm run check:links                # internal markdown links and heading anchors
-for t in scripts/tests/*.test.sh; do bash "$t"; done   # the three shell tools, sandboxed
+npm run check:messages             # messages/en.json, client groups, any translation
+for t in scripts/tests/*.test.sh; do bash "$t"; done   # the shell scripts, sandboxed
 ```
 
-The last line is the tests for `deploy-wizard.sh`, `release-wizard.sh` and
-`full-test.sh`. Each runs its script in a temp directory against stub
-executables and a local bare repository, with a `PATH` that holds only those
-stubs and an allow-list, so it cannot reach your real `gh` or `docker`.
+The last line is the tests for `deploy-wizard.sh`, `release-wizard.sh`,
+`full-test.sh` and the slicer helper `prusa-open.sh`. Each runs its script in a
+temp directory against stub executables (and, for the wizards, a local bare
+repository), with a `PATH` that holds only those stubs and an allow-list, so it
+cannot reach your real `gh`, `docker` or slicer. The Windows installer,
+`install-slicer-handler.ps1`, has no automated test: CI has no PowerShell, so a
+change to it is read line by line and tried on a Windows machine.
 
 `check:links` exists because documentation links rot silently — no test, build
 or typecheck notices — and this repo has proved it twice: once when the
@@ -125,6 +129,17 @@ once when a directory was renamed out from under references pointing into it.
 It resolves anchors with GitHub's own slug rules rather than an approximation,
 and deliberately does not fetch external URLs: a gate that depends on somebody
 else's uptime fails for reasons unrelated to the change and gets ignored.
+
+`check:messages` is the same idea for translations, which drift as quietly: a
+key added in English goes untranslated, a key removed from English lingers in
+the translation, and nothing else notices either. It lists what is missing or
+stale per language as warnings — the check passes, so an English-only change is
+never held up by a translation — and fails on what is actually broken:
+placeholders that differ from English, ICU quoting, a malformed file, a client
+component asking for a message group its screen does not send. The app speaks
+only English today, so there is no translation to compare yet; the check still
+validates `en.json` and the client groups.
+[Translation](i18n.md#what-checkmessages-reports) says what each finding means.
 
 ### The full local run
 
@@ -152,11 +167,19 @@ where a developer's machine has to be protected: the compose project is
 `full-test-local` rather than `latest`, `DATA_ROOT` is a throwaway directory
 outside the checkout, and the health wait is 120 seconds rather than 90.
 
-- **It refuses to start if a ppp stack exists on the machine**, running or
-  stopped. The compose file pins the container names, so only one stack can
-  exist, and the test would have to remove yours to raise its own. It will not:
-  take yours down first. It also refuses if port 3000, 5432, 1025 or 8025 is
-  taken. `--preflight` runs only these checks.
+- **It sets aside a ppp stack that is in the way, and puts it back.** The
+  compose file pins the container names, so only one stack can exist. If
+  yours is there, running or stopped, the test stops it and renames its
+  containers (`ppp-app` becomes `ppp-app-parked-by-full-test`) just before
+  raising its own, after the static gates. It never removes them, so volumes
+  and data stay as they were. After the teardown each one gets its name back,
+  and what was running is started again, the database before the app. If a run
+  is killed outright, the list waits in the git directory and `--restore`
+  finishes the job; until then the next run refuses.
+- **It refuses to start if something else is in the way**: port 3000, 5432,
+  1025, 8025, 4010 or 4020 held by anything but the stack it sets aside, or a stack
+  an earlier run of the test left behind (`--restore` removes that).
+  `--preflight` runs only these checks, and touches nothing.
 - **It raises its own compose project, `ppp-fulltest`**, never `ppp`, so the
   teardown cannot reach a project it did not create; and before the first suite
   it checks that the app container belongs to that project. The suites delete
@@ -166,7 +189,8 @@ outside the checkout, and the health wait is 120 seconds rather than 90.
   was not there before. The suites read `.env`, so for the length of the run
   those files describe the test stack. If the run is killed outright, the
   originals wait in the git directory and the next run says so: `--restore`
-  puts them back and removes the leftover containers.
+  puts them back, removes the leftover containers and puts back a stack it
+  had set aside.
 - **Interrupting it always ends in the teardown.** Ctrl-C in a terminal goes
   to the suite that is running as well as to the script, so the suite usually
   stops at once; a signal sent to the script alone (`kill <pid>`) is acted on
@@ -183,6 +207,42 @@ outside the checkout, and the health wait is 120 seconds rather than 90.
 
 `--only` and `--no-build` print `PARTIAL RUN`; neither is what a merge or a
 release is gated on.
+
+## Crediting contributors
+
+Contributors are credited by GitHub login in two places, and neither list is
+written by hand:
+
+- **The `/about` page** lists everyone with a commit on `main`, ever, from a
+  committed file, `src/lib/contributors.ts`. It is only as current as the last
+  run of `npm run contributors`.
+- **The release notes** end with *Contributors to this release*: the authors
+  of the pull requests that release includes. The release wizard works it out
+  when it publishes; see [Cutting a release](#cutting-a-release).
+
+Regenerate the `/about` list after merging somebody's first contribution, and
+commit the result like any other change:
+
+```bash
+git fetch origin
+npm run contributors               # reads origin/main; `-- --ref main` for another ref
+```
+
+It needs `gh`, signed in: it asks GitHub for each person's profile, and for
+the login behind any author address that is not a GitHub `noreply` one. A
+`Co-authored-by:` trailer counts when its address is a `noreply` one or
+belongs to someone who has authored a commit on the ref. Bots are left out,
+and so is anyone the script cannot match to a GitHub account; it says so on
+stderr. The repository owner, from `package.json`, is listed as the
+maintainer. A commit or account GitHub does not know (an unpushed commit, a
+deleted user) is skipped with a warning; any other `gh` failure stops the run.
+
+The file holds logins, display names and the month of each person's first
+commit. Addresses are used only for the lookup and never written to it, and
+nothing in it grows with every commit, so a re-run changes it only when
+somebody new has landed a commit or a name has changed on GitHub. It is a file
+rather than a read of git at runtime because the Docker build context excludes
+`.git`.
 
 ## Cutting a release
 
@@ -207,6 +267,11 @@ state file: where a release has got to is read from git and GitHub each time,
 so `--continue` works after a reboot or from another clone. **It never merges
 the pull request.** It waits, the owner merges in the browser, and it carries
 on; Ctrl-C while it waits is safe.
+
+The wizard does not refresh the `/about` list. If anybody has contributed for
+the first time since the last release, run `npm run contributors` and merge
+the result before starting, so that the release's `/about` lists them; see
+[Crediting contributors](#crediting-contributors).
 
 What it does, which is also how to do it by hand:
 
@@ -247,6 +312,21 @@ Four rules the wizard holds to, and that a release by hand should too:
   section has one. The notes are short on purpose — the summary, the
   *Upgrading from* section, and a link to the full changelog — and that
   section is the part someone needs before changing `PPP_TAG`.
+
+The wizard also ends the notes with *Contributors to this release* — a line
+reading `With thanks to: @a, @b` — naming the author of every pull request
+merged into `main` between the previous release's tag and the release commit,
+in alphabetical order and each once, leaving out the repository's owner, whoever is cutting the release,
+and bots. A pull request counts when its merge commit is in that range, not
+when its merge date is, so nothing merged just before the last tag slips in.
+The list is in the preview, where it can be edited like the rest, and in
+`--dry-run`. If `gh` cannot answer, or the previous tag is not an ancestor of
+the release commit (a hotfix tagged on a side branch), the wizard warns and
+publishes without it. By hand, the same list is
+`gh pr list --state merged --base main --search "merged:>=<the day before the last tag's commit date, UTC>" --limit 1000 --json number,author,mergeCommit`,
+kept to the pull requests whose merge commit `git rev-list vLAST..<release commit>`
+prints. Without `--limit`, `gh` stops at 30 and says nothing; at 1000, the
+most its search returns, the wizard warns that the list may be short.
 
 A version is prepared once. If anything already carries it — a tag, a
 `release-X.Y.Z` branch, a pull request in any state, or `main` itself — the

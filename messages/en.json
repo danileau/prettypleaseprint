@@ -1,0 +1,112 @@
+{
+  "authShell": {
+    "sign": "Open · come on in"
+  },
+  "signin": {
+    "kicker": "Members only · ask at the counter",
+    "title": "What’ll it be?",
+    "lead": "Use the passkey on this device, or your username and password.",
+    "leadSso": "Use {name}, the passkey on this device, or your username and password.",
+    "leadSsoOnly": "Sign in with {name} — the same login you use elsewhere.",
+    "passwordSet": "Password saved. Sign in with it.",
+    "errors": {
+      "inviteRequired": "That address has not been invited. Pretty Please Print is invite-only — ask whoever owns the printer for a link.",
+      "invalidToken": "That link is no longer valid. Ask the printer owner for a fresh one.",
+      "tokenExpired": "That link expired. Ask the printer owner for another.",
+      "suspended": "That account has been suspended. Ask whoever owns the printer.",
+      "accountNotLinked": "There is an account for that address, but your sign-on provider has not confirmed the address is yours. Verify it there, then try again.",
+      "emailNotVerified": "Your sign-on provider has not confirmed your email address, so it cannot vouch for who you are here. Verify it there, then try again.",
+      "emailNotFound": "Your sign-on provider did not share an email address, so there is no way to tell who you are here.",
+      "providerUnverified": "Your sign-on provider’s answer could not be verified, so nobody was signed in. Try again; if it keeps happening, tell whoever owns the printer.",
+      "other": "That sign-in attempt did not go through."
+    },
+    "form": {
+      "withSso": "Sign in with {name}",
+      "withPasskey": "Sign in with a passkey",
+      "username": "Username",
+      "password": "Password",
+      "checking": "Checking…",
+      "submit": "Sign in",
+      "refused": "That username and password do not match. Try again.",
+      "tooManyAttempts": "Too many attempts. Wait a minute and try again.",
+      "passkeyRefused": "That passkey was not accepted. Use your password instead.",
+      "inviteOnly": "Pretty Please Print is invite-only — there is no sign-up. If you have not been invited yet, or you have forgotten your password, ask whoever owns the printer.",
+      "inviteOnlySso": "Pretty Please Print is invite-only. If signing in tells you that you have not been invited, ask whoever owns the printer."
+    }
+  },
+  "waysIn": {
+    "or": "or",
+    "sso": {
+      "defaultName": "single sign-on",
+      "busy": "Taking you there…",
+      "tooManyAttempts": "Too many attempts. Wait a minute and try again.",
+      "couldNotStart": "Single sign-on could not be started. Try again, or ask whoever owns the printer."
+    }
+  },
+  "header": {
+    "home": "Pretty Please Print, home",
+    "nav": {
+      "rail": "The rail",
+      "orderUp": "Order up",
+      "myOrders": "My orders",
+      "history": "History",
+      "featureRequests": "Feature requests",
+      "pass": "The pass",
+      "books": "The books",
+      "materials": "Materials",
+      "byPerson": "By person",
+      "benefits": "Benefits",
+      "guestList": "Guest list",
+      "audit": "Audit"
+    },
+    "activity": {
+      "button": "Activity",
+      "markAllRead": "Mark all read",
+      "empty": "Nothing yet.",
+      "unread": "unread"
+    },
+    "feedTitle": {
+      "owner": "New from the group",
+      "member": "Updates on your prints"
+    },
+    "account": {
+      "menuFor": "Account menu for {name}",
+      "withPassword": "Signing in with a password",
+      "passkeys": "{count, plural, one {# passkey on this account} other {# passkeys on this account}}",
+      "addFirst": "Add a passkey →",
+      "addAnother": "Add another →",
+      "docs": "API & docs →",
+      "docsHint": "Every endpoint, and a console to call them from.",
+      "signOut": "Sign out"
+    },
+    "role": {
+      "owner": "Printer owner",
+      "member": "Invited member"
+    },
+    "nudge": {
+      "title": "Tired of typing your password?",
+      "body": "Save a passkey and this device signs you in with a fingerprint — nothing to remember, nothing to phish.",
+      "setUp": "Set it up — 30 seconds",
+      "notNow": "Not now"
+    }
+  },
+  "invite": {
+    "leadLocal": "Pick a name to go by, a username and a password, and you are in.",
+    "leadSso": "Sign in with {name} and you are in.",
+    "withSso": "Continue with {name}",
+    "ssoFor": "This invitation is for <strong>{email}</strong>. Sign in there with that address and there is no password to choose here."
+  },
+  "reauth": {
+    "lead": "You are about to change who can get in. A password or a passkey confirms it is you at the keyboard and not a browser somebody left open.",
+    "leadSso": "You are about to change who can get in. Signing in with {name} again confirms it is you at the keyboard and not a browser somebody left open.",
+    "withSso": "Confirm with {name}"
+  },
+  "setPassword": {
+    "ssoOnly": {
+      "kicker": "New key, cut fresh",
+      "title": "No passwords here",
+      "lead": "This instance signs people in with {name} only, so there is no password to choose. Sign in with the address you were invited as.",
+      "toSignin": "Go to sign in →"
+    }
+  }
+}

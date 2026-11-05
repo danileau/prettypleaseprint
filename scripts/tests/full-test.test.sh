@@ -58,10 +58,29 @@ case "${1:-}" in
       "${DB_PASSWORD-unset}" "${PPP_TAG-unset}" "${DATA_ROOT-unset}" "${COMPOSE_PROJECT_NAME-unset}" \
       "$(tail -1 .env.docker 2>/dev/null)" >>"$STUB/log"
     case "$verb" in
-      up) [ ! -e "$S/up-fail" ] || exit 1; mkdir -p "$DATA_ROOT/db"; exit 0 ;;
+      up)
+        [ ! -e "$S/up-fail" ] || exit 1
+        # As docker does: a fixed container_name that is taken fails the up.
+        for n in ppp-app ppp-db ppp-mailpit; do
+          if [ -e "$S/c/$n" ]; then echo "Conflict. The container name \"/$n\" is already in use" >&2; exit 1; fi
+        done
+        mkdir -p "$DATA_ROOT/db" "$S/c"
+        for n in ppp-app ppp-db ppp-mailpit; do echo true >"$S/c/$n"; echo "$n" >>"$S/raised"; done
+        exit 0 ;;
       logs) echo "container logs"; exit 0 ;;
-      down) [ ! -e "$S/term-on-down" ] || kill -TERM "$PPID"; exit 0 ;;
+      down)
+        [ ! -e "$S/term-on-down" ] || kill -TERM "$PPID"
+        [ ! -e "$S/down-fail" ] || exit 1
+        if [ -f "$S/raised" ]; then while read -r n; do rm -f "$S/c/$n"; done <"$S/raised"; rm -f "$S/raised"; fi
+        exit 0 ;;
     esac ;;
+  container)
+    # container inspect -f '{{.State.Running}}' <name>
+    [ "${2:-}" = "inspect" ] || { printf 'UNEXPECTED docker %s\n' "$*" >>"$STUB/log"; exit 99; }
+    n="${!#}"; [ -f "$S/c/$n" ] || exit 1; cat "$S/c/$n"; exit 0 ;;
+  stop) [ -f "$S/c/$2" ] || exit 1; echo false >"$S/c/$2"; exit 0 ;;
+  start) [ ! -e "$S/start-fail" ] || exit 1; [ -f "$S/c/$2" ] || exit 1; echo true >"$S/c/$2"; exit 0 ;;
+  rename) [ -f "$S/c/$2" ] && [ ! -e "$S/c/$3" ] || exit 1; mv "$S/c/$2" "$S/c/$3"; exit 0 ;;
   ps)
     case " $* " in
       *" -aq "*) cat "$S/ps-label" 2>/dev/null; exit 0 ;;
@@ -94,6 +113,9 @@ if [ "${1:-} ${2:-}" = "run -s" ]; then
   script="${3:-}"
   case "$script" in
     typecheck|check:links|verify:models|verify:auth|verify:sso|verify:upload|verify:import|verify:queue|verify:frr|verify:benefits|verify:catalog|verify:api|verify:passkey|probe:security) ;;
+    check:messages)
+      # Its last line, in the shape scripts/check-messages.ts prints it.
+      if [ -e "$S/messages-warn" ]; then echo "check:messages — 0 error(s), 2 warning(s)"; fi ;;
     check:secrets)
       # The secret scanner has to see the developer's own env files.
       printf 'SCANNED %s\n' "$(tail -1 .env 2>/dev/null)" >>"$STUB/log" ;;
@@ -172,6 +194,7 @@ new_sandbox() {
     printf '%s\n' 'MINE=dev-env-backup' >.env.backup; chmod 640 .env.backup
     printf '%s\n' 'MINE=dev-env-docker' 'PPP_TAG="v0.2.0"' >.env.docker; chmod 600 .env.docker )
   SAVED="$T/repo/.git/ppp-full-test-saved"
+  PARKED="$T/repo/.git/ppp-full-test-parked"
   LOGS="$T/out"
   STUBS="$BASE/stubs"; EXTRA=()
   ENV0="$(envsum)"
@@ -221,6 +244,17 @@ not_logged() { if grep -Eq -- "$1" "$T/stub/log"; then no "log has: $1"; fi; }
 eq() { [ "$2" = "$3" ] || no "$1: got '$2', wanted '$3'"; }
 ok() { local what=$1; shift; "$@" >/dev/null 2>&1 || no "$what"; }
 nok() { local what=$1; shift; if "$@" >/dev/null 2>&1; then no "$what"; fi; }
+# other_stack [ports-of-ppp-app] — a try-out stack: app and db running, the
+# migrator exited, and an unrelated container beside it.
+other_stack() {
+  local c="$T/stub/state/c"
+  mkdir -p "$c"
+  echo true >"$c/ppp-app"; echo true >"$c/ppp-db"; echo false >"$c/ppp-migrate"; echo true >"$c/unrelated"
+  printf 'ppp-app\tUp 3 hours\tppp-try\t%s\nppp-db\tUp 2 hours\tppp-try\t127.0.0.1:5432->5432/tcp\nppp-migrate\tExited (0) 4 weeks ago\tppp-try\t\nunrelated\tUp 1 hour\tother\t\n' \
+    "${1:-0.0.0.0:3000->3000/tcp, :::3000->3000/tcp}" >"$T/stub/state/ps"
+  STACK0="$(stack_now)"
+}
+stack_now() { local f; for f in "$T/stub/state/c"/*; do [ -e "$f" ] && printf '%s=%s ' "${f##*/}" "$(cat "$f")"; done; }
 restored() { eq "the three env files" "$(envsum)" "$ENV0"; nok "the saved copies are still there" test -e "$SAVED"; }
 suites_run() { grep -E '^npm run -s (verify|probe):' "$T/stub/log" | grep -v 'verify:models' | awk '{print $4}' | tr '\n' ' '; }
 
@@ -229,14 +263,67 @@ ALL_SUITES="verify:auth verify:sso verify:upload verify:import verify:queue veri
 # ============================================================================
 # 31, F3, F4, R8. refusing
 # ============================================================================
-t "31 somebody's stack exists, stopped or running: refuses, names it, touches nothing"
+t "31 somebody's stack exists, stopped or running: it is set aside, and put back afterwards"
 new_sandbox
-printf 'ppp-db\tExited (0) 2 hours ago\tppp\nunrelated\tUp 1 hour\tother\n' >"$T/stub/state/ps"
+other_stack
 ft
-rc 1; out "a ppp stack already exists on this machine"; out "ppp-db  (Exited (0) 2 hours ago, project ppp)"
-out "Take it down yourself, then run again."; no_out "unrelated"
-not_logged '^docker compose .* (up|down)'; not_logged '^npm '; not_logged '^docker (rm|network rm)'
-eq "the three env files" "$(envsum)" "$ENV0"; nok "a saved directory" test -e "$SAVED"
+rc 0; out "a ppp stack is in the way"; out "ppp-db  (Up 2 hours, project ppp-try)"; no_out "unrelated"
+out "set aside ppp-app"; out "put back: ppp-app ppp-db ppp-migrate"
+# Stopped before it was renamed, and both before the stack went up; given its
+# name back only after `down`, the database before the app.
+eq "the order" "$(grep -nE '^docker (stop|rename|start)|^SEEN (up|down)' "$T/stub/log" | cut -d: -f2- | cut -d' ' -f1-3 | tr '\n' '|')" \
+  "docker stop ppp-app|docker rename ppp-app|docker stop ppp-db|docker rename ppp-db|docker rename ppp-migrate|SEEN up DB_PASSWORD=unset|SEEN down DB_PASSWORD=unset|docker rename ppp-migrate-parked-by-full-test|docker rename ppp-db-parked-by-full-test|docker start ppp-db|docker rename ppp-app-parked-by-full-test|docker start ppp-app|"
+eq "the stack afterwards" "$(stack_now)" "ppp-app=true ppp-db=true ppp-migrate=false unrelated=true "
+not_logged '^docker (rm|stop unrelated|rename unrelated)'; not_logged '^docker start ppp-migrate'
+nok "the parked list is still there" test -e "$PARKED"; restored
+
+t "P1 what the set-aside stack publishes is not in the way; a port anything else holds still is"
+new_sandbox; other_stack "127.0.0.1:$BUSY_PORT->3000/tcp"; EXTRA=(PPP_FULLTEST_PORTS="$FREE_PORT $BUSY_PORT")
+ft --preflight
+rc 0; out "the stack above is set aside for it and put back after"
+not_logged '^docker (stop|rename)'
+new_sandbox; other_stack "127.0.0.1:$FREE_PORT->3000/tcp"; EXTRA=(PPP_FULLTEST_PORTS="$FREE_PORT $BUSY_PORT")
+ft
+rc 1; out "port $BUSY_PORT is in use"; not_logged '^docker (stop|rename)'; eq "the stack" "$(stack_now)" "$STACK0"
+
+t "P2 if the test stack does not come down, the set-aside one is not put back, and --restore finishes it"
+new_sandbox; other_stack; touch "$T/stub/state/down-fail"
+ft
+rc 1; out "cannot give ppp-app its name back"; out "scripts/full-test.sh --restore"
+ok "the parked list is kept" test -s "$PARKED"; restored
+rm "$T/stub/state/down-fail"; printf 'id1\nid2\n' >"$T/stub/state/ps-label"
+# --restore removes the test's containers by label; the stub does what docker would.
+rm -f "$T/stub/state/c/ppp-app" "$T/stub/state/c/ppp-db" "$T/stub/state/c/ppp-mailpit"
+ft --restore
+rc 0; out "put back: ppp-app ppp-db ppp-migrate"; eq "the stack afterwards" "$(stack_now)" "$STACK0"
+nok "the parked list is still there" test -e "$PARKED"
+
+t "P3 a list a killed run left: refused until --restore, which puts back whatever was already moved"
+new_sandbox
+mkdir -p "$T/stub/state/c"
+echo false >"$T/stub/state/c/ppp-app-parked-by-full-test"; echo true >"$T/stub/state/c/ppp-db"
+printf 'ppp-app\ttrue\nppp-db\ttrue\n' >"$PARKED"
+ft
+rc 1; out "did not put back the stack it set aside"; not_logged '^docker compose .* up'; not_logged '^npm '
+ft --restore
+rc 0; out "put back: ppp-app ppp-db"; eq "the stack afterwards" "$(stack_now)" "ppp-app=true ppp-db=true "
+nok "the parked list is still there" test -e "$PARKED"
+
+t "P4 a stack of this test's own, beside somebody else's: refused, pointing at --restore, nothing set aside"
+new_sandbox; other_stack
+printf 'ppp-app\tUp 3 minutes\tppp-fulltest\t\nppp-db\tUp 2 hours\tppp-try\t\n' >"$T/stub/state/ps"
+ft
+rc 1; out "It is what an earlier run of this test left behind."; not_logged '^docker (stop|rename)'
+
+t "P5 SIGTERM during a suite: the set-aside stack still comes back"
+new_sandbox; other_stack; echo "verify:queue" >"$T/stub/state/term-during"
+ft
+rc 130; out "put back: ppp-app ppp-db ppp-migrate"; eq "the stack afterwards" "$(stack_now)" "$STACK0"; restored
+
+t "P6 a container that will not start again: said so, and the list is kept for --restore"
+new_sandbox; other_stack; touch "$T/stub/state/start-fail"
+ft
+rc 1; out "the stack that was set aside is not all back"; ok "the parked list is kept" test -s "$PARKED"
 
 t "F4 a stack this test left behind is told apart, and points at --restore"
 new_sandbox
@@ -251,13 +338,14 @@ ft
 rc 1; out "port $BUSY_PORT is in use"; not_logged '^docker compose .* up'; not_logged '^npm '
 eq "the three env files" "$(envsum)" "$ENV0"
 
-t "R8 --preflight only checks: exit 0 with nothing in the way, 1 with a stack, and never starts anything"
+t "R8 --preflight only checks: exit 0 with nothing or another stack in the way, and never touches anything"
 new_sandbox
 ft --preflight
 rc 0; out "nothing in the way of a full test"; not_logged '^npm '; not_logged '^docker compose .* up'
-printf 'ppp-app\tUp 3 hours\tppp\n' >"$T/stub/state/ps"
+other_stack
 ft --preflight
-rc 1; out "ppp-app  (Up 3 hours, project ppp)"; not_logged '^npm '; eq "the three env files" "$(envsum)" "$ENV0"
+rc 0; out "ppp-app  (Up 3 hours, project ppp-try)"; not_logged '^npm '; not_logged '^docker (stop|rename)'
+eq "the three env files" "$(envsum)" "$ENV0"; eq "the stack" "$(stack_now)" "$STACK0"
 
 t "preflight says what is missing"
 new_sandbox; rm -r "$T/repo/node_modules"
@@ -274,7 +362,7 @@ ft
 t "32 the whole run passes and puts all three env files back, content and mode"
 rc 0; restored; out "DONE failed=0"; no_out "PARTIAL RUN"
 out "restored .env, .env.backup, .env.docker; stack down; logs in $LOGS"
-eq "steps that passed" "$(grep -c PASS "$LOGS/summary.txt")" "22"
+eq "steps that passed" "$(grep -c PASS "$LOGS/summary.txt")" "23"
 eq "the suites, in order" "$(suites_run)" "$ALL_SUITES"
 
 t "39 up and down are both aimed at the project ppp-fulltest with the three files and the profile"
@@ -369,6 +457,17 @@ t "34 a failing static gate fails the run but does not stop it"
 new_sandbox; touch "$T/stub/state/fail-typecheck"
 ft
 rc 1; out "FAIL typecheck (exit 1)"; eq "the suites" "$(suites_run)" "$ALL_SUITES"; restored
+
+t "34 untranslated keys pass the gate but are named in the summary"
+new_sandbox; touch "$T/stub/state/messages-warn"
+ft
+rc 0; out "PASS check-messages"; out "WARN check-messages: 2 untranslated or stale key(s)"
+ok "the WARN line is in summary.txt" grep -q "WARN check-messages" "$LOGS/summary.txt"; restored
+
+t "34 no WARN line when every key is translated"
+new_sandbox
+ft
+rc 0; no_out "WARN check-messages"
 
 t "35 a stack that does not come up: no health wait, no suites, down still runs, env restored"
 new_sandbox; touch "$T/stub/state/up-fail"
@@ -481,6 +580,21 @@ ci="$(awk '/^  verify:$/ { on = 1; next } /^  [a-z]+:$/ { on = 0 } on && $1 !~ /
   | grep -o 'npm run \(verify\|probe\):[a-z]*' | awk '{ print $3 }' | tr '\n' ' ')"
 ok "ci.yml's verify job lists suites at all" test -n "$ci"
 eq "the suites" "$(suites_run)" "$ci"
+
+t "44 the names it sets aside and the ports it checks are exactly what the compose files pin and publish"
+# A stand-in added to docker-compose.test.yml with a container_name or a port
+# the script does not know about would collide with somebody's stack instead
+# of being set aside, or be reported as a failed up instead of a port in use.
+pinned="$(cat "$REPO_ROOT"/docker-compose.prod.yml "$REPO_ROOT"/docker-compose.build.yml "$REPO_ROOT"/docker-compose.test.yml \
+  | awk '$1 == "container_name:" { print $2 }' | sort | tr '\n' ' ')"
+names="$(sed -n 's/^STACK_NAMES="\(.*\)"$/\1/p' "$SCRIPT" | tr ' ' '\n' | sort | tr '\n' ' ')"
+ok "the compose files pin names at all" test -n "$pinned"
+eq "STACK_NAMES" "$names" "$pinned"
+published="$(grep -oE '^ *- "(\$\{[A-Z_]+:-)?[0-9]+\}?:[0-9]+"' "$REPO_ROOT/docker-compose.test.yml" \
+  | sed -E 's/^ *- "(\$\{[A-Z_]+:-)?([0-9]+).*/\2/' | sort -n | tr '\n' ' ')"
+ports="$(sed -n 's/^PORTS="\${PPP_FULLTEST_PORTS:-\(.*\)}"$/\1/p' "$SCRIPT" | tr ' ' '\n' | sort -n | tr '\n' ' ')"
+ok "the test overlay publishes ports at all" test -n "$published"
+eq "PORTS" "$ports" "$published"
 
 t "an unknown argument is refused, and -h prints the header"
 new_sandbox

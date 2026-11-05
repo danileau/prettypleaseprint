@@ -268,6 +268,10 @@ async function main() {
         !home.includes("Admin view") &&
         !home.includes("Guest list") &&
         !home.includes("/admin/audit"));
+  // Not even in the page source: the header's client menus are sent their
+  // words as messages, and the owner's are never among them (client-groups.ts).
+  check("and the owner's words are not in its source either",
+        !home.includes("Printer owner") && !home.includes("New from the group"));
 
   const account = await db.user.findUnique({ where: { email: AYLA } });
   check("the account is stamped from the invite, not the request",
@@ -625,6 +629,72 @@ async function main() {
   check("a second admin row is rejected by the partial unique index", rejected);
 
   // ------------------------------------------------------------------------
+  section("15. translation plumbing: English, word for word, for everyone");
+  // The sign-in page and the header now read their words from messages/en.json.
+  // English is the only language, so the job here is to pin that the words did
+  // not change, and that no browser can get anything else. Every string the
+  // two screens render is in messages/en.json; these are the ones the server
+  // renders, so the ones a check on the HTML can see.
+  const signinIn = async (acceptLanguage?: string, query = "") => {
+    const headers: Record<string, string> = acceptLanguage ? { "accept-language": acceptLanguage } : {};
+    return (await new Browser().go(`${APP}/signin${query}`, { headers })).text();
+  };
+  const plain = await signinIn();
+  // With single sign-on on beside passwords — as docker-compose.test.yml runs
+  // the stack — the lead names the provider; verify:sso covers the rest of it.
+  const ssoName = />\s*Sign in with ([^<{]+)</.exec(plain)?.[1]?.trim();
+  const ENGLISH_SIGNIN = [
+    "Open · come on in",
+    "Members only · ask at the counter",
+    "What’ll it be?",
+    ssoName
+      ? `Use ${ssoName}, the passkey on this device, or your username and password.`
+      : "Use the passkey on this device, or your username and password.",
+    "Username",
+    "Password",
+    "Sign in",
+    "Pretty Please Print is invite-only — there is no sign-up. If you have not " +
+      "been invited yet, or you have forgotten your password, ask whoever owns the printer.",
+  ];
+
+  const plainText = visibleText(plain);
+  const missingEnglish = ENGLISH_SIGNIN.filter((s) => !plainText.includes(s));
+  check("with no Accept-Language the page is English, word for word",
+        missingEnglish.length === 0, `missing: ${missingEnglish.join(" | ")}`);
+  check("and says so: <html lang=\"en\">", htmlLang(plain) === "en", `lang=${htmlLang(plain)}`);
+  check("and its source carries none of the header's words — no menu, no owner's label",
+        !["Sign out", "Printer owner", "New from the group", "Guest list", "Mark all read"].some((s) => plain.includes(s)));
+  for (const header of ["en-GB,en;q=0.9", "fr-FR,fr;q=0.9,en;q=0.8", "de-DE,de;q=0.9", "*", "fr;q=0, en", "x-klingon"]) {
+    const page = await signinIn(header);
+    const text = visibleText(page);
+    check(`Accept-Language "${header}" renders exactly the same English text, under lang="en"`,
+          text === plainText && htmlLang(page) === "en", firstDifference(plainText, text));
+  }
+
+  check("an error code is explained in English",
+        visibleText(await signinIn(undefined, "?error=INVALID_TOKEN"))
+          .includes("That link is no longer valid. Ask the printer owner for a fresh one."));
+  check("an unknown code gets the generic sentence, even one that names a property",
+        visibleText(await signinIn(undefined, "?error=toString"))
+          .includes("That sign-in attempt did not go through."));
+
+  // The header, as the printer owner: it carries most of the diner's words.
+  const queue = async (acceptLanguage?: string) =>
+    (await ownerIn.go(`${APP}/queue`, {
+      headers: acceptLanguage ? { "accept-language": acceptLanguage } : {},
+    })).text();
+  const NAV = ["The pass", "The rail", "The books", "Materials", "By person", "Benefits", "Guest list", "Audit", "Activity"];
+  const ownerHtml = await queue();
+  const ownerText = visibleText(ownerHtml);
+  check("the header's navigation is English", NAV.every((s) => ownerText.includes(s)), ownerText.slice(0, 300));
+  check("and its labels for assistive technology too",
+        ownerHtml.includes('aria-label="Pretty Please Print, home"') &&
+          ownerHtml.includes(`aria-label="Account menu for ${admin.name}"`));
+  const ownerFrench = visibleText(await queue("fr-FR,fr;q=0.9"));
+  check("and the same labels for a browser asking for French",
+        NAV.every((s) => ownerFrench.includes(s)), ownerFrench.slice(0, 300));
+
+  // ------------------------------------------------------------------------
   console.info(
     "\n" + (failures.length === 0
       ? "ALL CHECKS PASSED"
@@ -641,6 +711,33 @@ async function passwordIsHashed(userId: string): Promise<boolean> {
   });
   const stored = account?.password ?? "";
   return stored.length > 0 && !stored.includes(TEST_PASSWORD);
+}
+
+/**
+ * What a reader sees: the markup without scripts, styles or tags, entities
+ * decoded, whitespace collapsed. Scripts go first because the RSC payload in
+ * them carries the messages sent to client components, so a check on the raw
+ * HTML would find words the page does not show.
+ */
+function visibleText(html: string): string {
+  return unescapeHtml(
+    html
+      .replace(/<script\b[\s\S]*?<\/script>/g, " ")
+      .replace(/<style\b[\s\S]*?<\/style>/g, " ")
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/<[^>]+>/g, " "),
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const htmlLang = (html: string) => /<html\b[^>]*\blang="([^"]*)"/.exec(html)?.[1] ?? null;
+
+/** Where two texts part, for a failure message that says what changed. */
+function firstDifference(a: string, b: string): string {
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i++;
+  return `differs at ${i}: "${a.slice(Math.max(0, i - 30), i + 40)}" vs "${b.slice(Math.max(0, i - 30), i + 40)}"`;
 }
 
 /** The one `<form>` on the page whose markup contains a marker. */

@@ -66,8 +66,12 @@ export type OidcConfig = {
   discoveryUrl: string;
   clientId: string;
   clientSecret: string;
-  /** What the button says: "Sign in with <name>". */
-  name: string;
+  /**
+   * What the button says: "Sign in with <name>". Null when the host has not
+   * named it, and each screen supplies its own words for "single sign-on"
+   * (`waysIn.sso.defaultName` in messages/en.json).
+   */
+  name: string | null;
   signup: OidcSignup;
   /** Sent to the provider as `prompt`, when a host asks for one. */
   prompt: OidcPrompt | undefined;
@@ -143,7 +147,7 @@ export function oidcConfig(env: Env = process.env): OidcConfig | null {
     discoveryUrl: `${base}/.well-known/openid-configuration`,
     clientId: need("OIDC_CLIENT_ID"),
     clientSecret: need("OIDC_CLIENT_SECRET"),
-    name: env.OIDC_NAME?.trim() || "single sign-on",
+    name: env.OIDC_NAME?.trim() || null,
     signup,
     prompt: prompt as OidcPrompt | undefined,
   };

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 
 import { authClient } from "@/lib/auth-client";
 import { OIDC_PROVIDER_ID } from "@/lib/auth-methods";
@@ -17,6 +18,10 @@ import { Button, Notice } from "@/components/ui";
  * A failure at the provider's end comes back to `/signin`, which knows how to
  * say what went wrong. The only failure this component can see is the one
  * before the browser leaves: the app refusing to start the flow at all.
+ *
+ * Its words, and the rule's below, are the `waysIn` group, which every screen
+ * that renders them sends (src/i18n/client-groups.ts). The label is the
+ * screen's own, picked on the server.
  */
 export function SsoButton({
   label,
@@ -28,6 +33,7 @@ export function SsoButton({
   next: string;
   variant?: "primary" | "secondary";
 }) {
+  const t = useTranslations("waysIn.sso");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,18 +48,14 @@ export function SsoButton({
     // On success the browser is already on its way to the provider.
     if (error) {
       setBusy(false);
-      setError(
-        error.status === 429
-          ? "Too many attempts. Wait a minute and try again."
-          : "Single sign-on could not be started. Try again, or ask whoever owns the printer.",
-      );
+      setError(error.status === 429 ? t("tooManyAttempts") : t("couldNotStart"));
     }
   }
 
   return (
     <div className="flex flex-col gap-[13.2px]">
       <Button type="button" variant={variant} onClick={go} disabled={busy} className="w-full">
-        {busy ? "Taking you there…" : label}
+        {busy ? t("busy") : label}
       </Button>
       {error && <Notice tone="warn">{error}</Notice>}
     </div>
@@ -62,10 +64,11 @@ export function SsoButton({
 
 /** The "or" rule the sign-in screens put between two ways in. */
 export function OrRule() {
+  const t = useTranslations("waysIn");
   return (
     <div className="flex items-center gap-[13.2px]">
       <span className="h-[3px] flex-1 rounded-full bg-ink" />
-      <span className="font-mono text-[11.5px] font-bold uppercase tracking-[0.14em] text-ink-3">or</span>
+      <span className="font-mono text-[11.5px] font-bold uppercase tracking-[0.14em] text-ink-3">{t("or")}</span>
       <span className="h-[3px] flex-1 rounded-full bg-ink" />
     </div>
   );

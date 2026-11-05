@@ -33,7 +33,40 @@ Notable changes. Every entry names a released version; deployments pin
   `npm run verify:sso` is the twelfth suite, and runs against a stand-in
   provider that can be told to lie.
 
-- **A request can start from a Printables link instead of an upload** (#91).
+## v0.4.0
+
+2026-11-04.
+
+With thanks to **@Hogun974**, who wrote six of the changes below: the slicer
+helper on Windows and macOS, slicers other than PrusaSlicer, and the theme
+variables every colour now comes from. They also proposed the translation,
+settings-page and first-run work now open as #103 to #106. And to
+**@chrisbirie**, whose request (#91) became importing from a Printables link.
+
+### Upgrading from v0.3.0
+
+- **A security fix you should deploy for.** Next.js goes to 15.5.28 for
+  GHSA-2464-fhr4-w9xw (critical, remote code execution) and the advisories
+  around it; see *Fixed* below.
+- **2 database migrations run by themselves**, in the `migrate` container:
+  `20261006120000_story_source_url`, `20261104120000_user_preferred_locale`.
+  Each adds one nullable column and nothing else. Each was tested old → new →
+  old on one database with the published image, so the deploy wizard's
+  automatic rollback still lands on a working app.
+- **Nothing to set.** Importing from a Printables link stays off until you set
+  `IMPORT_SOURCES="printables"`; read
+  [Importing from a link](docs/deployment.md#importing-from-a-link) first.
+  Nobody sees a change in language: every string is still English, now read
+  from one message file.
+- **People who use *Open in PrusaSlicer*** on Windows can replace the old
+  `.reg` file with `scripts/install-slicer-handler.ps1`, and anyone on another
+  slicer can set `PPP_SLICER_PROFILE`. A helper config that sets neither works
+  exactly as before.
+
+### Added
+
+- **A request can start from a Printables link instead of an upload** (#91,
+  asked for by @chrisbirie).
   Where the printer owner switches it on, the request form offers *or paste a
   Printables link* under the dropzone. Paste the address of a model's page and
   the app lists the `.stl` and `.3mf` files in it; pick one, fill in the rest
@@ -64,7 +97,96 @@ Notable changes. Every entry names a released version; deployments pin
   upload. `npm run verify:import` is the eleventh suite, and runs against a
   stand-in for Printables so that the far end can be made to misbehave.
 
+- **An About page says what the app is and who made it.** `/about`, linked
+  from the footer as *About · credits*, gives the licence, the address of the
+  source this instance runs, and everyone with a commit on `main` by GitHub
+  login, each linked to their profile: the maintainer first, then the
+  contributors. Like the rest of the app it needs a sign-in. The names come
+  from a committed file, `src/lib/contributors.ts`, which
+  `npm run contributors` regenerates from main's history; the image is built
+  without `.git`, so the page has no history to read. The file holds logins,
+  display names and the month of each person's first commit, never an
+  address, and a re-run changes it only when somebody new has landed a commit
+  or a name has changed on GitHub. It is all-time and refreshed by hand, where
+  the release notes' *Contributors to this release* is per release and worked
+  out by the wizard;
+  [Crediting contributors](docs/development.md#crediting-contributors) has
+  both. `verify:queue` checks that the page turns away a signed-out visitor
+  and a forged session, and credits everyone in the file.
+
+- **Open in PrusaSlicer installs on Windows** (#109, @Hogun974). `scripts/install-slicer-handler.ps1`
+  is the Linux installer's twin: per user and without admin rights, it copies
+  the helper to `~\.local\bin\ppp-open` with LF line endings, registers
+  `ppp://` under `HKCU` to run it through a hidden `mintty`, and lays down a
+  `slicer.conf`. It needs Git for Windows and says so when it is missing;
+  `-Uninstall` undoes it. The `.reg` file the docs offered before wrote to
+  `HKEY_CLASSES_ROOT`, which needs admin, and ran `bash.exe` directly, which
+  flashes a console on every click. Tested on Windows 11.
+
+- **The slicer helper knows slicers other than PrusaSlicer** (#108, @Hogun974). It used to hand
+  every slicer PrusaSlicer's `--single-instance`, and it could not reach one
+  installed under a path with a space — which on Windows and macOS is all of
+  them, the macOS example in the docs included. `PPP_SLICER_PROFILE` (`prusa`,
+  the default, then `orca`, `elegoo`, `bambu`, `cura`) says which slicer it is,
+  and with it what the slicer is called in a message and whether it gets
+  `--single-instance`. `PPP_SLICER_PATH` takes one path whole. An unknown
+  profile, both settings at once, or a non-Prusa profile with no location set
+  are each refused by name; nothing is guessed. A config that sets neither
+  behaves exactly as before.
+
+- **The release notes credit the people who contributed to the release.**
+  The release wizard ends the notes it publishes with *Contributors to this
+  release*: the `@login` of the author of every pull request whose merge
+  commit lies between the previous release's tag and the release commit, each
+  once, leaving out the repository's owner, whoever is cutting the release,
+  and bots. GitHub shows the avatar of everyone a release mentions. The list
+  is in the preview the notes are edited in, and in `--dry-run`. It is worked
+  out with `gh`; when it cannot be — `gh` fails, or the previous tag is not an
+  ancestor of the release (a hotfix tagged on a side branch) — the wizard says
+  so and publishes without it, because a missing thank-you is no reason to
+  hold a release back. See
+  [Cutting a release](docs/development.md#cutting-a-release).
+
+- **The plumbing for translation, with nothing visible changing** (#103). The
+  app still speaks English only, word for word; a language can now arrive as a
+  pull request of its own. The sign-in page and the header read their words
+  from `messages/en.json` through `next-intl`, with no locale in the URL, so no
+  link, redirect or bookmark changes, and every key is a type. Client
+  components are sent only their own screen's words, so a stranger's sign-in
+  page carries none of the header's and a client's page none of the owner's.
+  `User` gains a nullable `preferredLocale` column that nothing reads or writes
+  yet. `npm run check:messages`, in CI's `guard` job and the full test, holds a
+  translation against English — untranslated or stale keys warn, broken ones
+  fail — and fails a client component asking for words its screen does not
+  send. One new dependency, `next-intl` 4.14.9 (MIT); its build-time extras,
+  `@swc/core` and `@parcel/watcher`, do not reach the runtime image.
+  [Translation](docs/i18n.md) says how to add a key or a language.
+
 ### Changed
+
+- **The full test no longer refuses to run beside another ppp stack.** A
+  stack that is already up (yours, a try-out) holds the container names and
+  ports the test needs. `scripts/full-test.sh` now stops it and renames its
+  containers aside for the length of the run, never removing them or their
+  data. Afterwards it gives them their names back and starts again what was
+  running, on success, on failure and on Ctrl-C. A run that is killed outright
+  leaves the list in the git directory, and `--restore` finishes the job. A
+  port held by anything else is still a refusal, and so is a stack an earlier
+  run of the test left behind. The release wizard gets past the same check.
+
+- **Every colour the app draws with is a theme variable** (#111, @Hogun974;
+  #105, step one; no visible change). The 3D viewer's background, lights, edges and build plate,
+  the ink-at-an-alpha of the layer lines, the plate grid, the starburst and
+  `--color-rule`, and the shadow behind a "whatever" swatch's `?` were written
+  out where they were used; they now come from `globals.css` — the viewer
+  reads them with `getComputedStyle`, and says so if one is missing. The
+  viewer's lamps get tokens of their own, so a darker counter would not mean a
+  darker lamp. Tokens only code reads sit in an `@theme static` block, because
+  Tailwind drops theme variables no class uses. `STATUS_CHIP`, twelve hard-coded
+  colours nothing had imported since the diner redesign, is gone, and so is a
+  per-column `--tear-color` that restated its own default. E-mails keep their
+  literal colours: a mail client has no CSS variables. Screenshots of every
+  page before and after differ by at most 1/255 on the faint lines.
 
 - **Opening a ticket from a model's bytes lives in one place.** It was the body
   of the upload route while that was the only way a model arrived;
@@ -88,6 +210,16 @@ Notable changes. Every entry names a released version; deployments pin
   copied again to get a newer one. The pull-request template lists all ten
   suites, the wizard tests and the rollback check for a migration.
 
+- **The documentation caught up with the slicer helper's new reach.** The
+  README and the slicer guide no longer say the helper is for PrusaSlicer
+  only, and the guide's opening points at the Windows setup and the other
+  slicers. The architecture guide's file layout has the Windows installer and
+  the helper's own test, and its viewer section says where the colours now
+  come from. The development guide counts the helper among the sandboxed
+  script tests and says plainly that the PowerShell installer has none. The
+  [security audit](docs/security-audit.md#the-helper-off-linux) records how a
+  clicked link and a failure message stay data on Windows and macOS.
+
 ### Fixed
 
 - **The last places that still described an object store.** MinIO left in
@@ -104,10 +236,56 @@ Notable changes. Every entry names a released version; deployments pin
   pending, and the reason recorded for `Cross-Origin-Embedder-Policy:
   credentialless` no longer names a storage origin that does not exist.
 
+- **Next.js 15.5.26 → 15.5.28** (#100), for the advisories published against
+  15.5.26: among them GHSA-2464-fhr4-w9xw (CRITICAL, remote code execution in
+  the image optimiser when SVG files are involved) and denial of service through
+  Server Actions, cache poisoning of static pages, and an information disclosure
+  in metadata image routes. Trivy fails on 15.5.26, and the daily security scan
+  had been red since 2026-10-23. The same group update moved Better Auth to
+  1.7.10 and React to 19.3.1, with newer nodemailer, resend and zod.
+
 - **`source-map-js` 1.2.1 → 1.2.2**, for CVE-2026-93749 (HIGH): a malformed
   indexed source map could hang whatever parsed it. It arrives through PostCSS
   and Tailwind, which run when the stylesheet is built, and the Trivy gate
   fails on it. Lockfile only.
+
+- **Open in PrusaSlicer did nothing where there is no `setsid`**, and said it
+  had worked (#107, @Hogun974). The helper launched the slicer with `setsid … &`; Git for
+  Windows and macOS have no `setsid`, the failure happened in the background,
+  and the log read "handed off" with nothing open. Without `setsid` it now
+  runs the slicer in the foreground under Git Bash, where the handler's hidden
+  terminal takes a backgrounded child down with it, and detaches it with
+  `nohup` anywhere else. A slicer that fails in the foreground is reported
+  like every other failure. `scripts/tests/prusa-open.test.sh` covers the
+  three ways in, and the helper had no test before.
+
+- **A Windows checkout broke the shell scripts** (#107, @Hogun974). Git for Windows checks text
+  out with CRLF by default, and bash refuses a script whose first command is
+  `set -euo pipefail\r`. `.gitattributes` now keeps `*.sh` and the git hook
+  LF on every platform.
+
+- **The slicer helper exited without a word when a response had no
+  `Content-Disposition`** (#110, @Hogun974). The filename is read from that header with a
+  `grep`; under `pipefail` a grep that finds nothing failed the assignment and
+  `set -e` ended the script, so the `model-<id>.stl` fallback written for that
+  case was never reached and the log stopped at "fetching". The app always
+  sends the header; a proxy that strips it is what would have hit this.
+
+- **A failed click on Windows or macOS said nothing on screen** (#112, @Hogun974). The slicer
+  helper put its errors in a notification only through `notify-send`, which is
+  Linux's; elsewhere an expired link or an unreachable instance left a line in
+  the log and nothing else, which looks exactly like a helper that was never
+  installed. It now raises a notification through `osascript` on macOS and a
+  message box through PowerShell under Git Bash, in front of the browser. The
+  message, which can quote the clicked link, reaches both as data and never as
+  code. A config with no `PPP_BASE` is reported the same way; it used to exit
+  on stderr alone, which a protocol handler does not have.
+
+- **An odd `?error=` broke the sign-in page.** `?error=__proto__` crashed it
+  with a 500, and `?error=toString` or `?error=constructor` showed an empty
+  warning box: the code was looked up in a plain object, prototype included.
+  The codes are now looked up as own properties only, so any code the page
+  does not know gets the generic sentence.
 
 ## v0.3.0
 

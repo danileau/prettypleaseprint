@@ -527,7 +527,9 @@ export const auth = betterAuth({
         ? [
             {
               providerId: OIDC_PROVIDER_ID,
-              name: oidc.name,
+              // Better Auth's own label, never shown: the screens name the
+              // provider themselves.
+              name: oidc.name ?? OIDC_PROVIDER_ID,
               discoveryUrl: oidc.discoveryUrl,
               clientId: oidc.clientId,
               clientSecret: oidc.clientSecret,

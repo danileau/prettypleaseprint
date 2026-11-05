@@ -1,18 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { authClient } from "@/lib/auth-client";
 import { Button, Input, Label, Notice } from "@/components/ui";
 import { OrRule, SsoButton } from "@/components/sso-button";
-
-/**
- * One message for every way a sign-in can fail.
- *
- * Distinguishing "no such username" from "wrong password" turns this form
- * into a membership oracle for the office, and there is nothing the person at
- * the keyboard can do with the difference anyway.
- */
-const REFUSED = "That username and password do not match. Try again.";
 
 export function SignInForm({
   next,
@@ -25,6 +17,7 @@ export function SignInForm({
   /** What the single sign-on provider is called, or null when it is off. */
   ssoName: string | null;
 }) {
+  const t = useTranslations("signin.form");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -51,10 +44,9 @@ export function SignInForm({
     setError(null);
     const res = await authClient.signIn.passkey();
     if (res?.error) {
-      setError(
-        res.error.message ??
-          "That passkey was not accepted. Use your password instead.",
-      );
+      // Better Auth's own message when it has one, which is English: it comes
+      // from the library, not from a catalogue this app owns.
+      setError(res.error.message ?? t("passkeyRefused"));
       return;
     }
     window.location.assign(next);
@@ -74,11 +66,12 @@ export function SignInForm({
       setBusy(false);
       // 429 is worth saying out loud: "wrong password" would send someone
       // hunting for a typo that is not there.
-      setError(
-        error.status === 429
-          ? "Too many attempts. Wait a minute and try again."
-          : REFUSED,
-      );
+      //
+      // Otherwise one message for every way a sign-in can fail.
+      // Distinguishing "no such username" from "wrong password" turns this
+      // form into a membership oracle for the office, and there is nothing the
+      // person at the keyboard can do with the difference anyway.
+      setError(error.status === 429 ? t("tooManyAttempts") : t("refused"));
       return;
     }
     window.location.assign(next);
@@ -90,7 +83,7 @@ export function SignInForm({
           nothing, and where it is the only way in it is the whole form. */}
       {ssoName && (
         <>
-          <SsoButton label={`Sign in with ${ssoName}`} next={next} />
+          <SsoButton label={t("withSso", { name: ssoName })} next={next} />
           {local && <OrRule />}
         </>
       )}
@@ -103,7 +96,7 @@ export function SignInForm({
             onClick={signInWithPasskey}
             className="w-full"
           >
-            Sign in with a passkey
+            {t("withPasskey")}
           </Button>
           <OrRule />
         </>
@@ -112,7 +105,7 @@ export function SignInForm({
       {local && (
       <form onSubmit={signInWithPassword} className="flex flex-col gap-[13.2px]">
         <div>
-          <Label htmlFor="username">Username</Label>
+          <Label htmlFor="username">{t("username")}</Label>
           <Input
             id="username"
             name="username"
@@ -128,7 +121,7 @@ export function SignInForm({
           />
         </div>
         <div>
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="password">{t("password")}</Label>
           <Input
             id="password"
             name="password"
@@ -147,7 +140,7 @@ export function SignInForm({
           disabled={busy}
           className="w-full"
         >
-          {busy ? "Checking…" : "Sign in"}
+          {busy ? t("checking") : t("submit")}
         </Button>
       </form>
       )}
@@ -155,9 +148,7 @@ export function SignInForm({
       {error && <Notice tone="warn">{error}</Notice>}
 
       <p className="m-0 border-t-2 border-dashed border-rule pt-[13.2px] text-[13.5px] leading-[1.5] text-ink-2">
-        {local
-          ? "Pretty Please Print is invite-only — there is no sign-up. If you have not been invited yet, or you have forgotten your password, ask whoever owns the printer."
-          : "Pretty Please Print is invite-only. If signing in tells you that you have not been invited, ask whoever owns the printer."}
+        {t(local ? "inviteOnly" : "inviteOnlySso")}
       </p>
     </div>
   );

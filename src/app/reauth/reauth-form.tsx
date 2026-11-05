@@ -28,13 +28,14 @@ export function ReauthForm({
   username,
   displayUsername,
   local,
-  ssoName,
+  ssoLabel,
 }: {
   next: string;
   username: string;
   displayUsername: string;
   local: boolean;
-  ssoName: string | null;
+  /** The single sign-on button's words, picked on the server; null when it is off. */
+  ssoLabel: string | null;
 }) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -83,9 +84,9 @@ export function ReauthForm({
 
   return (
     <div className="flex flex-col gap-[22px]">
-      {ssoName && (
+      {ssoLabel && (
         <>
-          <SsoButton label={`Confirm with ${ssoName}`} next={next} />
+          <SsoButton label={ssoLabel} next={next} />
           {hasPassword && <OrRule />}
         </>
       )}
@@ -94,7 +95,7 @@ export function ReauthForm({
         <>
           <Button
             type="button"
-            variant={ssoName ? "secondary" : "primary"}
+            variant={ssoLabel ? "secondary" : "primary"}
             onClick={withPasskey}
             className="w-full"
           >

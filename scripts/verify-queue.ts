@@ -13,6 +13,7 @@ import "./_env";
 import { db } from "../src/lib/db";
 import { clientIpFrom, ipSource } from "../src/lib/client-ip";
 import { BOARD, nextStatus, storyRef as storyRefOf } from "../src/lib/scope";
+import { CONTRIBUTORS } from "../src/lib/contributors";
 import { ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
@@ -723,6 +724,41 @@ async function main() {
         "AGPL section 13 wants it in front of anyone using the app over a network");
   check("and signed-in ones",
         (await (await ruben.go(`${APP}/board`)).text()).includes("Source · AGPL-3.0"));
+
+  // The credits page beside it: linked from that same footer, but behind
+  // sign-in like any other page — the footer reaching signed-out visitors must
+  // not turn into a way past the gate.
+  check("the footer links to the About page",
+        anonPage.includes('href="/about"'));
+  const anonAbout = await new Browser().raw(`${APP}/about`);
+  check("and /about sends a signed-out visitor to sign-in",
+        anonAbout.status >= 300 && anonAbout.status < 400 &&
+        (anonAbout.headers.get("location") ?? "").includes("/signin"),
+        `status ${anonAbout.status} location ${anonAbout.headers.get("location")}`);
+  // A cookie that merely exists gets past the middleware; this is the page's
+  // own requireUser being tested, the same way A01-forge does for the board.
+  const forgedAbout = new Browser();
+  forgedAbout.jar.set("ppp.session_token", "not-a-real-token");
+  forgedAbout.jar.set("__Secure-ppp.session_token", "not-a-real-token");
+  const forgedAboutBody = await (await forgedAbout.go(`${APP}/about`)).text();
+  check("and so does a forged session cookie",
+        !forgedAboutBody.includes("Who made it"),
+        "a cookie nobody issued rendered the credits page");
+
+  const about = await (await ruben.go(`${APP}/about`)).text();
+  const aboutMain = /<main[\s\S]*?<\/main>/.exec(about)?.[0] ?? "";
+  // Per person, inside <main>: the source link and the footer are github.com
+  // URLs too, so "some github link is on the page" would pass with no one on it.
+  const uncredited = CONTRIBUTORS.filter(
+    (p) => !aboutMain.includes(`href="https://github.com/${encodeURIComponent(p.login)}"`),
+  ).map((p) => p.login);
+  check("and renders for a signed-in one, linking every contributor's GitHub profile",
+        aboutMain.includes("Who made it") && CONTRIBUTORS.length > 0 && uncredited.length === 0,
+        CONTRIBUTORS.length === 0 ? "src/lib/contributors.ts is empty"
+          : `missing: ${uncredited.join(", ") || "(the page did not render)"}`);
+  check("with no e-mail address on it",
+        !/[\w.+-]+@[\w-]+\.[a-z]{2,}/i.test(aboutMain || "<main>"),
+        "the contributors list must hold logins, names and months only");
 
   const iconRes = await new Browser().raw(`${APP}/icon.svg`);
   check("the favicon is served, not redirected to sign-in",
