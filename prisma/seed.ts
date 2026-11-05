@@ -23,6 +23,7 @@
 import { PrismaClient } from "@prisma/client";
 
 import { RESET_TTL_MINUTES, newResetToken, resetIdentifier } from "./reset-token";
+import { seedAuthMethods, seedNormalIssuer } from "./auth-env";
 
 const db = new PrismaClient();
 
@@ -100,22 +101,16 @@ async function main() {
   // (`linkRule` in src/lib/auth.ts). Without that connection there is no way
   // in as the owner at all, and this says so.
   //
-  // Read straight from the environment rather than through
-  // src/lib/auth-methods.ts: the migrator image carries `prisma/` and nothing
-  // from `src/`. The app itself refuses a value this would misread.
-  const methods = (process.env.AUTH_METHODS ?? "local").toLowerCase().split(",").map((m) => m.trim());
-  if (!methods.includes("local")) {
+  // Read through ./auth-env.ts rather than src/lib/auth-methods.ts: the
+  // migrator image carries `prisma/` and nothing from `src/`. Parsed exactly
+  // as the app parses it — unset or blank is `local` — and `verify:sso` holds
+  // the two against each other. A name that is not a method, the app refuses
+  // by name when it starts.
+  if (!seedAuthMethods(process.env.AUTH_METHODS).local) {
     // Linked through the provider configured now — `issuer|sub`, the issuer
-    // spelt as `normalIssuer` in src/lib/oidc-flow.ts spells it (repeated
-    // here: this image has no src/). A link from before OIDC_ISSUER changed
-    // opens nothing.
-    let issuer = (process.env.OIDC_ISSUER ?? "").trim();
-    try {
-      const u = new URL(issuer);
-      issuer = `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
-    } catch {
-      issuer = issuer.replace(/\/+$/, "");
-    }
+    // spelt as the app spells it (./auth-env.ts). A link from before
+    // OIDC_ISSUER changed opens nothing.
+    const issuer = seedNormalIssuer((process.env.OIDC_ISSUER ?? "").trim());
     const connected = await db.account.findFirst({
       where: { userId: admin.id, providerId: "oidc", accountId: { startsWith: `${issuer}|` } },
       select: { id: true },

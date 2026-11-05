@@ -296,7 +296,7 @@ setting it up; this is what it does and does not change.
 
 | `AUTH_METHODS` | Ways in |
 | --- | --- |
-| `local` — the default, and what unset means | username and password, and passkeys. What every existing instance keeps doing. |
+| `local` — the default, and what unset or empty means | username and password, and passkeys. What every existing instance keeps doing. |
 | `local,oidc` | both, side by side: the provider's button first, then the passkey and the password form. |
 | `oidc` | the provider alone. Nobody has a password or a passkey that works. |
 
@@ -470,9 +470,12 @@ two things make that question honest:
   five-minute window.
 
 `OIDC_PROMPT=login` makes the provider ask for credentials on ordinary sign-ins
-too, at the cost of the "single" in single sign-on. It is unset by default, and
-it is a request to the provider rather than something the app checks; the
-dating above is what the app relies on.
+too, at the cost of the "single" in single sign-on. It is unset by default.
+Every ordinary sign-in sends exactly the configured value: the server drops
+whatever authorization parameters a request brings (Better Auth would lay them
+over the configured `prompt`, so a hand-made `prompt=none` would otherwise win).
+Whether the provider honours it is the provider's business; the dating above is
+what the app relies on.
 
 #### What the app checks beyond the library
 

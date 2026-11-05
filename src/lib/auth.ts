@@ -280,18 +280,27 @@ export const auth = betterAuth({
         throw new APIError("SERVICE_UNAVAILABLE", { message: "Single sign-on is not available." });
       }
 
+      // What is sent to the provider is the server's to say, not the
+      // request's. Better Auth lays a request's `additionalParams` over the
+      // configured `prompt`, so a hand-made POST could otherwise ask for
+      // `prompt=none` past `OIDC_PROMPT=login`. Nothing in this app sends any;
+      // they are replaced here, on the body the endpoint goes on to read (a
+      // returned context is merged into it, which could add keys but never
+      // take the request's away).
+      //
       // A re-authentication (src/app/reauth) asks the provider to make the
       // person sign in there again, whatever session it holds, and marks the
-      // flow so the answer is held to that — see `ssoProfile`. The mark goes
-      // in the server's half of the state; the parameters are set here rather
-      // than trusted from the page. Connecting the provider is always one.
-      if (linking || body.additionalData?.reauth === true) {
+      // flow so the answer is held to that — see `ssoProfile`. The mark goes in
+      // the server's half of the state. Connecting the provider is always one.
+      // Anything else gets the configured `OIDC_PROMPT`, which the plugin adds
+      // itself, and nothing more.
+      const reauth = linking || body.additionalData?.reauth === true;
+      const mutable = ctx.body as Record<string, unknown>;
+      if (reauth) {
         await addOAuthServerContext({ [REAUTH_MARK]: true });
-        return {
-          context: {
-            body: { ...body, additionalParams: { ...(body.additionalParams ?? {}), prompt: "login", max_age: "0" } },
-          },
-        };
+        mutable.additionalParams = { prompt: "login", max_age: "0" };
+      } else {
+        delete mutable.additionalParams;
       }
     }),
   },

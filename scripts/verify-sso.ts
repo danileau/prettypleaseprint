@@ -45,6 +45,7 @@ import {
 } from "../src/lib/oidc-flow";
 import { FRESH_AUTH_SECONDS } from "../src/lib/auth-rules";
 import { issuePasswordSetupUrl } from "../src/lib/password-reset";
+import { seedAuthMethods, seedNormalIssuer } from "../prisma/auth-env";
 import { TEST_PASSWORD, ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
@@ -187,6 +188,14 @@ async function main() {
   check("unset is local only — an upgraded instance signs people in as it did",
         whenUnset === '{"local":true,"oidc":false}' &&
         JSON.stringify(authMethods("")) === '{"local":true,"oidc":false}', whenUnset);
+  // The seed reads the same variable from an image with no src/
+  // (prisma/auth-env.ts), and has to read it the same way: a blank
+  // AUTH_METHODS read as single-sign-on-only would have it print a warning
+  // instead of the owner's set-password link on a first deploy.
+  const methodInputs = [undefined, "", "  ", "local", "oidc", " OIDC , local ", "local,oidc", "LOCAL"];
+  const methodsDiffer = methodInputs.filter((v) => JSON.stringify(seedAuthMethods(v)) !== JSON.stringify(authMethods(v)));
+  check("the seed reads AUTH_METHODS exactly as the app does — blank is local",
+        methodsDiffer.length === 0, `differ on: ${methodsDiffer.map((v) => JSON.stringify(v)).join(", ")}`);
   check("both, in either order and any case",
         JSON.stringify(authMethods(" OIDC , local ")) === '{"local":true,"oidc":true}');
   check("single sign-on alone", JSON.stringify(authMethods("oidc")) === '{"local":false,"oidc":true}');
@@ -304,6 +313,10 @@ async function main() {
   check("one issuer, however it is spelt: case, default port, trailing slash",
         ssoAccountId("HTTPS://ID.Example:443/realms/office//", "42") === "https://id.example/realms/office|42" &&
         normalIssuer("http://oidc-stub:80/") === "http://oidc-stub");
+  const issuerInputs = ["https://id.example/realms/office", "HTTPS://ID.Example:443/realms/office//", "http://oidc-stub:4020/",
+                        "http://localhost:80", "https://id.example:8443/a/b/", "not a url/"];
+  const issuersDiffer = issuerInputs.filter((v) => seedNormalIssuer(v) !== normalIssuer(v));
+  check("and the seed spells an issuer exactly as the app does", issuersDiffer.length === 0, issuersDiffer.join(", "));
   check("but a different path is a different issuer",
         ssoAccountId("https://id.example/realms/other", "42") !== ssoAccountId("https://id.example/realms/office", "42"));
   const nowS = Math.floor(Date.now() / 1000);
@@ -792,6 +805,17 @@ async function main() {
   const overURL = new URL(((await overriding.json()) as { url?: string }).url ?? "http://x/");
   check("the page cannot ask for anything gentler: the server sets prompt and max_age",
         overURL.searchParams.get("prompt") === "login" && overURL.searchParams.get("max_age") === "0", overURL.search);
+  await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
+  const gentler = await new Browser().post("/api/auth/sign-in/social", {
+    provider: "oidc", callbackURL: "/board",
+    additionalParams: { prompt: "none", max_age: "86400", acr_values: "anything-goes" },
+  });
+  const gentlerURL = new URL(((await gentler.json()) as { url?: string }).url ?? "http://x/");
+  // The stack sets no OIDC_PROMPT, so the configured prompt is none at all.
+  const configuredPrompt = process.env.OIDC_PROMPT?.trim().toLowerCase() || null;
+  check("nor can an ordinary sign-in: what the request asks for is dropped, and the configured prompt is what is sent",
+        gentlerURL.searchParams.get("prompt") === configuredPrompt && !gentlerURL.searchParams.has("max_age") &&
+        !gentlerURL.searchParams.has("acr_values"), gentlerURL.search);
 
   const vince = await sso("vince");
   const vinceUser = await userByEmail("vince@office.example");
