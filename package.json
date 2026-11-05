@@ -86,12 +86,5 @@
     "postcss": "^8.5.26",
     "sharp": "^0.35.4",
     "deepmerge-ts": "^8.0.2"
-  },
-  "allowScripts": {
-    "@prisma/client@6.19.3": true,
-    "@prisma/engines@6.19.3": true,
-    "@scarf/scarf@1.4.0": true,
-    "esbuild@0.28.2": true,
-    "prisma@6.19.3": true
   }
 }
