@@ -3,7 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { authMethods } from "@/lib/auth-methods";
 import { requireAdmin } from "@/lib/authz";
 import { db } from "@/lib/db";
-import { mailPreview, mailPreviewNames, mailStatus, voiceFor } from "@/lib/email";
+import { mailPreview, mailPreviewNames, mailStatus, previewLocaleQuery, voiceFor } from "@/lib/email";
 import { AppHeader } from "@/components/app-header";
 import { Button, Kicker, Notice } from "@/components/ui";
 import { Toast } from "@/components/toast";
@@ -54,9 +54,10 @@ export default async function MailPage({
   const on = status.transport !== "none";
   const passwords = authMethods().local;
   // The previews are written in a language of the owner's choosing — what
-  // somebody who picked it on their profile is sent. English unless asked.
+  // somebody who picked it on their profile is sent. Unless asked, what
+  // somebody who picked nothing is sent: the instance default, or English.
   const voice = await voiceFor(locale);
-  const inLocale = voice.lang === "en" ? "" : `?locale=${encodeURIComponent(voice.lang)}`;
+  const inLocale = await previewLocaleQuery(voice.lang);
   const server =
     status.server === null
       ? t("noTransport")

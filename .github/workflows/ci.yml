@@ -69,9 +69,9 @@ jobs:
       # ::warning annotation, so the gap shows on the pull request. Broken
       # translations (placeholders, rich-text tags, ICU quoting, malformed
       # files) still fail.
-      # With English alone there is no translation to hold against it yet; the
-      # step still validates en.json and fails a client component that asks
-      # for a message group its screen does not send.
+      # It also fails a file in messages/ whose name is not a language Intl can
+      # name — the app offers every file there by that name — and a client
+      # component that asks for a message group its screen does not send.
       - name: Translations against English
         run: npm run check:messages
       # The wizards are shell, and nothing else in this job executes shell.

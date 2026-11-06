@@ -154,10 +154,9 @@ key added in English goes untranslated, a key removed from English lingers in
 the translation, and nothing else notices either. It lists what is missing or
 stale per language as warnings — the check passes, so an English-only change is
 never held up by a translation — and fails on what is actually broken:
-placeholders that differ from English, ICU quoting, a malformed file, a client
-component asking for a message group its screen does not send. The app speaks
-only English today, so there is no translation to compare yet; the check still
-validates `en.json` and the client groups.
+placeholders that differ from English, ICU quoting, a malformed file, a file
+whose name is not a language, a client component asking for a message group its
+screen does not send.
 [Translation](i18n.md#what-checkmessages-reports) says what each finding means.
 
 ### The full local run
