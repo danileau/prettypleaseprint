@@ -26,6 +26,10 @@ export const SOURCE_LABEL: Record<ImportSource, string> = {
  * A name that is not a source is an error rather than something to skip.
  * `IMPORT_SOURCES=printable` silently meaning "off" is the kind of quiet
  * fallback that costs an afternoon.
+ *
+ * This reads the environment only. Whether the environment or the owner's
+ * setting applies is `src/lib/settings.ts`'s to decide — ask it
+ * (`importSources()`), not this, for what is switched on right now.
  */
 export function enabledSources(raw: string | undefined = process.env.IMPORT_SOURCES): ImportSource[] {
   const names = (raw ?? "")

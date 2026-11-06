@@ -50,7 +50,7 @@ export default async function MailPage({
       : test === "refused"
         ? t("result.refused", { reason: typeof reason === "string" ? reason : t("result.noReason") })
         : null;
-  const status = mailStatus();
+  const status = await mailStatus();
   const on = status.transport !== "none";
   const passwords = authMethods().local;
   // The previews are written in a language of the owner's choosing — what

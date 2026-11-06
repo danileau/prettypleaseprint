@@ -26,7 +26,7 @@ export const dynamic = "force-dynamic";
 export const POST = withActor(async (request, actor) => {
   // Before the body is even read: an instance with importing off says so,
   // whatever it was sent.
-  importSourcesOrRefuse();
+  await importSourcesOrRefuse();
 
   const body = await jsonBody(request);
   const checked = await checkWish({

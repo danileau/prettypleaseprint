@@ -42,6 +42,8 @@ const NAV: Record<Actor["role"], Array<{ key: NavKey; href: string }>> = {
     { key: "featureRequests", href: "/frr" },
     { key: "benefits", href: "/admin/benefits" },
     { key: "guestList", href: "/admin/invites" },
+    { key: "mail", href: "/admin/mail" },
+    { key: "settings", href: "/admin/settings" },
     { key: "audit", href: "/admin/audit" },
   ],
 };

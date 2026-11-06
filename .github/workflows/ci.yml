@@ -179,6 +179,12 @@ jobs:
       # upload choices, authoritative validation, and historical snapshots.
       - name: Materials and colours, owner-managed
         run: npm run verify:catalog
+      # The owner's settings page: the environment wins and locks its field
+      # (this stack pins PASSKEY_RP_NAME, so that is the locked one; import
+      # and the mail name go through the settings row), a save needs a fresh
+      # sign-in, writes settings.changed, and applies on the next request.
+      - name: Settings, owner-managed
+        run: npm run verify:settings
       # The second front door onto the same operations. Runs against the built
       # image, which is the only place the production CSP is in force — the
       # console's inline-script nonce and its stylesheet-in-a-file are both

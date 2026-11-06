@@ -1,6 +1,6 @@
 import { ok, withActor } from "@/lib/api";
 import { availableCatalog } from "@/lib/catalog-data";
-import { enabledSources } from "@/lib/import-source";
+import { importSources } from "@/lib/settings";
 
 /**
  * What can be asked for right now: the materials on the shelf, each with the
@@ -25,7 +25,7 @@ export const GET = withActor(async () => {
   return ok({
     // The other thing a client cannot learn any other way: whether this
     // instance imports from a link, and from where. Empty when it does not.
-    importSources: enabledSources(),
+    importSources: await importSources(),
     materials: materials.map((material) => ({
       name: material.name,
       colors: material.colors.map((color) => ({

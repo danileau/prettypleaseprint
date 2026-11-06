@@ -48,7 +48,8 @@
     "verify:api": "tsx scripts/verify-api.ts",
     "vendor:swagger": "tsx scripts/vendor-swagger.ts",
     "migrate:storage": "tsx scripts/export-storage.ts",
-    "contributors": "tsx scripts/update-contributors.ts"
+    "contributors": "tsx scripts/update-contributors.ts",
+    "verify:settings": "tsx scripts/verify-settings.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

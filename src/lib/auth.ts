@@ -21,6 +21,7 @@ import { initialsFor } from "@/lib/tokens";
 import { FRESH_AUTH_SECONDS } from "@/lib/auth-rules";
 import { isBuildPhase } from "@/lib/runtime";
 import { enabledSources } from "@/lib/import-source";
+import { DEFAULT_PRODUCT_NAME, effectiveSettings } from "@/lib/settings";
 import {
   OIDC_PROVIDER_ID,
   authMethods,
@@ -170,7 +171,7 @@ if (!isBuildPhase && oidc && !methods.local) {
 const disabled = new Set(disabledAuthPaths(methods));
 
 export const auth = betterAuth({
-  appName: "Pretty Please Print",
+  appName: DEFAULT_PRODUCT_NAME,
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,
   database: prismaAdapter(db, { provider: "postgresql" }),
@@ -219,6 +220,17 @@ export const auth = betterAuth({
       // action, say — go straight past it, so a method that is off is refused
       // here as well.
       if (disabled.has(ctx.path)) throw new APIError("NOT_FOUND");
+
+      // The name an authenticator shows for this instance when a passkey is
+      // added — PASSKEY_RP_NAME, or the owner's setting (src/lib/settings.ts),
+      // read now so a save applies to the next registration without a
+      // restart. The passkey plugin copies its options once, at start-up, so
+      // it is given no `rpName` and falls back to `ctx.context.appName`;
+      // `ctx.context` is this request's own copy of the auth context, so the
+      // name set here is this request's alone.
+      if (ctx.path === "/passkey/generate-register-options") {
+        ctx.context.appName = (await effectiveSettings()).passkeyRpName.value;
+      }
 
       const linking = ctx.path === "/link-social";
       if (ctx.path !== "/sign-in/social" && !linking) return;
@@ -783,7 +795,9 @@ export const auth = betterAuth({
 
     passkey({
       rpID: process.env.PASSKEY_RP_ID ?? "localhost",
-      rpName: process.env.PASSKEY_RP_NAME ?? "Pretty Please Print",
+      // No `rpName`: it is set per request in `hooks.before`, from
+      // PASSKEY_RP_NAME or the owner's settings. Passed here it would be
+      // fixed at start-up, and win.
       origin: baseURL,
       authenticatorSelection: {
         // Discoverable credentials let someone sign in without typing a
