@@ -156,6 +156,7 @@ function upload(b: Browser, filename: string, bytes: Uint8Array, fields: Record<
   form.set("tip", fields.tip ?? "A beer");
   form.set("note", fields.note ?? "No rush.");
   form.set("printSettings", fields.printSettings ?? "");
+  form.set("modelPageUrl", fields.modelPageUrl ?? "");
   // Only when asked for: a client written before priority existed sends none.
   if (fields.priority !== undefined) form.set("priority", fields.priority);
   return b.raw(`${APP}/api/upload`, { method: "POST", body: form });
@@ -647,6 +648,41 @@ async function main() {
   check("and it says what the largest model was",
         dash.includes("largest"),
         "no size summary — this is the panel that says whether the cap is right");
+
+
+  section("model page url");
+
+  let mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "https://example.com/model" });
+  check("the model page url is set correctly", mplUp.status === 200, "upload did not succeed or the model page url was not accepted");
+  let mplPayload = mplUp.status === 200 ? await mplUp.json() : { error: await mplUp.text() };
+  const mplStory = await db.story.findFirst({ where: { id: mplPayload.id } });
+  check("the model page url is stored on the ticket", mplStory?.modelPageUrl === "https://example.com/model", mplStory?.modelPageUrl || "");  
+  let mplAgain = await requeue(aylaB, mplStory!.id, {});
+  mplPayload = mplAgain.status === 201 ? await mplAgain.json() : null;
+  let mplCopy = await db.story.findFirst({ where: { id: mplPayload.story.id } });
+  check("the model page url is preserved after requeue", mplCopy?.modelPageUrl === mplStory?.modelPageUrl, mplCopy?.modelPageUrl || "");
+
+  mplAgain = await requeue(aylaB, mplStory!.id, { modelPageUrl: "https://example.com/new-model" });
+  mplPayload = mplAgain.status === 201 ? await mplAgain.json() : null;
+  mplCopy = await db.story.findFirst({ where: { id: mplPayload.story.id } });
+  check("the model page url is updated after requeue", mplCopy?.modelPageUrl === "https://example.com/new-model", mplCopy?.modelPageUrl || "");
+
+  mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "bob" });
+  mplPayload = mplUp.status === 400 ? await mplUp.json() : null;
+  check("the model page url is rejected for being an invalid URL", mplUp.status === 400 && mplPayload.error === "The model page link is invalid.", `status ${mplUp.status}, error: ${mplPayload.error}`);
+
+  mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "http://example.com/model" });
+  mplPayload = mplUp.status === 400 ? await mplUp.json() : null;
+  check("the model page url is rejected for using an HTTP URL", mplUp.status === 400 && mplPayload.error === "The model page link must use https.", `status ${mplUp.status}, error: ${mplPayload.error}`);
+
+  mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "https://user:password@example.com/model" });
+  mplPayload = mplUp.status === 400 ? await mplUp.json() : null;
+  check("the model page url is rejected for including credentials in the URL", mplUp.status === 400 && mplPayload.error === "The model page link must not include a username or password.", `status ${mplUp.status}, error: ${mplPayload.error}`);
+
+  mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "https://example.com/model/" + "a".repeat(2000) });
+  mplPayload = mplUp.status === 400 ? await mplUp.json() : null;
+  check("the model page url is rejected for being too long", mplUp.status === 400 && mplPayload.error === "The model page link is very long.", `status ${mplUp.status}, error: ${mplPayload.error}`);
+
 
   console.info(
     `\n${passed} checks passed, ${failures.length} failed` +
