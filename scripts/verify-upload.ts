@@ -657,12 +657,33 @@ async function main() {
   let mplPayload = mplUp.status === 200 ? await mplUp.json() : { error: await mplUp.text() };
   const mplStory = await db.story.findFirst({ where: { id: mplPayload.id } });
   check("the model page url is stored on the ticket", mplStory?.modelPageUrl === "https://example.com/model", mplStory?.modelPageUrl || "");  
-  let mplAgain = await requeue(aylaB, mplStory!.id, {});
+  if (!mplStory) throw new Error("Cannot check the model page link without the uploaded ticket.");
+
+  const mplPage = await aylaB.go(`${APP}/story/${mplStory.id}`);
+  const mplHtml = rendered(await mplPage.text());
+  check("the ticket links to the model page and displays its hostname",
+        mplPage.status === 200 &&
+        /<a\b[^>]*\bhref="https:\/\/example\.com\/model"[^>]*>example\.com\s*↗<\/a>/.test(mplHtml),
+        `status ${mplPage.status}`);
+
+  const mplApi = await aylaB.raw(`${APP}/api/stories/${mplStory.id}`);
+  const mplResource = await mplApi.json() as { modelPageUrl?: string | null };
+  check("the story API returns the model page url",
+        mplApi.status === 200 && mplResource.modelPageUrl === "https://example.com/model",
+        `status ${mplApi.status}, modelPageUrl ${JSON.stringify(mplResource.modelPageUrl)}`);
+
+  const mplAgainPage = await aylaB.go(`${APP}/story/${mplStory.id}/again`);
+  const mplAgainHtml = rendered(await mplAgainPage.text());
+  check("print-again prefills the model page url",
+        mplAgainPage.status === 200 && mplAgainHtml.includes('value="https://example.com/model"'),
+        `status ${mplAgainPage.status}`);
+
+  let mplAgain = await requeue(aylaB, mplStory.id, {});
   mplPayload = mplAgain.status === 201 ? await mplAgain.json() : null;
   let mplCopy = await db.story.findFirst({ where: { id: mplPayload.story.id } });
   check("the model page url is preserved after requeue", mplCopy?.modelPageUrl === mplStory?.modelPageUrl, mplCopy?.modelPageUrl || "");
 
-  mplAgain = await requeue(aylaB, mplStory!.id, { modelPageUrl: "https://example.com/new-model" });
+  mplAgain = await requeue(aylaB, mplStory.id, { modelPageUrl: "https://example.com/new-model" });
   mplPayload = mplAgain.status === 201 ? await mplAgain.json() : null;
   mplCopy = await db.story.findFirst({ where: { id: mplPayload.story.id } });
   check("the model page url is updated after requeue", mplCopy?.modelPageUrl === "https://example.com/new-model", mplCopy?.modelPageUrl || "");
@@ -682,6 +703,10 @@ async function main() {
   mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "https://example.com/model/" + "a".repeat(2000) });
   mplPayload = mplUp.status === 400 ? await mplUp.json() : null;
   check("the model page url is rejected for being too long", mplUp.status === 400 && mplPayload.error === "The model page link is very long.", `status ${mplUp.status}, error: ${mplPayload.error}`);
+
+  mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "javascript:alert(1)" });
+  mplPayload = mplUp.status === 400 ? await mplUp.json() : null;
+  check("the model page url is rejected when attempting to run JavaScript", mplUp.status === 400 && mplPayload.error === "The model page link must use https.", `status ${mplUp.status}, error: ${mplPayload.error}`);
 
 
   console.info(

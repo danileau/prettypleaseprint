@@ -98,8 +98,7 @@ export const WishSchema = z.object({
       message: "The model page link must not include a username or password.",
     })
     .or(z.literal(""))
-    .optional()
-    .default(""),
+    .or(z.null()),
   // Optional free-text print settings (FRR-103 option A). Shown to the owner so
   // slicer specifics live on the ticket rather than in a chat thread.
   printSettings: z

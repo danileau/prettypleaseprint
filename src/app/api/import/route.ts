@@ -38,7 +38,7 @@ export const POST = withActor(async (request, actor) => {
     tip: body.tip,
     note: body.note ?? "",
     printSettings: body.printSettings ?? "",
-    modelPageUrl: body.modelPageUrl ?? "",
+    modelPageUrl: body.modelPageUrl,
   });
 
   if (!(await acquireSlot())) return fail(503, BUSY_COPY);
