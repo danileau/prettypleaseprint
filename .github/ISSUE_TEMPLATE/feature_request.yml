@@ -1,6 +1,6 @@
 name: Idea
 description: Suggest something the app should do
-labels: [idea]
+labels: [enhancement]
 body:
   - type: markdown
     attributes:

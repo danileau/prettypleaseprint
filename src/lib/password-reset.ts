@@ -4,6 +4,7 @@
 // for the same reasons and carries none either.
 import { db } from "@/lib/db";
 import { appUrl } from "@/lib/invites";
+import { authMethods } from "@/lib/auth-methods";
 import {
   RESET_TTL_MINUTES,
   newResetToken,
@@ -29,6 +30,9 @@ export { RESET_TTL_MINUTES };
  * between this and the sign-in link it replaces.
  */
 export async function issuePasswordSetupUrl(userId: string): Promise<string> {
+  // The belt to the guard in each caller: with passwords off, no link to set
+  // one is ever minted.
+  if (!authMethods().local) throw new Error("Passwords are off (AUTH_METHODS has no local), so there is none to set.");
   const token = newResetToken();
 
   await db.verification.create({

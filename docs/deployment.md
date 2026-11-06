@@ -133,7 +133,7 @@ Verify by hand if you want to see it work:
 ./bin/cosign verify \
   --certificate-identity-regexp '^https://github\.com/danileau/(prettypleaseprint|ppp)/\.github/workflows/release-images\.yml@refs/(heads/main|tags/v[0-9][0-9A-Za-z.\-]*)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/danileau/ppp-app:v0.3.0
+  ghcr.io/danileau/ppp-app:v0.4.0
 ```
 
 Two things that alternation is carrying, both found by verifying a real
@@ -483,6 +483,354 @@ root. It is only removal that does.
 
 Take the snapshot first, and do this last. Nothing else in the migration is
 irreversible; this is.
+
+### Setting up mail
+
+Optional — see [Mail is optional](authentication.md#mail-is-optional--genuinely)
+for what the app does without it. With it, invitations and password resets are
+emailed rather than handed over, and people get their notifications in their
+inbox as well as in the app unless they switch that off.
+
+Put the SMTP account in `.env.docker`:
+
+```sh
+MAIL_FROM="Pretty Please Print <print@yourdomain.example>"
+SMTP_URL="smtps://user:pass@smtp.yourprovider.example:465"
+```
+
+- **`smtps://…:465`** connects over TLS from the first byte. **`smtp://…:587`**
+  connects in the clear and upgrades with STARTTLS when the server offers it,
+  which every real submission server does. Use whichever your provider names.
+- **URL-encode the username and the password.** They sit inside a URL, so an
+  `@` in a username is `%40`, and `#`, `/`, `:`, `?` and `%` in a password
+  must be encoded too. An unencoded `@` is the usual reason a correct password
+  is "rejected" — the host name is being read out of the middle of it.
+- **`MAIL_FROM` has to be an address that account may send as.** Most providers
+  refuse or rewrite anything else, and a domain you do not control will fail
+  SPF at the recipient and land in spam.
+- **Gmail, Microsoft 365 and similar need an app password**, not the account
+  password, and usually two-step verification to create one.
+- Remove the `mailpit` address the example file ships with; it only exists
+  inside the local test stack.
+
+Restart the app, sign in as the owner, open **Mail**, and press **Send me a
+test message**. It goes to the owner's own address and nowhere else, and the
+page reports what the server said — `Invalid login`, a refused connection, a
+timeout — rather than leaving you to find it in the logs. It never shows the
+connection string. If the page says it was sent and nothing arrives, look in
+spam before looking at the settings: that is a reputation problem
+(`MAIL_FROM`, SPF, DKIM), not a connection one.
+
+The same page shows each message the app sends, with stand-in data, so you can
+read what goes out under your name before anybody receives it. With
+`AUTH_METHODS` leaving `local` out there are no passwords, so no reset is sent
+and none is shown.
+
+Mail is English, as the app is. Once another language ships, each person's
+mail follows their own, and an invitation — to somebody who has not chosen
+yet — the instance's default
+([Translation](i18n.md#e-mail-is-written-in-the-recipients-language)).
+
+Two things that are not failures:
+
+- **Somebody is not getting notification emails.** They may have switched them
+  off on their profile, or their access may have been revoked — a suspended
+  account is sent nothing.
+- **A notification email failed and nothing looked wrong.** By design: it is a
+  copy of something already in the Activity panel, so a failed send is logged
+  (`[mail] a notification could not be emailed`) and the action carries on.
+
+### Single sign-on
+
+Off by default. Switched on, people sign in through an OpenID Connect provider
+you already run or trust — Authelia, Authentik, Keycloak, VoidAuth, or any
+other that speaks the standard — instead of, or beside, the username and
+password. [How authentication works](authentication.md#single-sign-on) has what
+it changes and why; this is how to turn it on and what has to be true first.
+
+Nothing in the code is provider-specific. The app reads the provider's
+discovery document and speaks the authorization-code flow with PKCE, through
+Better Auth's `generic-oauth` plugin. There is no migration and no extra image.
+
+**Read [what has to be true at the provider](#what-has-to-be-true-at-the-provider)
+and [going `oidc`-only](#going-oidc-only) before the recipe.** Most ways this goes
+wrong are a provider that says an address is verified when nobody checked it,
+or a printer owner who took passwords away before connecting the provider.
+
+#### What to register at the provider
+
+One **confidential client** — a client with a secret:
+
+| | |
+| --- | --- |
+| Redirect URI | `<APP_URL>/api/auth/callback/oidc`, exactly — for example `https://print.example/api/auth/callback/oidc`. It is the only one. The app builds it from `BETTER_AUTH_URL`, which `docker-compose.prod.yml` sets from `APP_URL`, so it has to be the address the browser uses, scheme and port included. |
+| Grant | authorization code, with PKCE (`S256`). No implicit flow; no refresh tokens are used, because none are kept. |
+| Client authentication at the token endpoint | `client_secret_post` — the client id and secret go in the body of the token request. A provider that accepts only `client_secret_basic` refuses the exchange, and the sign-in ends on "That sign-in attempt did not go through." |
+| Scopes | `openid email profile`. Fixed; the app asks for nothing more and has no setting to. |
+| ID token signing | a key the provider publishes at its `jwks_uri` (RS256, ES256 and the like). An ID token signed with the client secret cannot be checked against published keys, and every sign-in then fails as unverifiable. |
+
+The provider has to be reachable **from the app container** — discovery, token,
+keys and userinfo are server-to-server calls — and from people's browsers,
+which are sent to its authorization endpoint.
+
+#### What the app needs from the ID token
+
+| Claim | What the app does with it | When it is missing or wrong |
+| --- | --- | --- |
+| signature, `aud`, `exp`, `nonce` | Better Auth checks them against the published keys, this client id, the clock, and the nonce of the request that started the flow. | Nobody is signed in: "Your sign-on provider's answer could not be verified". |
+| `iss` | must be `OIDC_ISSUER` — checked by Better Auth against the discovery document's `issuer`, and by this app against the setting itself. | Same. |
+| `sub` | with the issuer, *is* the identity: links are filed under `<issuer>\|<sub>`. | Same. |
+| `email` | read on **every** sign-in, from the ID token — or, only when the ID token carries no address at all, from userinfo, whose `sub` must then be the token's. | "Your sign-on provider did not share an email address". With userinfo answering for another subject: "could not be verified". |
+| `email_verified` | must be the boolean `true` to open a new account, to link an existing member, and to connect the printer owner. Not asked again once an identity is linked. | "Your sign-on provider has not confirmed your email address". The string `"true"` counts as missing. If the ID token carries `email`, it must carry `email_verified` too: userinfo is asked only when the token has no address. |
+| `auth_time` and `iat` | date the session: it counts as having started `iat − auth_time` before now. Required for confirming it is you and for connecting the owner, where `auth_time` must be no more than **120 seconds** before `iat`. `iat` itself must be within **ten minutes** of this server's clock. | Signing in still works, but the session never counts as recent, so every action behind "confirm it is you" asks again — and confirming through the provider, and connecting the owner, are refused. |
+| `name`, else `preferred_username` | names a **new** account. | The name on the invitation, else the part of the address before `@`. |
+| `picture`, `role`, `groups`, anything else | ignored. | — |
+
+**`prompt` and `max_age`.** An ordinary sign-in sends `prompt` only if
+`OIDC_PROMPT` is set, and then exactly that, and no `max_age`: extra
+authorization parameters in the request — a hand-made `prompt=none`, say — are
+dropped by the server, so `OIDC_PROMPT=login` cannot be talked out of. Confirming it is you on `/reauth`, and
+the owner connecting the provider on `/me`, always send `prompt=login` and
+`max_age=0` — set by the server, whatever `OIDC_PROMPT` says and whatever the
+page asked for — and the answer counts only with an `auth_time` from just now.
+**So the provider has to honour a request to log somebody in again, and report
+when it did.** A provider that answers from the session it already holds
+reports an old `auth_time` and is refused; one that sends no `auth_time` cannot
+confirm anything. The owner's *Connect* button is the quickest test of both.
+
+#### What has to be true at the provider
+
+These are the provider's half of the security of this app. The app checks
+everything it can check; it cannot check these.
+
+- **An address it calls verified really is.** `email_verified: true` stands in
+  for the invitation link: it is what lets an invited person in with nothing
+  to follow, and what lets a member's provider identity into the account they
+  already have. If people can change their own address in a self-service
+  profile and the provider still reports it verified — or reports every
+  address verified, as some do out of the box — then anyone with an account
+  there can claim an invited address, or a member's, and be let in as them.
+  Check two things for your provider: whether users can edit their own
+  address, and what `email_verified` says for an address nobody confirmed.
+- **Each address belongs to one person there.** Two identities with the same
+  verified address both open the account that has it.
+- **Subjects are stable.** `sub` is the identity. A provider that re-issues
+  them makes everyone a stranger.
+- **Its clock is right.** NTP is enough; ten minutes out and nothing it says
+  about when somebody signed in is believed.
+- **It honours `prompt=login` / `max_age=0` and reports `auth_time`** — above.
+- **You trust it as much as the app.** Once the printer owner connects it,
+  whoever controls the owner's identity there can sign in as the owner.
+
+#### Notes for common providers
+
+Limited to what this app needs. Menus move between versions, so these name the
+requirement rather than the click path; your provider's documentation has the
+latter.
+
+- **Authelia.** A client entry under `identity_providers.oidc.clients`, with
+  the redirect URI in `redirect_uris`, `scopes` of `openid`, `email` and
+  `profile`, and `token_endpoint_auth_method: client_secret_post` — Authelia's
+  default for a confidential client is `client_secret_basic`, which this app
+  does not send. Addresses come from the users file or the directory behind
+  it; confirm that is not something users edit themselves. The issuer is
+  Authelia's own URL.
+- **Authentik.** An OAuth2/OpenID provider and an application that uses it,
+  confidential, with the redirect URI registered and the `openid`, `email` and
+  `profile` scope mappings selected. Choose a signing key: without one the ID
+  token is signed with the client secret, which cannot be checked against
+  published keys. Check what the `email` scope mapping returns for
+  `email_verified`, and whether your user-settings flow lets people change
+  their own address — if it does, report as verified only what you have
+  verified. The issuer is the provider's own URL, the one whose
+  `/.well-known/openid-configuration` serves this application.
+- **Keycloak.** A client in your realm with client authentication on and the
+  standard flow enabled, the redirect URI as its only valid redirect URI. The
+  issuer is `https://<host>/realms/<realm>`. Keycloak keeps a per-user "email
+  verified" flag and reports it as `email_verified`; make sure a user who
+  changes their own address cannot keep it set, and that it is set only for
+  addresses you trust.
+- **VoidAuth, or any other.** Everything in the three subsections above, in
+  that provider's terms: a confidential client with `client_secret_post`, the
+  one redirect URI, the three scopes, ID tokens signed with a published key and
+  carrying `sub`, `email`, a boolean `email_verified`, `iat` and `auth_time`,
+  and `prompt=login` honoured.
+
+#### Turning it on
+
+1. Register the client at the provider, as above.
+2. Add to `.env.docker`, keeping `local` for now:
+
+   ```sh
+   AUTH_METHODS="local,oidc"
+   OIDC_ISSUER="https://id.example/realms/office" # where /.well-known/openid-configuration lives
+   OIDC_CLIENT_ID="ppp"
+   OIDC_CLIENT_SECRET="…"
+   OIDC_NAME="the office login"                   # the button reads "Sign in with the office login"
+   ```
+
+3. Restart the app. The sign-in page gains the button, above the passkey and
+   the password form.
+4. **Connect the printer owner.** Signed in with your password, open your own
+   page (`/me`) and press *Connect …*. You are asked to confirm it is you, then
+   sent to the provider, which has to ask you to sign in again — as
+   `ADMIN_EMAIL`, with that address verified. Back on `/me` it says
+   *Connected*. If this works, the provider honours `prompt=login`, reports
+   `auth_time` and verifies your address; if it does not, see
+   [troubleshooting](#when-a-sign-in-through-the-provider-fails) before going
+   further.
+5. Sign out and sign back in with the button, to see the owner's account open.
+6. Invite people as before. An invited person signs in through the provider
+   with the invited address and has an account, with no link to follow and
+   nothing to choose; the invitation link still works too, while `local` is
+   on. Somebody who already has an account here is linked to their provider
+   identity at their first sign-in through it, if the provider has verified
+   the same address. Both are on the audit trail.
+
+#### Settings
+
+| Variable | Default | |
+| --- | --- | --- |
+| `AUTH_METHODS` | `local` | Which ways in are on: `local` (username and password, and passkeys), `oidc`, or both as `local,oidc` — comma-separated, any order, any case. Unset, empty (`AUTH_METHODS=`) or blank means `local`, for the app and the seed alike. A name that is not a method, or a list with none in it, is an error naming the variable. |
+| `OIDC_ISSUER` | — | Required with `oidc`. The provider's issuer URL; the discovery document is read from `<OIDC_ISSUER>/.well-known/openid-configuration`, trailing slashes dropped. Must be `https://` — plain `http://` is allowed only for `localhost`, `127.0.0.1` and `[::1]`, or with `OIDC_ALLOW_INSECURE_ISSUER`. Must be the `issuer` the document names. Part of every identity's key: see [changing it](#changing-oidc_issuer). |
+| `OIDC_CLIENT_ID` | — | Required with `oidc`. Also the audience every ID token must name. |
+| `OIDC_CLIENT_SECRET` | — | Required with `oidc`. |
+| `OIDC_NAME` | unset | What the screens call the provider: "Sign in with *the office login*", and *Continue with*, *Confirm with*, *Connect* on the invitation page, `/reauth` and `/me`. Unset, they say "single sign-on". |
+| `OIDC_SIGNUP` | `invite` | `invite`: a new account still needs a pending invitation for the verified address. `open`: anyone the provider signs in with a verified address gets a `client` account, invited or not — the invite-only rule is off for this door. |
+| `OIDC_PROMPT` | unset | `login`, `select_account` or `consent`, sent as `prompt` on an ordinary sign-in. `login` makes the provider ask for credentials every time, which is what a shared machine wants. Every ordinary sign-in sends exactly this — a request cannot replace it or add to it. Whether the provider then really asks is up to the provider; what decides whether a sign-in counts as recent is `auth_time`. Re-authentication and connecting always send `login` with `max_age=0`, whatever this says. |
+| `OIDC_ALLOW_INSECURE_ISSUER` | unset | `true` lets the issuer be plain `http://`. It exists for the test stand-in, which has no certificate. **Never set it on a deployed host.** |
+
+Every `OIDC_*` variable is ignored unless `AUTH_METHODS` includes `oidc`.
+
+**A wrong value does not stop the container.** A missing client secret, an
+issuer over plain HTTP, `OIDC_SIGNUP="opne"`: the app refuses its
+authentication setup, so sign-in and every signed-in page answer 500 with a
+log line naming the variable. `/api/health` only checks the database and keeps
+answering 200, so the deploy wizard will not roll this back for you — sign in
+once after changing any of these.
+
+#### Going `oidc`-only
+
+`AUTH_METHODS="oidc"` takes passwords and passkeys away from everybody,
+including the printer owner. The owner is **never linked by address** — a
+provider asserting `ADMIN_EMAIL` opens nothing — so the only way the owner gets
+in afterwards is an identity they connected on `/me`. The safe order:
+
+1. Run `local,oidc`.
+2. Connect the provider on `/me` as the owner (step 4 above), and sign in
+   through it once.
+3. Set `AUTH_METHODS="oidc"` and restart.
+
+If you get the order wrong, three things say so:
+
+- **The app's log, at start:** ``[auth] AUTH_METHODS has no `local`, and the
+  printer owner has not connected single sign-on. Nobody can sign in as the
+  owner.``
+- **The `migrate` container's log**, where the set-password link would be:
+  `!! … has not connected the provider. Nobody can sign in as the printer
+  owner.` — and no link, because there is no password to set.
+- **The guest list** (`/admin/invites`), for an owner still signed in: a
+  warning that passwords are off and the provider is not connected.
+
+All three count only a link to the issuer configured *now*.
+
+With `oidc` alone: the password, sign-up, reset and passkey endpoints answer
+404, and the server actions that would set a password refuse before writing;
+the sign-in and invitation pages show only the provider's button; `/set-password`
+says there are no passwords here; the guest list has no reset control;
+`/welcome` and the passkey nudge, which exist to offer a passkey, are skipped;
+and `/me` offers no *Disconnect*, because it would be the owner's only way in.
+Passwords and passkeys already registered are not deleted, only unusable:
+switching back to `local,oidc` brings them back.
+
+**Getting back in** when nobody can sign in as the owner: set
+`AUTH_METHODS="local,oidc"` and redeploy. The owner signs in with their
+password if they have one; if they never had one, the `migrate` container
+prints a set-password link again, as on a first run. Then connect on `/me`.
+
+**A first deployment cannot start `oidc`-only.** There is no owner password and
+nothing connected, so the seed prints the warning instead of a link. Start with
+`local,oidc`.
+
+#### Changing `OIDC_ISSUER`
+
+Identities are filed under the issuer and the subject together, the issuer
+spelt one way: scheme and host in lower case, a default port dropped, trailing
+slashes dropped. So respelling the same issuer changes nothing, and anything
+else — another host, another path, another realm — is a new provider, even for
+the same people:
+
+- **Members** are linked again, by verified address, at their first sign-in
+  through the new provider (`auth.sso_linked`, `how: "automatic"`). Somebody
+  with no account here needs an invitation, as usual.
+- **The printer owner is not.** They are not connected to the new provider
+  until they press *Connect …* on `/me` again — and `/me`, `/reauth`, the guest
+  list, the start-up warning and the seed all count only links to the issuer
+  configured now.
+- **Nothing is deleted.** Old links stay in the database and open nothing.
+
+With `oidc` alone that means the owner is locked out the moment the issuer
+changes. Switch to `local,oidc` first, change the issuer, reconnect on `/me`,
+then switch back.
+
+#### When the provider is down, or its document is wrong
+
+**Start-up.** Better Auth reads the discovery document once, when the app
+starts, to set the provider up: its endpoints, where its keys are, and its
+issuer. If that fails the log says `Discovery fetch failed for "oidc"` and/or
+`Provider "oidc": discovery left no usable authorization endpoint or token
+exchange. Provider skipped.` The app starts anyway, the button is still drawn,
+and `/api/health` keeps answering 200.
+
+**Every sign-in.** Each time somebody presses the button — on the sign-in page,
+the invitation page or `/reauth` — or the owner presses *Connect*, the app
+fetches the document again (not cached, ten-second timeout) and checks that its
+`issuer` is `OIDC_ISSUER` (spelt as above), that it names an authorization
+endpoint, a token endpoint and a `jwks_uri`, and, with an `https://` issuer,
+that every endpoint in it is `https://` too. If the fetch fails or a check does, the
+flow does not start: the button says "Single sign-on could not be started", the
+*Connect* button comes back to `/me` saying the provider could not be reached,
+and the log says `single sign-on refused to start:` followed by what was wrong.
+
+**It recovers by itself.** When the start-up read failed, Better Auth tries
+again on the next sign-in for that provider (ten-second timeout) and keeps the
+result once it works. There is no restart to do, but the first sign-ins after
+an outage wait on that retry; if both run on one host, make the app
+`depends_on` the provider.
+
+**What does need a restart:** the provider moving its endpoints. The ones in
+use are those read when the provider was set up. New signing keys are fetched
+from `jwks_uri` as tokens need them, so a key rotation does not.
+
+While the provider is down nobody signs in through it — in `oidc`-only mode,
+nobody signs in at all. Sessions already open are this app's own and carry on
+until they idle out.
+
+#### When a sign-in through the provider fails
+
+The sign-in page explains a failure in one of a few sentences, chosen from the
+`?error=` code the flow came back with. The log has the detail.
+
+| What the person sees | Why | What to do |
+| --- | --- | --- |
+| "That address has not been invited…" | `invite_required`. With `OIDC_SIGNUP=invite`: no pending invitation for the address the provider reported (the trail has `invite.rejected`, `reason: "no_invitation"`, `via: "oidc"`). **Or it is the printer owner's address and the owner has not connected** (`auth.sso_link_refused`) — the answer is the same on purpose. | Invite that exact address. For the owner: sign in with the password and connect on `/me`. |
+| "Your sign-on provider has not confirmed your email address…" | `email_verified` was not the boolean `true` — for a new account, or for a member whose account is not linked yet. The same sentence whether or not anybody here has the address. Trail: `invite.rejected`, `reason: "unverified_email"` for a new account. | Verify the address at the provider, or fix what the provider sends (a string, or nothing). If the ID token carries `email`, it must carry `email_verified` as well. |
+| "Your sign-on provider did not share an email address…" | No `email` in the ID token, and none from userinfo. | Grant the client the `email` scope, or the claim mapping behind it. |
+| "Your sign-on provider's answer could not be verified…" | `unable_to_get_user_info`: the ID token failed verification (signature, audience, expiry, nonce, issuer), there was no ID token, its `iss` is not `OIDC_ISSUER`, it names no `sub`, or userinfo answered for another subject. | The log says which: `Provider "oidc": id_token failed verification against the discovery JWKS or expected nonce`, or `[auth] single sign-on refused:` and the reason. Check `OIDC_CLIENT_ID` against the token's audience, the signing key, the issuer spelling, and the provider's clock. |
+| "That account has been suspended…" | The person's access was revoked here. | Restore it from the guest list, if that was a mistake. |
+| "That sign-in attempt did not go through." | Anything else: the token exchange was refused (wrong secret, or a provider that wants `client_secret_basic`), the person cancelled at the provider, the round trip took longer than the ten minutes a flow is kept, a callback replayed or opened in another browser. | The log has Better Auth's reason. A refused exchange is the usual one on a new setup. |
+| The provider's own error page, about the redirect URI | The redirect URI the app sent is not registered. | Register `<APP_URL>/api/auth/callback/oidc`, matching `APP_URL` exactly. |
+| The button: "Single sign-on could not be started…" | The discovery document could not be read, or failed the checks above; or the provider was skipped at start and the retry failed. | `single sign-on refused to start:` in the log says why. |
+| The button: "Too many attempts…" | Better Auth's limit on starting a sign-in: three every ten seconds from one address. | Wait a moment. |
+| `/reauth`: "Signing in again with … did not confirm it is you…" | The provider answered from the session it held instead of asking again, sent no `auth_time`, or an `iat` more than ten minutes off this server's clock; or the sign-in failed for any reason in this table. | Make the provider honour `prompt=login` / `max_age=0` and report `auth_time`. The log says `[auth] single sign-on refused: a re-authentication came back…`. A passkey or the password, where `local` is on, confirms it too. |
+| `/me`: "… could not be connected. Sign in there as …" | Connecting failed at the provider's end: a different or unverified address, an answer that was not a fresh login, an identity already linked to a member's account, or a browser that came back signed in as somebody else. | Sign in at the provider as `ADMIN_EMAIL`, verified, when it asks. |
+| `/me`: "… could not be reached to connect it just now." | The flow did not start: the discovery document failed its checks, or the sign-in aged past five minutes between the confirmation and the button. | Read the log, then try again. |
+| Every page answers 500 | A setting is missing or malformed. | The log names the variable. |
+
+[How authentication works](authentication.md#single-sign-on) has the reasoning,
+and what the provider is and is not trusted to say;
+[the security notes](security-audit.md#single-sign-on) what was checked, and
+what is accepted.
 
 ### Importing from a link
 

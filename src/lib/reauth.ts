@@ -26,6 +26,13 @@ import { FRESH_AUTH_SECONDS } from "@/lib/auth-rules";
  * means a normal sign-in is fresh for its first five minutes, which is right:
  * somebody who just typed their password should not be asked for it twice.
  *
+ * A session opened through the single sign-on provider is dated from when the
+ * person last authenticated *there* (`auth_time`), not from when the row was
+ * written — see `ssoAuthenticatedAt` in src/lib/oidc-flow.ts — so a provider
+ * that waves a held session through does not mint freshness. Confirming
+ * through the provider asks it for a fresh login and refuses an answer that
+ * is not one.
+ *
  * The cost of doing it this way is one superseded session row per re-auth.
  * That was the deciding trade when the window was thirty days; at twenty idle
  * minutes the orphan is gone before anyone would notice it, which is what

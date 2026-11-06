@@ -38,6 +38,8 @@
  *   empty     an empty string — a translator's slip, never an English change
  *   arguments the {placeholders} differ from English's — `{name}` renamed or
  *             dropped is a sentence that silently loses its subject
+ *   tags      the rich-text <tags> differ from English's — a dropped <link>
+ *             is an email without its link
  *   quote     an ASCII apostrophe right before `{`, `}` or `#`, which ICU reads
  *             as the start of a quoted literal: `l'{x}` renders "l{x}". The
  *             catalogues use the typographic ’ for exactly this reason.
@@ -56,10 +58,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { CLIENT_GROUPS } from "../src/i18n/client-groups";
+import { partsOf } from "../src/i18n/message-parts";
 
 const SENT: readonly string[] = Object.values(CLIENT_GROUPS).flat();
 
-const DIR = "messages";
+// The catalogues; another directory only for scripts/tests/check-messages.test.sh.
+const DIR = process.env.MESSAGES_DIR ?? "messages";
 const SOURCE = "en";
 
 type Leaves = Map<string, string>;
@@ -94,10 +98,7 @@ function flatten(
   return { leaves, groups };
 }
 
-/** The names of an ICU message's arguments: `{name}`, `{count, plural, …}`. */
-function argumentsOf(message: string): string[] {
-  return [...new Set([...message.matchAll(/\{\s*([A-Za-z_]\w*)\s*[,}]/g)].map((m) => m[1]!))].sort();
-}
+const argumentsOf = (message: string) => partsOf(message).args;
 
 function load(file: string, problems: string[]) {
   try {
@@ -165,10 +166,11 @@ for (const file of translations) {
   const shape = section("shape — English was restructured; shown in English meanwhile", "warning");
   const empty = section("empty — would blank the text", "error");
   const args = section("arguments — placeholders differ from English", "error");
+  const tagged = section("tags — rich-text tags differ from English", "error");
   const quote = section("quote — ASCII apostrophe before { } or #, use ’", "error");
   const malformed = section("malformed", "error");
   malformed.list.push(...problems);
-  const sections = [missing, stale, shape, malformed, empty, args, quote];
+  const sections = [missing, stale, shape, malformed, empty, args, tagged, quote];
 
   for (const [key, english] of source.leaves) {
     if (groups.has(key)) shape.list.push(`${key}  (a group here, a string in English)`);
@@ -179,6 +181,9 @@ for (const file of translations) {
       const want = argumentsOf(english).join(", ");
       const got = argumentsOf(translated).join(", ");
       if (want !== got) args.list.push(`${key}  (English has {${want}}, ${lang} has {${got}})`);
+      const wantTags = partsOf(english).tags.join(", ");
+      const gotTags = partsOf(translated).tags.join(", ");
+      if (wantTags !== gotTags) tagged.list.push(`${key}  (English has <${wantTags}>, ${lang} has <${gotTags}>)`);
       if (QUOTE.test(translated)) quote.list.push(key);
     }
   }

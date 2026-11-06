@@ -23,7 +23,8 @@
 #      raises the stack under its own project name on a data directory outside
 #      the repository.
 #   4. The nine integration suites in CI's order, all of them even after one
-#      fails, then the two image pins CI keeps.
+#      fails, then the two image pins CI keeps, and that the app's bundle has
+#      every catalogue in messages/.
 #   5. Takes the stack down, removes its data, puts the three env files back
 #      exactly as they were and gives the set-aside stack its names back,
 #      starting again what was running — on success, on failure and on Ctrl-C.
@@ -86,7 +87,7 @@ while [ $# -gt 0 ]; do
     --only) [ $# -ge 2 ] || die "--only needs a quoted list of suites"; ONLY="$2"; ONLY_GIVEN=1; shift 2 ;;
     --restore) MODE="restore"; shift ;;
     --preflight) MODE="preflight"; shift ;;
-    -h|--help) sed -n '2,68p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,69p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown arg: $1" ;;
   esac
 done
@@ -108,19 +109,20 @@ COMPOSE_FILES_NEEDED="docker-compose.prod.yml docker-compose.build.yml docker-co
 
 # The names docker-compose.prod.yml pins with container_name. They are why
 # only one stack can exist on a machine, whatever its project is called.
-# and docker-compose.test.yml adds the Printables stand-in.
-STACK_NAMES="ppp-app ppp-db ppp-migrate ppp-mailpit ppp-printables-stub"
+# and docker-compose.test.yml adds the two stand-ins.
+STACK_NAMES="ppp-app ppp-db ppp-migrate ppp-mailpit ppp-printables-stub ppp-oidc-stub"
 
 # What docker-compose.test.yml publishes on the host. APP_PORT,
-# MAILPIT_UI_PORT and PRINTABLES_STUB_PORT could move three of them, but this
-# script unsets them all, so the five are fixed. PPP_FULLTEST_PORTS exists for this script's own tests, which
-# have to run on machines where 3000 is taken.
-PORTS="${PPP_FULLTEST_PORTS:-3000 5432 1025 8025 4010}"
+# MAILPIT_UI_PORT, PRINTABLES_STUB_PORT and OIDC_STUB_PORT could move four of
+# them, but this script unsets them all, so the six are fixed.
+# PPP_FULLTEST_PORTS exists for this script's own tests, which have to run on
+# machines where 3000 is taken.
+PORTS="${PPP_FULLTEST_PORTS:-3000 5432 1025 8025 4010 4020}"
 
 # In CI's order (the `verify` job of .github/workflows/ci.yml). A test pins
 # this list to that file, because the hand-rolled predecessor of this script
 # had quietly lost verify:catalog.
-SUITES="verify:auth verify:upload verify:import verify:queue verify:frr verify:benefits verify:catalog verify:api verify:passkey probe:security"
+SUITES="verify:auth verify:sso verify:upload verify:import verify:queue verify:frr verify:benefits verify:catalog verify:api verify:passkey probe:security"
 
 ENV_FILES=".env .env.backup .env.docker"
 
@@ -386,6 +388,8 @@ unset DB_PASSWORD APP_URL APP_PORT BETTER_AUTH_SECRET BETTER_AUTH_URL \
   ADMIN_EMAIL ADMIN_NAME MAIL_FROM SMTP_URL DATABASE_URL MODELS_ROOT PPP_TAG \
   PPP_REGISTRY PPP_ENV_FILE MAILPIT_UI_PORT TRUST_PROXY_HEADERS MAILPIT_URL \
   PRINTABLES_STUB_PORT PRINTABLES_STUB_URL IMPORT_SOURCES IMPORT_PRINTABLES_BASE \
+  OIDC_STUB_PORT OIDC_STUB_URL AUTH_METHODS OIDC_ISSUER OIDC_CLIENT_ID \
+  OIDC_CLIENT_SECRET OIDC_NAME OIDC_SIGNUP OIDC_PROMPT OIDC_ALLOW_INSECURE_ISSUER \
   RESEND_API_KEY PASSKEY_RP_ID PASSKEY_RP_NAME COMPOSE_PROFILES COMPOSE_FILE \
   COMPOSE_PROJECT_NAME DATA_ROOT HIBP_DISABLED
 
@@ -583,6 +587,23 @@ no_npm_in_images() {
   done
   echo "neither image ships npm"
 }
+# Mail is written in its recipient's language by importing messages/<code>.json
+# at run time (src/i18n/catalogue.ts), which the bundler can only honour for
+# the files it saw at build time. This holds the built app to the checkout:
+# the server bundle's map of catalogues names every messages/*.json.
+messages_bundled() {
+  local want got
+  want="$(cd messages && ls ./*.json | sort -u)"
+  got="$(docker run --rm --entrypoint sh "$(image_prefix)/ppp-app:$LOCAL_TAG" \
+    -c 'grep -rhoE "\"\./[A-Za-z0-9_-]+\.json\":" .next/server' | sed 's/^"//; s/":$//' | sort -u)"
+  if [ "$want" != "$got" ]; then
+    echo "the app's catalogue map does not match messages/:"
+    echo "  messages/: $(echo $want)"
+    echo "  in image:  $(echo $got)"
+    return 1
+  fi
+  echo "every catalogue is in the bundle: $(echo $got)"
+}
 migrator_runs() {
   docker run --rm --entrypoint sh "$(image_prefix)/ppp-migrate:$LOCAL_TAG" \
     -c './node_modules/.bin/prisma --version >/dev/null && ./node_modules/.bin/tsx --version >/dev/null'
@@ -600,6 +621,7 @@ if [ "$healthy" -eq 1 ]; then
       step "${suite/:/-}" npm run -s "$suite" || true
     done
     step no-npm-in-images no_npm_in_images || true
+    step messages-bundled messages_bundled || true
     step migrator-runs migrator_runs || true
   fi
 fi

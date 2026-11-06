@@ -23,6 +23,7 @@
 import { PrismaClient } from "@prisma/client";
 
 import { RESET_TTL_MINUTES, newResetToken, resetIdentifier } from "./reset-token";
+import { seedAuthMethods, seedNormalIssuer } from "./auth-env";
 
 const db = new PrismaClient();
 
@@ -92,6 +93,46 @@ async function main() {
     });
   }
   console.info(`Benefits ready: ${DEFAULT_BENEFITS.length} default tip(s) present.`);
+
+  // Where local sign-in is off there is no password to set, and the link below
+  // would lead to a page that says so. The owner gets in through the provider —
+  // but only once they have connected it from /me: the owner is never linked
+  // implicitly, so a provider asserting this address does not open the account
+  // (`linkRule` in src/lib/auth.ts). Without that connection there is no way
+  // in as the owner at all, and this says so.
+  //
+  // Read through ./auth-env.ts rather than src/lib/auth-methods.ts: the
+  // migrator image carries `prisma/` and nothing from `src/`. Parsed exactly
+  // as the app parses it — unset or blank is `local` — and `verify:sso` holds
+  // the two against each other. A name that is not a method, the app refuses
+  // by name when it starts.
+  if (!seedAuthMethods(process.env.AUTH_METHODS).local) {
+    // Linked through the provider configured now — `issuer|sub`, the issuer
+    // spelt as the app spells it (./auth-env.ts). A link from before
+    // OIDC_ISSUER changed opens nothing.
+    const issuer = seedNormalIssuer((process.env.OIDC_ISSUER ?? "").trim());
+    const connected = await db.account.findFirst({
+      where: { userId: admin.id, providerId: "oidc", accountId: { startsWith: `${issuer}|` } },
+      select: { id: true },
+    });
+    if (connected) {
+      console.info(
+        `\nSign-in here is single sign-on only (AUTH_METHODS=${process.env.AUTH_METHODS}).\n` +
+          `Sign in at ${appUrl("/signin")} through your provider as ${admin.email}.\n` +
+          "Then invite the rest of the office from /admin/invites.",
+      );
+    } else {
+      console.error(
+        `\n!! Sign-in here is single sign-on only (AUTH_METHODS=${process.env.AUTH_METHODS}),\n` +
+          `!! and ${admin.email} has not connected the provider. Nobody can sign in as\n` +
+          "!! the printer owner. Set AUTH_METHODS=\"local,oidc\" and run this again:\n" +
+          "!! it then prints a link to set the owner's password. Sign in with it,\n" +
+          "!! connect the provider on /me, and only then take local out.\n" +
+          "!! See docs/deployment.md, Single sign-on.",
+      );
+    }
+    return;
+  }
 
   // A `credential` account with a password is the thing that makes signing in
   // possible. A passkey creates no such row, so somebody who enrolled one and

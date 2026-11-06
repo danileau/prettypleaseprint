@@ -5,11 +5,138 @@ Notable changes. Every entry names a released version; deployments pin
 
 ## Unreleased
 
+### Upgrading from v0.4.0
+
+- **1 database migration runs by itself**, in the `migrate` container:
+  `20261105120000_notify_by_email`. It adds one column with a default and
+  nothing else, and was tested old → new → old on one database with the
+  published image, so the deploy wizard's automatic rollback still lands on a
+  working app.
+- **Mail starts carrying notifications.** Where a host has set up mail
+  (`SMTP_URL` or `RESEND_API_KEY`), everybody now gets a copy of their
+  Activity panel by email, unless they switch it off on their profile. Without a mail transport nothing changes.
+  Open **Mail** as the owner and send yourself a test message after the
+  upgrade.
+- **Nothing to set.** Single sign-on stays off until `AUTH_METHODS` names it;
+  an instance that does not set it signs people in exactly as before. Read
+  [Single sign-on](docs/deployment.md#single-sign-on) before turning it on.
+
+### Added
+
+- **Single sign-on through an OpenID Connect provider** (#56, #96). A
+  deployment can let people sign in with the login they already have —
+  Authelia, Authentik, Keycloak, VoidAuth, any standard provider — instead
+  of, or beside, the username and password. `AUTH_METHODS` chooses: `local`
+  (the default, and unchanged), `oidc`, or `local,oidc`; the provider is
+  `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`, and the redirect
+  URI to register is `<APP_URL>/api/auth/callback/oidc`. A method that is off
+  is off at its endpoints — over HTTP and when called from the app's own
+  server code — not just hidden.
+
+  **Still invite-only, unless a host says otherwise.** The provider replaces
+  the password, not the guest list: invite an address, and that person signs in
+  through the provider with nothing to follow and nothing to choose.
+  `OIDC_SIGNUP="open"` gives an account to anyone the provider signs in.
+
+  A member who already has an account lands in it the first time they sign in
+  this way. Both that and a new account require the provider to say, as the
+  boolean `true`, that it has verified the address. No claim from the provider
+  reaches a role, a name already chosen, or a picture, and none of its tokens
+  are stored.
+
+  **The printer owner is never linked by address.** A provider that asserts
+  the owner's address gets the answer a stranger gets. The owner connects the
+  provider deliberately, from their own page (*Connect …*, after confirming it
+  is them and signing in again at the provider), and can disconnect it there
+  while passwords are on.
+
+  Three things to read before switching it on, in
+  [Single sign-on](docs/deployment.md#single-sign-on): connect the provider on
+  your own page *before* taking `local` out, or nobody can sign in as the
+  owner — the log, the seed and the guest list warn if you have not; single
+  sign-on works only while the provider is up, and recovers by itself when it
+  is back; and with `oidc` alone there is no password to fall back on.
+
+  Confirming it is you before moving access around asks the provider for a
+  fresh login (`prompt=login`, `max_age=0`) and refuses an answer whose
+  `auth_time` is not from just now, and a session opened through the provider
+  counts as recent only if the person really signed in there recently.
+  Identities are filed under the issuer as well as the subject, so pointing
+  the app at a different provider never opens an account for somebody who
+  merely shares a subject there — and the owner reconnects. The provider's
+  discovery document is checked on every sign-in, a bare ID token posted to
+  the app signs nobody in, and Better Auth's own unlinking endpoint is closed.
+  Linking, refused owner links and disconnecting are on the audit trail
+  (`auth.sso_linked`, `auth.sso_link_refused`, `auth.sso_unlinked`).
+
+  `npm run verify:sso` is the twelfth suite, and runs against a stand-in
+  provider that can be told to lie. What two reviews of the feature found, and
+  what is accepted, is in [the security notes](docs/security-audit.md#single-sign-on).
+
+- **Notifications by email, and a Mail page for the owner.** Where a host has
+  set up mail, whatever lands in somebody's Activity panel is also sent to
+  their inbox — a new request, a ticket moving, a flag, a comment, on both the
+  print and the feature-request side — with a button straight to the ticket.
+  Each person can switch it off on their profile; somebody whose access was
+  revoked is sent nothing. The email is a copy, not the record: it is sent
+  without being waited for, and a mail server having a bad afternoon cannot
+  slow down or fail the action that caused it.
+
+  **Mail**, in the owner's menu, answers what could not be answered before
+  without causing a real event. *Is it set up* — which server, sent as whom,
+  never the connection string. *Does it arrive* — **Send me a test message**
+  goes to the owner's own address and reports the server's own answer when it
+  fails. *What are people sent* — every message the app can send, as it is
+  sent and in plain text, with stand-in data.
+
+  Every message is written from the message catalogue. Once more than English
+  ships, each person's mail follows their own language, and an invitation the
+  instance's default; today all of it is English.
+  With passwords off (`AUTH_METHODS=oidc`) no reset is sent or previewed.
+
+  Without a mail transport nothing changes: links are handed over as before
+  and notifications stay in the app.
+  [Setting up mail](docs/deployment.md#setting-up-mail) has the SMTP details,
+  including the one that catches everybody — an `@` in the username has to be
+  `%40`.
+
+### Changed
+
+- **Publishing images is held to `main` and the owner's release tags.** A
+  manual run of `release-images.yml` on any other branch now refuses before
+  building, and the repository's rules let only an admin merge into `main` or
+  create a `v*` tag, with CI's four gates required for every change to `main`
+  ([What GitHub enforces](docs/development.md#what-github-enforces)).
+
+## v0.4.0
+
+2026-11-04.
+
 With thanks to **@Hogun974**, who wrote six of the changes below: the slicer
 helper on Windows and macOS, slicers other than PrusaSlicer, and the theme
 variables every colour now comes from. They also proposed the translation,
 settings-page and first-run work now open as #103 to #106. And to
 **@chrisbirie**, whose request (#91) became importing from a Printables link.
+
+### Upgrading from v0.3.0
+
+- **A security fix you should deploy for.** Next.js goes to 15.5.28 for
+  GHSA-2464-fhr4-w9xw (critical, remote code execution) and the advisories
+  around it; see *Fixed* below.
+- **2 database migrations run by themselves**, in the `migrate` container:
+  `20261006120000_story_source_url`, `20261104120000_user_preferred_locale`.
+  Each adds one nullable column and nothing else. Each was tested old → new →
+  old on one database with the published image, so the deploy wizard's
+  automatic rollback still lands on a working app.
+- **Nothing to set.** Importing from a Printables link stays off until you set
+  `IMPORT_SOURCES="printables"`; read
+  [Importing from a link](docs/deployment.md#importing-from-a-link) first.
+  Nobody sees a change in language: every string is still English, now read
+  from one message file.
+- **People who use *Open in PrusaSlicer*** on Windows can replace the old
+  `.reg` file with `scripts/install-slicer-handler.ps1`, and anyone on another
+  slicer can set `PPP_SLICER_PROFILE`. A helper config that sets neither works
+  exactly as before.
 
 ### Added
 

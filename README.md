@@ -30,6 +30,11 @@ that: there is no multi-tenancy, no billing, and no queue theory.
 - **Invite-only.** There is no public sign-up. A `User` row cannot come into
   existence without a pending invitation, enforced in a single hook that every
   authentication method goes through.
+- **Or sign in with what you already have** — optionally, through an OpenID
+  Connect provider (Authentik, Keycloak, VoidAuth, Authelia…), instead of or
+  beside the password. Still invite-only by default: the provider replaces the
+  password, not the guest list. See
+  [Single sign-on](docs/authentication.md#single-sign-on).
 - **Upload a model** — `.stl` or `.3mf`, validated against its actual bytes
   rather than its filename, measured for its bounding box, stored on disk
   and never in the web root.
@@ -69,6 +74,11 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   left the rail (delivered, done, declined), filterable by status, material and
   when, with **Print again** on every row. It is where you go to re-run an old
   job.
+- **Hear about it by email, if you like** — where the host has set up mail,
+  whatever lands in your Activity panel is also sent to your inbox: a new
+  request, a ticket moving, a comment. Each person can switch it off on their
+  profile. The printer owner has a **Mail** page that sends a test message and
+  shows every email the app sends, as it is sent.
 - **Talk on the ticket** — a conversation thread per request, so "can you do it
   in teal" lives with the model rather than in a chat app.
 - **Owner-managed benefits** — the "what's in it for you" tips are the printer
@@ -182,14 +192,19 @@ with commentary is [`.env.docker.example`](.env.docker.example).
 | `PASSKEY_RP_NAME` | | Shown in the browser's passkey prompt. |
 | `ADMIN_EMAIL` / `ADMIN_NAME` | **yes** | The single admin, created on first start. |
 | `DATA_ROOT` | | Where the database and uploads live on disk. Default `./data`. |
-| `SMTP_URL` | | SMTP transport. **Leave unset and the app still works** — links are shown to the admin to hand over. |
+| `SMTP_URL` | | SMTP transport, e.g. `smtps://user:pass@host:465`. **Leave unset and the app still works** — links are shown to the admin to hand over and notifications stay in the app. Test it from the owner's **Mail** page. |
 | `RESEND_API_KEY` | | Alternative to `SMTP_URL`; takes precedence. |
-| `MAIL_FROM` | | Envelope sender. |
+| `MAIL_FROM` | | The address mail is sent as. Must be one your mail account may use. See [Setting up mail](docs/deployment.md#setting-up-mail). |
 | `TRUST_PROXY_HEADERS` | | Which header carries the client address: `false` (trust nothing, the default), `true` (left-most `X-Forwarded-For`), or `cloudflare` (`CF-Connecting-IP`). See [the reasoning](docs/deployment.md#why-trust_proxy_headers-is-a-separate-switch). |
 | `HIBP_DISABLED` | | `true` disables the breach check. Only for a host with no outbound internet — it fails closed, so without it nobody could register. |
+| `AUTH_METHODS` | | How people sign in: `local` (username/password and passkeys — the default), `oidc`, or `local,oidc`. See [Single sign-on](docs/deployment.md#single-sign-on) before changing it. |
+| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | with `oidc` | The provider, and this app's client there. The redirect URI to register is `<APP_URL>/api/auth/callback/oidc`. |
+| `OIDC_NAME` | | What the button calls it: "Sign in with *the office login*". |
+| `OIDC_SIGNUP` | | `invite` (default — an invitation is still required) or `open` (anyone the provider signs in gets an account). |
+| `OIDC_PROMPT` | | `login` makes the provider ask for credentials every time. For shared machines. |
 | `IMPORT_SOURCES` | | `printables` lets a request start from a Printables link instead of an upload. **Off when unset.** Needs outbound HTTPS, and a misspelt value stops the app. See [Importing from a link](docs/deployment.md#importing-from-a-link). |
 | `SOURCE_URL` | | Where this instance's source lives, shown in the footer and on `/about`. **Change it if you modify the code** — see [Licence](#licence). Defaults to the upstream repository. |
-| `PPP_REGISTRY` / `PPP_TAG` | | Which published image to run. Pin `PPP_TAG` to a release (`v0.3.0`) or a commit SHA; either is also how you roll back. |
+| `PPP_REGISTRY` / `PPP_TAG` | | Which published image to run. Pin `PPP_TAG` to a release (`v0.4.0`) or a commit SHA; either is also how you roll back. |
 | `CF_TUNNEL_TOKEN` | | Connector token for `docker-compose.tunnel.yml`, from Cloudflare Zero Trust. A credential: anything holding it can serve the hostnames routed to that tunnel. See [Deploying behind a Cloudflare Tunnel](docs/deployment.md#deploying-behind-a-cloudflare-tunnel). |
 
 ## Deploying
@@ -354,7 +369,7 @@ The published images are public, so this should not happen — check the tag
 exists before assuming it is an auth problem:
 
 ```bash
-docker manifest inspect ghcr.io/danileau/ppp-app:v0.3.0
+docker manifest inspect ghcr.io/danileau/ppp-app:v0.4.0
 ```
 
 On a **fork** with private packages you do need a credential, and it must be a
@@ -428,7 +443,7 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 | **[Translation](docs/i18n.md)** | how the catalogue works, adding a key, what the browser is sent, and adding a language |
 | **[Security audit](docs/security-audit.md)** | the OWASP Top 10 assessment, findings, and residual risk accepted |
 | **[Security policy](SECURITY.md)** | how to report a vulnerability |
-| **[Contributing](CONTRIBUTING.md)** | the eleven suites are the contract; what a good change looks like |
+| **[Contributing](CONTRIBUTING.md)** | the twelve suites are the contract; what a good change looks like |
 | **[Changelog](CHANGELOG.md)** | what changed in each release |
 
 ## Security
@@ -459,8 +474,8 @@ something, see [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
-Issues and pull requests are welcome. The eleven verification suites in
-`scripts/` are the contract — `verify:models`, `verify:auth`, `verify:upload`,
+Issues and pull requests are welcome. The twelve verification suites in
+`scripts/` are the contract — `verify:models`, `verify:auth`, `verify:sso`, `verify:upload`,
 `verify:import`, `verify:queue`, `verify:frr`, `verify:benefits`, `verify:catalog`, `verify:api`,
 `verify:passkey` and `probe:security`. All but `verify:models` run in CI against the built
 container image rather than a dev server. If a change makes one fail, that is the
