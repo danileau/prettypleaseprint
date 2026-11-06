@@ -43,7 +43,7 @@ export type Again = {
   priority: StoryPriorityName;
   tip: string;
   note: string;
-  modelPageUrl: string;
+  modelPageUrl: string | null;
   printSettings: string;
 };
 
