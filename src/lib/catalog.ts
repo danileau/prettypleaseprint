@@ -76,7 +76,7 @@ export const WishSchema = z.object({
   note: z.string().trim().max(2000, "That note is very long.").optional().default(""),
   modelPageUrl: z
     .url({ normalize: true, message: "The model page link is invalid." })
-    .max(2000, "The model page URL is very long.")
+    .max(2000, "The model page link is very long.")
     .refine((url) => {
       try {
         const { protocol } = new URL(url);
