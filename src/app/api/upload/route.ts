@@ -77,6 +77,7 @@ async function handleUpload(request: Request, user: Actor) {
     tip: form.get("tip"),
     note: form.get("note") ?? "",
     printSettings: form.get("printSettings") ?? "",
+    modelPageUrl: form.get("modelPageUrl"),
   });
 
   const bytes = new Uint8Array(await file.arrayBuffer());

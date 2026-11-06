@@ -74,6 +74,31 @@ export const WishSchema = z.object({
   // the current *active* benefits (see src/app/api/upload/route.ts).
   tip: z.string().trim().min(1, "Pick what's in it for them.").max(80, "That tip is oddly long."),
   note: z.string().trim().max(2000, "That note is very long.").optional().default(""),
+  modelPageUrl: z
+    .url({ normalize: true, message: "The model page link is invalid." })
+    .max(2000, "The model page link is very long.")
+    .refine((url) => {
+      try {
+        const { protocol } = new URL(url);
+        return protocol === "https:";
+      } catch {
+        return false;
+      }
+    }, {
+      message: "The model page link must use https.",
+    })
+    .refine((url) => {
+      try {
+        const { username, password } = new URL(url);
+        return username === "" && password === "";
+      } catch {
+        return false;
+      }
+    }, {
+      message: "The model page link must not include a username or password.",
+    })
+    .or(z.literal(""))
+    .or(z.null()),
   // Optional free-text print settings (FRR-103 option A). Shown to the owner so
   // slicer specifics live on the ticket rather than in a chat thread.
   printSettings: z

@@ -100,6 +100,8 @@ Notable changes. Every entry names a released version; deployments pin
   including the one that catches everybody — an `@` in the username has to be
   `%40`.
 
+- **"Link to model page" field on requests.** Adds an optional field for a link to the model source site allowing the owner to get alternate files or printing tips from the original source. (Request #101, PR #113)
+
 ### Changed
 
 - **Publishing images is held to `main` and the owner's release tags.** A
