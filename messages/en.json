@@ -57,6 +57,7 @@
       "benefits": "Benefits",
       "guestList": "Guest list",
       "mail": "Mail",
+      "settings": "Settings",
       "audit": "Audit"
     },
     "activity": {
@@ -214,7 +215,7 @@
     "tls": "TLS",
     "starttls": "STARTTLS if offered",
     "sentAs": "Sent as",
-    "fromEnv": "These come from <mono>.env.docker</mono> on the host (<mono>SMTP_URL</mono> or <mono>RESEND_API_KEY</mono>, and <mono>MAIL_FROM</mono>), not from this page — they include a password.",
+    "fromEnv": "The transport comes from <mono>.env.docker</mono> on the host (<mono>SMTP_URL</mono> or <mono>RESEND_API_KEY</mono>), not from this page — it includes a password. The sending address is <mono>MAIL_FROM</mono>, on the host as well; the name beside it is changed under Settings, unless <mono>MAIL_FROM</mono> already names one.",
     "sendTest": "Send me a test message",
     "goesTo": "Goes to {email} and nowhere else.",
     "setTransport": "Set a transport first.",
@@ -246,6 +247,73 @@
       "refused": "The mail server did not take it: {reason}",
       "sent": "Sent to {email}. If it does not arrive, check the spam folder before the settings.",
       "noReason": "it gave no reason"
+    }
+  },
+  "auditSettings": {
+    "change": "{field}: {from} → {to}",
+    "cleared": "(cleared a stored {value} that was not in force)",
+    "none": "none",
+    "noName": "no name",
+    "fields": {
+      "passkeyRpName": "passkey name",
+      "mailFromName": "mail sender name",
+      "importSources": "importing from"
+    }
+  },
+  "adminSettings": {
+    "kicker": "Behind the counter",
+    "title": "Settings",
+    "intro": "The few things about this place you can change from here instead of the host’s environment file. A change applies to the next request — nobody has to restart anything.",
+    "lockedBy": "Set by <mono>{name}</mono> on the host, which wins over this page. Remove it there to change it here.",
+    "fromHere": "Set on this page.",
+    "byDefault": "The default.",
+    "fields": {
+      "passkeyRpName": {
+        "label": "Name shown when adding a passkey",
+        "help": "What a phone, a password manager or a security key calls this place when somebody saves a passkey for it. Passkeys already saved keep the name they were saved with."
+      },
+      "mailFromName": {
+        "label": "Name mail is sent from",
+        "help": "Shown beside the address <mono>{address}</mono>, which stays with the mail settings on the host.",
+        "helpNoAddress": "Shown beside the sending address, which stays with the mail settings on the host.",
+        "noName": "No name — the address alone",
+        "byDefaultNoName": "The default: no name, the address alone, as MAIL_FROM on the host gives it."
+      },
+      "importSources": {
+        "label": "Importing from a link",
+        "option": "Let people paste a {source} link instead of uploading a file",
+        "help": "The server then fetches the model from that site itself, on the word of whoever pasted the link. It needs outbound HTTPS to it. Switching it on or off is on the audit trail."
+      }
+    },
+    "save": "Save",
+    "reauthNote": "If you signed in more than five minutes ago, you are asked to confirm it is you first.",
+    "allLocked": "Everything here is set on the host.",
+    "result": {
+      "saved": "Saved. It applies from the next request.",
+      "unchanged": "Nothing changed, so nothing was saved.",
+      "locked": "{field} is set on the host, so it cannot be changed here. Nothing was saved.",
+      "invalid": "{field} cannot be saved like that: use at most 64 characters, on one line, without \" < > \\ or invisible formatting characters. Nothing was saved.",
+      "invalidSources": "That is not a site this app can import from. Nothing was saved.",
+      "unknown": "That form named a setting this page does not have. Nothing was saved.",
+      "aField": "A setting"
+    },
+    "env": {
+      "title": "Set on the host",
+      "intro": "What this instance is running with, from <mono>.env.docker</mono>. Secrets are never shown — only whether something is set up.",
+      "signIn": "Sign-in",
+      "methods": "Username and password {local, select, on {on} other {off}}; single sign-on {oidc, select, on {on} other {off}}",
+      "origin": "Address",
+      "rpId": "Passkey domain",
+      "mail": "Mail",
+      "mailTransport": "{transport, select, smtp {set up, through SMTP} resend {set up, through Resend} other {not set up}}",
+      "proxy": "Proxy headers",
+      "proxyMode": "{mode, select, forwarded {trusted (X-Forwarded-For)} cloudflare {trusted (Cloudflare)} other {not trusted}}",
+      "breachCheck": "Breached-password check",
+      "breachCheckState": "{state, select, off {off} other {on}}",
+      "source": "Source code",
+      "tag": "Image tag",
+      "tagUnset": "not set",
+      "howToChange": "To change any of these, edit <mono>.env.docker</mono> on the host and recreate the stack."
     }
   }
 }

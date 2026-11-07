@@ -122,7 +122,7 @@ PORTS="${PPP_FULLTEST_PORTS:-3000 5432 1025 8025 4010 4020}"
 # In CI's order (the `verify` job of .github/workflows/ci.yml). A test pins
 # this list to that file, because the hand-rolled predecessor of this script
 # had quietly lost verify:catalog.
-SUITES="verify:auth verify:sso verify:upload verify:import verify:queue verify:frr verify:benefits verify:catalog verify:api verify:passkey probe:security"
+SUITES="verify:auth verify:sso verify:upload verify:import verify:queue verify:frr verify:benefits verify:catalog verify:settings verify:api verify:passkey probe:security"
 
 ENV_FILES=".env .env.backup .env.docker"
 
@@ -386,7 +386,7 @@ fi
 # suites somewhere else entirely.
 unset DB_PASSWORD APP_URL APP_PORT BETTER_AUTH_SECRET BETTER_AUTH_URL \
   ADMIN_EMAIL ADMIN_NAME MAIL_FROM SMTP_URL DATABASE_URL MODELS_ROOT PPP_TAG \
-  PPP_REGISTRY PPP_ENV_FILE MAILPIT_UI_PORT TRUST_PROXY_HEADERS MAILPIT_URL \
+  PPP_REGISTRY PPP_ENV_FILE MAILPIT_UI_PORT TRUST_PROXY_HEADERS MAILPIT_URL MAILPIT_SMTP_URL \
   PRINTABLES_STUB_PORT PRINTABLES_STUB_URL IMPORT_SOURCES IMPORT_PRINTABLES_BASE \
   OIDC_STUB_PORT OIDC_STUB_URL AUTH_METHODS OIDC_ISSUER OIDC_CLIENT_ID \
   OIDC_CLIENT_SECRET OIDC_NAME OIDC_SIGNUP OIDC_PROMPT OIDC_ALLOW_INSECURE_ISSUER \

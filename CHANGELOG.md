@@ -7,11 +7,27 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Upgrading from v0.4.0
 
-- **1 database migration runs by itself**, in the `migrate` container:
-  `20261105120000_notify_by_email`. It adds one column with a default and
-  nothing else, and was tested old → new → old on one database with the
-  published image, so the deploy wizard's automatic rollback still lands on a
-  working app.
+- **2 database migrations run by themselves**, in the `migrate` container:
+  `20261105120000_notify_by_email` adds one column with a default, and
+  `20261106120000_instance_settings` adds one table, empty. Nothing else.
+  Both were tested together old → new → old → new on one database with the
+  published v0.4.0 images, so the deploy wizard's automatic rollback still
+  lands on a working app.
+- **Your `.env.docker` keeps its meaning.** Until the owner saves something
+  under **Settings**, the app does exactly what it did on v0.4.0 with the same
+  `.env.docker`: the same passkey name, mail sent exactly as `MAIL_FROM` is
+  written (a bare address still goes out with no name), importing on or off
+  as `IMPORT_SOURCES` says. After that, a variable you set still wins and its
+  field is shown locked — `IMPORT_SOURCES` even when it is empty, which keeps
+  importing off; `MAIL_FROM` whenever it names a sender; `PASSKEY_RP_NAME`
+  unless it is empty, which always meant the default name. To hand one over
+  to the page, take it out of `.env.docker` (for the mail name, leave
+  `MAIL_FROM` a bare address) and recreate the app.
+- **Rolling back to v0.4.0 drops what was chosen on the page**, until you
+  upgrade again: importing goes off unless `IMPORT_SOURCES` turns it on, and
+  the passkey and mail names go back to what `.env.docker` or the defaults
+  say. The choices themselves stay in the database and come back with the
+  upgrade.
 - **Mail starts carrying notifications.** Where a host has set up mail
   (`SMTP_URL` or `RESEND_API_KEY`), everybody now gets a copy of their
   Activity panel by email, unless they switch it off on their profile. Without a mail transport nothing changes.
@@ -22,6 +38,31 @@ Notable changes. Every entry names a released version; deployments pin
   [Single sign-on](docs/deployment.md#single-sign-on) before turning it on.
 
 ### Added
+
+- **A settings page for the owner** (#104). `/admin/settings` changes the few
+  things that never needed to be environment variables — the name shown when
+  somebody adds a passkey, the name mail is sent under, and whether people can
+  import from a link — and applies them on the next request, with no restart.
+  An environment variable that is set still wins, and its field is shown
+  locked (*set by `IMPORT_SOURCES`*). Saving asks for a fresh sign-in, like
+  handing out access, and writes a `settings.changed` row on the audit trail
+  with every changed value before and after, in the same transaction as the
+  change; the audit log shows those values, under a new *Settings* lens. Two
+  saves at once are taken one after the other, so the trail never records the
+  same "before" twice. Below the form, read-only, is what stays in the
+  environment: how people sign in, whether mail is set up, whether proxy
+  headers are trusted, the source URL and the image tag — never a secret. If
+  the table cannot be read (the migration has not run), the app carries on
+  with the defaults, importing off, rather than failing. The Mail page is in
+  the owner's menu now too; #97 added the page but not the link.
+  `npm run verify:settings` is the new suite, and the test stack now switches
+  importing on through the settings row rather than `IMPORT_SOURCES`.
+
+  The example environment files no longer set `PASSKEY_RP_NAME` or a name in
+  `MAIL_FROM`, so both are editable on a new instance. That has one visible
+  effect on a new instance set up from them: mail goes out under the bare
+  address, with no name, until the owner names a sender under **Settings**
+  (the page says so). An existing `.env.docker` is not affected.
 
 - **Single sign-on through an OpenID Connect provider** (#56, #96). A
   deployment can let people sign in with the login they already have —
@@ -107,6 +148,16 @@ Notable changes. Every entry names a released version; deployments pin
   building, and the repository's rules let only an admin merge into `main` or
   create a `v*` tag, with CI's four gates required for every change to `main`
   ([What GitHub enforces](docs/development.md#what-github-enforces)).
+
+### Fixed
+
+- **`verify:queue` can send its language-mail probe to the Mailpit it reads.**
+  The probe's SMTP target was fixed at `127.0.0.1:1025`, so a run reading
+  another Mailpit (`MAILPIT_URL`) sent to the stack's anyway and then found
+  nothing. Set `MAILPIT_SMTP_URL` beside `MAILPIT_URL` for that; without it
+  the probe still uses the stack's Mailpit on `:1025`, which is what CI and
+  `full-test.sh` read. It never uses `SMTP_URL`, which on a developer's
+  machine can be a real relay.
 
 ## v0.4.0
 

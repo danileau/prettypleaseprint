@@ -14,10 +14,16 @@ services:
       - "${APP_PORT:-3000}:3000"
     environment:
       # Importing from a link is off unless a deployment asks for it. The
-      # suites ask for it, and point the importer at the stand-in below rather
-      # than at the real Printables — see scripts/stubs/printables-stub.mjs.
-      IMPORT_SOURCES: printables
+      # suites switch it on the way an owner does, through the settings row
+      # (IMPORT_SOURCES is deliberately not set here, so that path is the one
+      # tested), and the importer is pointed at the stand-in below rather than
+      # at the real Printables — see scripts/stubs/printables-stub.mjs.
       IMPORT_PRINTABLES_BASE: http://printables-stub:4010
+      # Pinned, so `verify:settings` covers a field the environment locks —
+      # including a forged save of it being refused. MAIL_FROM stays a bare
+      # address (.env.docker.example), so the owner's sender name is tested
+      # through the settings row.
+      PASSKEY_RP_NAME: Pretty Please Print (test stack)
       # Both ways in at once, so the suites that sign in with a password keep
       # working and `verify:sso` has a provider to sign in through: the
       # stand-in below. It has no certificate — it is a container on this

@@ -1055,6 +1055,22 @@ async function main() {
         staleLanded.includes("/reauth"),
         `expected a redirect to /reauth, got "${staleLanded || "none"}"`);
 
+  // The instance's settings are behind the same gate (#104): one of them,
+  // importing from a link, makes the server fetch from another site on a
+  // requester's say-so. The field is named outright, so the probe means
+  // something whatever the environment has locked.
+  await db.instanceSettings.deleteMany();
+  const settingsPage = await (await staleAdmin.go(`${APP}/admin/settings`)).text();
+  const settingsTry = await staleAdmin.submit(`${APP}/admin/settings`, settingsPage, {
+    fields: "passkeyRpName",
+    passkeyRpName: "From a stale session",
+  });
+  const settingsLanded = settingsTry.headers.get("location") ?? settingsTry.url ?? "";
+  probe("A07-reauth-settings", "an old session cannot change the instance's settings",
+        (await db.instanceSettings.count()) === 0 && settingsLanded.includes("/reauth"),
+        `a settings save from a session an hour old landed at "${settingsLanded || "no redirect"}" — ` +
+        "requireFreshAuth() is not gating saveSettingsAction");
+
   // The other half: the gate must not simply break the feature.
   const freshAdmin = await signIn(admin);
   const freshPage = await (await freshAdmin.go(`${APP}/admin/invites`)).text();

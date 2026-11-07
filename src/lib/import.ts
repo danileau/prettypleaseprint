@@ -3,10 +3,10 @@ import { z } from "zod";
 
 import {
   SOURCE_LABEL,
-  enabledSources,
   identifySource,
   type ImportSource,
 } from "@/lib/import-source";
+import { importSources } from "@/lib/settings";
 import { extensionOf } from "@/lib/models";
 import { sourceUrl as appSourceUrl } from "@/lib/runtime";
 import { StoryProblem } from "@/lib/stories";
@@ -18,7 +18,8 @@ import { ACCEPTED_EXTENSIONS, MAX_UPLOAD_BYTES, formatBytes } from "@/lib/upload
  * This is the only place the app makes a request to somebody else's server
  * because a *requester* asked it to — the breach check and outgoing mail call
  * out too, but to addresses the operator configured. It is off unless a
- * deployment names a source in `IMPORT_SOURCES`, and everything here is
+ * deployment names a source in `IMPORT_SOURCES` or the owner switches one on
+ * at /admin/settings (re-authenticated, and on the audit trail), and everything here is
  * arranged around one question — *whose choice is the address being
  * requested?* — and the answer is never "the person who pasted the link":
  *
@@ -83,9 +84,15 @@ function printables(): { api: string; fileOrigin: string } {
 /** Says who is calling, and where the source is. Not a browser, and not pretending. */
 const userAgent = () => `PrettyPleasePrint (+${appSourceUrl()})`;
 
-/** The sources switched on, or a refusal that says importing is off. */
-export function importSourcesOrRefuse(): ImportSource[] {
-  const enabled = enabledSources();
+/**
+ * The sources switched on, or a refusal that says importing is off.
+ *
+ * Read per request — from IMPORT_SOURCES when the environment sets it, from
+ * the owner's settings otherwise (`src/lib/settings.ts`) — so switching it on
+ * or off on /admin/settings applies to the very next request.
+ */
+export async function importSourcesOrRefuse(): Promise<ImportSource[]> {
+  const enabled = await importSources();
   if (enabled.length === 0) {
     throw problem(501, "Importing from a link is not switched on for this instance.");
   }
@@ -281,7 +288,7 @@ const NOT_A_LINK = (enabled: readonly ImportSource[]) =>
  * requester has to choose — this is what they choose from.
  */
 export async function listImportable(rawUrl: unknown): Promise<ImportListing> {
-  const enabled = importSourcesOrRefuse();
+  const enabled = await importSourcesOrRefuse();
   const found = typeof rawUrl === "string" ? identifySource(rawUrl, enabled) : null;
   if (!found) throw problem(422, NOT_A_LINK(enabled));
   return listPrintables(found.modelId);

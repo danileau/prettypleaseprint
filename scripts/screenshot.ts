@@ -210,6 +210,7 @@ async function main() {
       ["queue", `${APP}/queue`],
       ["books", `${APP}/me`],
       ["story-admin", `${APP}/story/${printing!.id}`],
+      ["settings", `${APP}/admin/settings`],
     ] as Array<[string, string]>) {
       await adminPage.goto(url, { waitUntil: "networkidle2" });
       await adminPage.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });

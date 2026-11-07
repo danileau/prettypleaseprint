@@ -4,17 +4,18 @@ import { AppHeader } from "@/components/app-header";
 import { Kicker } from "@/components/ui";
 import { Notice } from "@/components/ui";
 import { availableCatalog } from "@/lib/catalog-data";
-import { enabledSources } from "@/lib/import-source";
+import { importSources } from "@/lib/settings";
 import { UploadForm } from "./upload-form";
 
 export const dynamic = "force-dynamic";
 
 export default async function UploadPage() {
   const user = await requireUser("/upload");
-  const [owner, catalog, activeBenefits] = await Promise.all([
+  const [owner, catalog, activeBenefits, sources] = await Promise.all([
     printerName(),
     availableCatalog(),
     listActiveBenefits(),
+    importSources(),
   ]);
   // The tip options are owner-managed now; the form renders from these.
   const benefits = activeBenefits.map((b) => ({
@@ -46,7 +47,7 @@ export default async function UploadPage() {
             owner={owner}
             catalog={catalog}
             benefits={benefits}
-            importSources={enabledSources()}
+            importSources={sources}
           />
         ) : (
           <div className="max-w-[780px]">

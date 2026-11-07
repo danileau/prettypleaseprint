@@ -819,6 +819,14 @@ async function main() {
   section("a notification is also an email");
 
   const MAILPIT = process.env.MAILPIT_URL ?? "http://localhost:8025";
+  // Where mail this suite sends itself (the language probe below) goes in:
+  // the SMTP side of the Mailpit it reads. MAILPIT_SMTP_URL, set alongside
+  // MAILPIT_URL when the suite reads a Mailpit other than the stack's;
+  // otherwise the stack's Mailpit on :1025, as docker-compose.test.yml
+  // publishes it (CI and full-test.sh both use that one). Never SMTP_URL: a
+  // developer's .env can name a real relay there, and this sends mail to
+  // the accounts in the test database.
+  const MAILPIT_SMTP = process.env.MAILPIT_SMTP_URL || "smtp://127.0.0.1:1025";
   type Caught = { ID: string; To: { Address: string }[]; Subject: string };
   const inbox = async (to: string): Promise<Caught[]> => {
     const list = await (await fetch(`${MAILPIT}/api/v1/messages?limit=200`)).json();
@@ -976,7 +984,7 @@ async function main() {
   try {
     probeOut = execFileSync("node_modules/.bin/tsx", ["--import", "./scripts/_server-only.mjs", "scripts/mail-locale-probe.ts"], {
       encoding: "utf8",
-      env: { ...process.env, SMTP_URL: "smtp://127.0.0.1:1025", MAILPIT_URL: MAILPIT,
+      env: { ...process.env, SMTP_URL: MAILPIT_SMTP, MAILPIT_URL: MAILPIT,
              PROBE_STORY_ID: String(mailed.id), PROBE_RECIPIENTS: `${ayla.id},${admin.id}`, PROBE_ACTOR_ID: "somebody-else" },
       // Its errors — a send that failed — belong in this log.
       stdio: ["ignore", "pipe", "inherit"],

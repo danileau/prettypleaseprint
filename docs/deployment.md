@@ -494,7 +494,7 @@ inbox as well as in the app unless they switch that off.
 Put the SMTP account in `.env.docker`:
 
 ```sh
-MAIL_FROM="Pretty Please Print <print@yourdomain.example>"
+MAIL_FROM="print@yourdomain.example"
 SMTP_URL="smtps://user:pass@smtp.yourprovider.example:465"
 ```
 
@@ -508,6 +508,11 @@ SMTP_URL="smtps://user:pass@smtp.yourprovider.example:465"
 - **`MAIL_FROM` has to be an address that account may send as.** Most providers
   refuse or rewrite anything else, and a domain you do not control will fail
   SPF at the recipient and land in spam.
+- **The name beside the address is the owner's**, changed under **Settings**
+  in the app. Until the owner names one, a bare `MAIL_FROM` goes out exactly
+  as written — the address alone, no name. Write
+  `MAIL_FROM="Name <address>"` instead to pin a name from here; the field is
+  then shown locked. See [The owner's settings](#the-owners-settings).
 - **Gmail, Microsoft 365 and similar need an app password**, not the account
   password, and usually two-step verification to create one.
 - Remove the `mailpit` address the example file ships with; it only exists
@@ -834,7 +839,10 @@ what is accepted.
 
 ### Importing from a link
 
-Off by default. Add this to `.env.docker` and restart the app:
+Off by default. The owner switches it on under **Settings** in the app —
+after confirming who they are, and on the audit trail — and it applies to the
+next request. Or pin it from `.env.docker`, which locks the switch on that
+page (and needs the app restarted):
 
 ```sh
 IMPORT_SOURCES="printables"
@@ -875,6 +883,41 @@ What a signed-in person can make the server do with this is narrow by
 construction — they choose a model, never an address — and the
 [security notes](security-audit.md#importing-from-a-link) set out what was
 checked and what is accepted.
+
+### The owner's settings
+
+A few things are not worth an edit to `.env.docker` and a restart, so the
+owner changes them in the app, under **Settings** (`/admin/settings`):
+
+- the name an authenticator shows when somebody adds a passkey
+  (`PASSKEY_RP_NAME`),
+- the name mail is sent under — the address stays in `MAIL_FROM`,
+- whether people can import from a link (`IMPORT_SOURCES`).
+
+A change applies to the next request. Saving asks the owner to confirm who
+they are if their sign-in is more than five minutes old, and writes a
+`settings.changed` row on the audit trail with each value before and after.
+
+**The environment wins.** A variable set here is used, and its field is
+shown locked — *set by `IMPORT_SOURCES`* — so an existing `.env.docker` means
+exactly what it meant before, and you can still pin a value from outside.
+`IMPORT_SOURCES=""` counts as set: it always meant "off", and it still pins
+importing off. `MAIL_FROM` locks the name when it gives one
+(`Name <address>`); a bare address leaves the name to the owner.
+`PASSKEY_RP_NAME=""` does not count, because it always meant the default
+name. The same page shows, read-only, what stays in
+the environment: how people sign in, whether mail is set up (never with what),
+whether proxy headers are trusted, the source URL and the image tag. Secrets,
+the address, the passkey domain and the infrastructure stay here, in
+`.env.docker`.
+
+The values live in the database, so they come back with it from a backup.
+
+**Rolling back to v0.4.0 drops the page's choices until you upgrade again.**
+v0.4.0 does not know the table: importing goes off unless `IMPORT_SOURCES`
+turns it on, and the passkey and mail names go back to what `.env.docker`
+says, or the defaults. The row stays in the database, and the choices come
+back with the upgrade.
 
 ### What to back up
 

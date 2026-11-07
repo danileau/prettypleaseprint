@@ -518,3 +518,29 @@ model Benefit {
   @@index([active, sortOrder])
   @@map("benefit")
 }
+
+/// The instance's own settings — the few things an owner adjusts that do not
+/// need to be an environment variable (#104). One row, id "instance", created
+/// the first time the owner saves `/admin/settings`; until then every value is
+/// its default, which is exactly what the app did before this table existed.
+///
+/// A NULL (or, for the list, empty) column means "the default", never "off by
+/// accident". An environment variable that is set always beats the column, so
+/// an operator can still pin a value from outside — `src/lib/settings.ts` has
+/// the rule, and is the only reader.
+///
+/// `defaultLocale`, `defaultTheme` and `defaultSlicer` are held for #103, #105
+/// and #102, so those can read an instance default without a migration of
+/// their own. Nothing writes or reads them yet.
+model InstanceSettings {
+  id            String   @id @default("instance")
+  passkeyRpName String?
+  importSources String[] @default([])
+  mailFromName  String?
+  defaultLocale String?
+  defaultTheme  String?
+  defaultSlicer String?
+  updatedAt     DateTime @updatedAt
+
+  @@map("instanceSettings")
+}
