@@ -264,9 +264,11 @@
     "cleared": "(efface une valeur enregistrée qui ne s’appliquait pas : {value})",
     "none": "aucun",
     "noName": "pas de nom",
+    "builtInLanguage": "anglais, la langue de base",
     "fields": {
       "passkeyRpName": "nom des clés d’accès",
       "mailFromName": "nom de l’expéditeur",
+      "defaultLocale": "langue par défaut",
       "importSources": "importer depuis"
     }
   },
@@ -289,6 +291,11 @@
         "noName": "Pas de nom — l’adresse seule",
         "byDefaultNoName": "Valeur par défaut : pas de nom, l’adresse seule, telle que MAIL_FROM la donne sur l’hôte."
       },
+      "defaultLocale": {
+        "label": "Langue pour qui n’en a pas choisi",
+        "help": "Pour un visiteur dont le navigateur ne demande aucune des langues de l’application, et pour le courrier de qui n’en a pas choisi sur sa page — invitations comprises. Chacun peut toujours choisir la sienne.",
+        "builtIn": "Anglais, la langue de base"
+      },
       "importSources": {
         "label": "Importer depuis un lien",
         "option": "Permettre de coller un lien {source} au lieu d’envoyer un fichier",
@@ -304,6 +311,7 @@
       "locked": "{field} : fixé sur l’hôte, donc impossible à changer ici. Rien n’a été enregistré.",
       "invalid": "{field} : impossible de l’enregistrer ainsi. 64 caractères au plus, sur une seule ligne, sans \" < > \\ ni caractères de mise en forme invisibles. Rien n’a été enregistré.",
       "invalidSources": "Ce n’est pas un site depuis lequel l’application sait importer. Rien n’a été enregistré.",
+      "invalidLocale": "Ce n’est pas une langue que l’application connaît. Rien n’a été enregistré.",
       "unknown": "Ce formulaire nommait un réglage que cette page n’a pas. Rien n’a été enregistré.",
       "aField": "Un réglage"
     },

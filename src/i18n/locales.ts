@@ -14,7 +14,7 @@
  * and the language of last resort when nothing else applies.
  *
  * Not called the default, because "the default" is now something an instance
- * chooses (`DEFAULT_LOCALE`, ./catalogue.ts): this is what is left when it has
+ * chooses (`instanceLocale`, src/lib/settings.ts): this is what is left when it has
  * not, or has chosen a language this build does not have.
  */
 export const SOURCE_LOCALE = "en";
@@ -117,8 +117,8 @@ export function languageProblem(code: string): string | null {
  *
  *   1. the person's own choice — `User.preferredLocale`, set on /me;
  *   2. what the browser asks for — `Accept-Language`;
- *   3. the instance's default — `DEFAULT_LOCALE` in the environment, until
- *      the settings page (#104) has a place for it;
+ *   3. the instance's default — `DEFAULT_LOCALE` in the environment, else
+ *      the owner's choice on /admin/settings (`instanceLocale`);
  *   4. English.
  *
  * A person's choice beats their browser because they made it in this app; the

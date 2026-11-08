@@ -37,7 +37,8 @@ Notable changes. Every entry names a released version; deployments pin
   before English gets the sign-in page and the header in French from the first
   request after the upgrade. Each of them can pick English on their profile;
   there is no switch to keep an instance English-only. Emails change only for
-  whoever picks a language, or with `DEFAULT_LOCALE`.
+  whoever picks a language, or once the owner sets a default language under
+  Settings (or `DEFAULT_LOCALE` does).
 - **Nothing to set.** Single sign-on stays off until `AUTH_METHODS` names it;
   an instance that does not set it signs people in exactly as before. Read
   [Single sign-on](docs/deployment.md#single-sign-on) before turning it on.
@@ -162,12 +163,16 @@ Notable changes. Every entry names a released version; deployments pin
   `npm run check:messages`, which now also refuses a file whose name is not a
   language — see [Adding a language](docs/i18n.md#adding-a-language).
 
-  `DEFAULT_LOCALE` sets what comes before English, for visitors whose browser
-  asks for none of the app's languages and for mail. One the image does not
-  have is ignored with a warning in the log, rather than stopping the app; it
-  moves to the settings page with #104. English stays the source every
-  translation is checked against and falls back to, key by key, and the
-  language CI runs in.
+  **The instance's default language is on the settings page.** It is what
+  comes before English, for visitors whose browser asks for none of the app's
+  languages and for mail to anybody who has not chosen: a select of the same
+  languages by their own names, saved like the page's other settings (a fresh
+  sign-in, a `settings.changed` row). `DEFAULT_LOCALE` pins it from the
+  environment and locks the field. A language the image does not have —
+  named by the variable, or saved before an upgrade dropped its file — is
+  ignored with one warning in the log, rather than stopping the app. English
+  stays the source every translation is checked against and falls back to,
+  key by key, and the language CI runs in.
 
 ### Changed
 

@@ -12,7 +12,7 @@ import { formatProblem } from "./message-parts";
  *
  * A language is a file: `messages/<code>.json`. Whatever sits in that
  * directory when the app is built is what it offers — on the picker on /me, to
- * an `Accept-Language` header, as `DEFAULT_LOCALE`, and to mail — and there is
+ * an `Accept-Language` header, as the instance default, and to mail — and there is
  * no list of codes, or of names, anywhere in the code. Adding German is adding
  * `messages/de.json`; `npm run check:messages` holds it to English's shape.
  *
@@ -20,8 +20,8 @@ import { formatProblem } from "./message-parts";
  * is written in. The request's language comes from ./request.ts; an email has
  * no request, only a recipient, and is written in *their* language
  * (`User.preferredLocale`), whoever caused it to be sent — or, for somebody who
- * has not chosen, in the instance's default (`instanceDefault`), since an
- * email has no browser to ask. A key a translation does not have yet is
+ * has not chosen, in the instance's default (`instanceLocale` in
+ * src/lib/settings.ts, passed in), since an email has no browser to ask. A key a translation does not have yet is
  * English: the translation is laid over English key by key (`overlay`, the one
  * place that is done), and a message that is there but cannot be formatted
  * reads in English as well (`translatorFor`). Never key names.
@@ -150,49 +150,14 @@ export function offeredLocales(): Locale[] {
 }
 
 /**
- * The instance's default language, from `DEFAULT_LOCALE`, or null when it is
- * unset or names a language this build does not have.
- *
- * Read at call time, like the rest of the server's environment: the image is
- * built once and configured where it runs. Spelt any way `Intl` accepts
- * (`pt-br` is `pt-BR`), since an operator types it by hand.
- *
- * A value naming no file is ignored, with one warning in the log, rather than
- * stopping the app. It is a preference about strangers, not a setting anything
- * depends on, and the thing most likely to make it wrong is not a typo but an
- * upgrade: a language removed from a later build would otherwise turn a
- * working instance into one that does not start. The same as an unknown
- * `preferredLocale`, which falls through to the next rule.
- *
- * Temporary in this form: it moves to the owner's settings page when #104
- * makes one.
- */
-export function instanceDefault(): Locale | null {
-  const wanted = process.env.DEFAULT_LOCALE?.trim();
-  if (!wanted) return null;
-  let code: string | undefined;
-  try {
-    code = Intl.getCanonicalLocales(wanted)[0];
-  } catch {
-    code = undefined;
-  }
-  const offered = offeredLocales();
-  if (code && offered.includes(code)) return code;
-  warnOnce(
-    `DEFAULT_LOCALE="${wanted}" is ignored: ` +
-      (code ? `this build has no messages/${code}.json.` : "it is not a language tag.") +
-      ` It offers ${offered.join(", ")}.`,
-  );
-  return null;
-}
-
-/**
  * The catalogue for `wanted`, over English, and the language it turned out to
  * be. Never throws.
  *
  * `wanted` is a code that should name a file: a stored `preferredLocale`, or
  * what ./request.ts chose. Anything that does not — nothing chosen, a language
- * since removed, `../en`, `EN` — is the instance default, then English. Only a
+ * since removed, `../en`, `EN` — is `fallback`, the instance default its caller
+ * read (`instanceLocale` in src/lib/settings.ts: DEFAULT_LOCALE, then the
+ * settings page), then English. Only a
  * code in the list is ever turned into a file name, so no value reaches the
  * file system or the bundle's map that is not one of its own entries. A file
  * that cannot be read or parsed is English, logged.
@@ -212,9 +177,11 @@ export function instanceDefault(): Locale | null {
  */
 export async function catalogueFor(
   wanted: string | null | undefined,
+  fallback: Locale | null = null,
 ): Promise<{ locale: Locale; messages: Messages }> {
   const offered = offeredLocales();
-  const locale = wanted && offered.includes(wanted) ? wanted : (instanceDefault() ?? SOURCE_LOCALE);
+  const locale =
+    wanted && offered.includes(wanted) ? wanted : fallback && offered.includes(fallback) ? fallback : SOURCE_LOCALE;
   if (locale === SOURCE_LOCALE) return { locale: SOURCE_LOCALE, messages: en };
   const kept = loaded.get(locale);
   if (kept) return { locale, messages: kept };

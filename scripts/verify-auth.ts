@@ -719,7 +719,8 @@ async function main() {
   const leakedWords = (code: string, html: string, keys: string[]) => keys.filter((k) => html.includes(words(code, k)));
   check("messages/ holds English, the source", CODES.includes("en"), CODES.join(", "));
 
-  const { offeredLocales, instanceDefault, layOver, pageMessageHandling } = await import("../src/i18n/catalogue");
+  const { offeredLocales, layOver, pageMessageHandling } = await import("../src/i18n/catalogue");
+  const { instanceLocale } = await import("../src/lib/settings");
   const { resolveLocale, negotiate, languageName } = await import("../src/i18n/locales");
   const { previewLocaleQuery, voiceFor } = await import("../src/lib/email");
   check("the app offers exactly the files in messages/", JSON.stringify(offeredLocales()) === JSON.stringify(CODES),
@@ -845,6 +846,35 @@ async function main() {
   check("and the page says so",
         visibleText(await (await member.go(`${APP}/me?language=refused`)).text()).includes(words("en", "me.language.refused")));
 
+  // The default the owner saves on /admin/settings: what a visitor gets whose
+  // browser asks for nothing the app has — unless DEFAULT_LOCALE pins it on
+  // the stack under test, which the page says by locking the field.
+  const pinnedByEnv = /data-setting="defaultLocale" data-locked="true"/.test(
+    await (await ownerIn.go(`${APP}/admin/settings`)).text(),
+  );
+  const saveDefault = (defaultLocale: string) =>
+    db.instanceSettings.upsert({ where: { id: "instance" }, create: { id: "instance", defaultLocale }, update: { defaultLocale } });
+  if (pinnedByEnv) {
+    console.info("  skip  DEFAULT_LOCALE is set on the stack under test, so a default saved on the settings page is not in force");
+  } else {
+    try {
+      for (const code of CODES.filter((c) => c !== "en")) {
+        await saveDefault(code);
+        const stranger = await signinIn("qaa");
+        check(`[${code}] saved as the instance's default, it is what a browser asking for nothing the app has gets`,
+              htmlLang(stranger) === code && visibleText(stranger).includes(words(code, "signin.title")),
+              `lang=${htmlLang(stranger)}`);
+        check(`[${code}] …and a browser sending only "*"`, htmlLang(await signinIn("*")) === code);
+        check(`[${code}] …while one asking for English still gets English`, htmlLang(await signinIn("en")) === "en");
+        check(`[${code}] …and one that refused "${code}" gets English`, htmlLang(await signinIn(`${code};q=0`)) === "en");
+      }
+      await saveDefault("qaa");
+      check("a saved default naming no file in messages/ is passed over: English", htmlLang(await signinIn("qaa")) === "en");
+    } finally {
+      await db.instanceSettings.deleteMany();
+    }
+  }
+
   // The instance default and the order, in process: the stack under test sets
   // no DEFAULT_LOCALE, so that English stays what every suite reads.
   const savedDefault = process.env.DEFAULT_LOCALE;
@@ -854,7 +884,7 @@ async function main() {
   try {
     for (const code of CODES) {
       process.env.DEFAULT_LOCALE = code;
-      check(`[${code}] DEFAULT_LOCALE="${code}" is the instance default`, instanceDefault() === code);
+      check(`[${code}] DEFAULT_LOCALE="${code}" is the instance default`, (await instanceLocale()) === code);
       check(`[${code}] which comes after the person and the browser, and before English`,
             resolveLocale({ preference: null, acceptLanguage: "qaa", instanceDefault: code, offered: CODES }) === code &&
               resolveLocale({ preference: null, acceptLanguage: "en", instanceDefault: code, offered: CODES }) === "en" &&
@@ -892,13 +922,13 @@ async function main() {
           pageMessageHandling.getMessageFallback({ namespace: "signin", key: "title", error: { code: "FORMATTING_ERROR" } }) ===
             words("en", "signin.title"));
     process.env.DEFAULT_LOCALE = "qaa";
-    const first = instanceDefault();
-    const second = instanceDefault();
+    const first = await instanceLocale();
+    const second = await instanceLocale();
     check("DEFAULT_LOCALE naming no file in messages/ is ignored rather than fatal", first === null && second === null);
     check("…with one warning in the log, not one per request",
           logged.filter((l) => l.includes('DEFAULT_LOCALE="qaa" is ignored')).length === 1, logged.join(" | "));
     process.env.DEFAULT_LOCALE = "not a language";
-    check("…and so is one that is not a language tag at all", instanceDefault() === null);
+    check("…and so is one that is not a language tag at all", (await instanceLocale()) === null);
   } finally {
     console.warn = realWarn;
     if (savedDefault === undefined) delete process.env.DEFAULT_LOCALE;

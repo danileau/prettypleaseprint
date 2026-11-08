@@ -3,7 +3,8 @@ import { getRequestConfig } from "next-intl/server";
 
 import { currentUser } from "@/lib/authz";
 import { db } from "@/lib/db";
-import { catalogueFor, instanceDefault, offeredLocales, pageMessageHandling } from "./catalogue";
+import { instanceLocale } from "@/lib/settings";
+import { catalogueFor, offeredLocales, pageMessageHandling } from "./catalogue";
 import { resolveLocale } from "./locales";
 
 /**
@@ -23,7 +24,10 @@ import { resolveLocale } from "./locales";
  * page's `requireUser` are one session read), and the column one more read.
  * Not part of the session: Better Auth's session carries only the fields it is
  * told about, and putting this one there would put it on its JSON endpoints
- * too, for one query saved.
+ * too, for one query saved. The instance's default is the settings row's
+ * primary-key lookup (`instanceLocale`, src/lib/settings.ts), read per
+ * request like every setting there, so a change on /admin/settings applies to
+ * the next page; it is read beside the session, not after it.
  *
  * A message that fails to format shows English, never its key
  * (`pageMessageHandling`, ./catalogue.ts) — and a translated one that cannot
@@ -35,14 +39,14 @@ import { resolveLocale } from "./locales";
  * inline scripts, which no static page could carry.
  */
 export default getRequestConfig(async () => {
-  const [user, requestHeaders] = await Promise.all([currentUser(), headers()]);
+  const [user, requestHeaders, instanceDefault] = await Promise.all([currentUser(), headers(), instanceLocale()]);
   const row = user
     ? await db.user.findUnique({ where: { id: user.id }, select: { preferredLocale: true } })
     : null;
   const chosen = resolveLocale({
     preference: row?.preferredLocale,
     acceptLanguage: requestHeaders.get("accept-language"),
-    instanceDefault: instanceDefault(),
+    instanceDefault,
     offered: offeredLocales(),
   });
   // The locale the catalogue turned out to be, not the one asked for: if a
