@@ -33,6 +33,12 @@ Notable changes. Every entry names a released version; deployments pin
   Activity panel by email, unless they switch it off on their profile. Without a mail transport nothing changes.
   Open **Mail** as the owner and send yourself a test message after the
   upgrade.
+- **Some people start seeing French.** Anybody whose browser asks for French
+  before English gets the sign-in page and the header in French from the first
+  request after the upgrade. Each of them can pick English on their profile;
+  there is no switch to keep an instance English-only. Emails change only for
+  whoever picks a language, or once the owner sets a default language under
+  Settings (or `DEFAULT_LOCALE` does).
 - **Nothing to set.** Single sign-on stays off until `AUTH_METHODS` names it;
   an instance that does not set it signs people in exactly as before. Read
   [Single sign-on](docs/deployment.md#single-sign-on) before turning it on.
@@ -130,9 +136,8 @@ Notable changes. Every entry names a released version; deployments pin
   fails. *What are people sent* — every message the app can send, as it is
   sent and in plain text, with stand-in data.
 
-  Every message is written from the message catalogue. Once more than English
-  ships, each person's mail follows their own language, and an invitation the
-  instance's default; today all of it is English.
+  Every message is written from the message catalogue, in each person's own
+  language (below), and an invitation in the instance's default.
   With passwords off (`AUTH_METHODS=oidc`) no reset is sent or previewed.
 
   Without a mail transport nothing changes: links are handed over as before
@@ -140,6 +145,34 @@ Notable changes. Every entry names a released version; deployments pin
   [Setting up mail](docs/deployment.md#setting-up-mail) has the SMTP details,
   including the one that catches everybody — an `@` in the username has to be
   `%40`.
+
+- **French, and a language picker** (#103). The sign-in page, the header, the
+  emails and the language picker itself are in French for whoever wants them;
+  the other screens follow one group of pages at a time. Each person chooses
+  on their profile — *Follow my browser*, or a language by its own name —
+  and somebody who has not chosen, or is not signed in, gets the first
+  language their browser asks for that the app has. `<html lang>` and the
+  plurals, dates and numbers formatted through the catalogue follow the same
+  choice. Mail is written in the recipient's choice, and to anybody who has not
+  made one in the instance's default.
+
+  **A language is a file.** Whatever sits in `messages/` is what the app
+  offers, named by the file (`fr.json`) and shown by its name in itself
+  (*Français*, from the runtime's own data); there is no list of languages in
+  the code. Adding one is adding `messages/<code>.json` and passing
+  `npm run check:messages`, which now also refuses a file whose name is not a
+  language — see [Adding a language](docs/i18n.md#adding-a-language).
+
+  **The instance's default language is on the settings page.** It is what
+  comes before English, for visitors whose browser asks for none of the app's
+  languages and for mail to anybody who has not chosen: a select of the same
+  languages by their own names, saved like the page's other settings (a fresh
+  sign-in, a `settings.changed` row). `DEFAULT_LOCALE` pins it from the
+  environment and locks the field. A language the image does not have —
+  named by the variable, or saved before an upgrade dropped its file — is
+  ignored with one warning in the log, rather than stopping the app. English
+  stays the source every translation is checked against and falls back to,
+  key by key, and the language CI runs in.
 
 ### Changed
 

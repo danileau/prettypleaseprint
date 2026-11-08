@@ -2,7 +2,7 @@ import { Resend } from "resend";
 import nodemailer from "nodemailer";
 
 import { isBuildPhase } from "@/lib/runtime";
-import { effectiveSettings, senderHeader, type MailSender } from "@/lib/settings";
+import { effectiveSettings, instanceLocale, senderHeader, type MailSender } from "@/lib/settings";
 import { catalogueFor, translatorFor, type Messages, type Translator } from "@/i18n/catalogue";
 
 /**
@@ -238,10 +238,25 @@ function shell(t: Translator, lang: string, banner: string, body: string): strin
 /** The language a mail is written in, and the words for it. */
 export type MailVoice = { lang: string; t: Translator };
 
-/** The voice for somebody whose language is `locale` (their `preferredLocale`). */
+/**
+ * The voice for somebody whose language is `locale` (their `preferredLocale`);
+ * for somebody who has none, the instance's default — DEFAULT_LOCALE, else
+ * the settings page — then English.
+ */
 export async function voiceFor(locale: string | null | undefined): Promise<MailVoice> {
-  const catalogue = await catalogueFor(locale);
+  const catalogue = await catalogueFor(locale, await instanceLocale());
   return { lang: catalogue.locale, t: translatorFor(catalogue) };
+}
+
+/**
+ * The `?locale=` a link to a preview needs for it to be written in `lang`, as
+ * the owner's Mail page shows it. Left off only when a preview with none is in
+ * that language anyway — the instance default, else English — and never just
+ * because `lang` is English: with an instance default set, a preview with no
+ * locale is in that language, not English.
+ */
+export async function previewLocaleQuery(lang: string): Promise<string> {
+  return lang === (await voiceFor(null)).lang ? "" : `?locale=${encodeURIComponent(lang)}`;
 }
 
 export function inviteEmail(

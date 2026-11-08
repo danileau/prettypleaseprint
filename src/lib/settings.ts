@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { offeredLocales, warnOnce } from "@/i18n/catalogue";
+import { SOURCE_LOCALE, type Locale } from "@/i18n/locales";
 import { db } from "@/lib/db";
 import { IMPORT_SOURCES, enabledSources, type ImportSource } from "@/lib/import-source";
 
@@ -29,6 +31,13 @@ import { IMPORT_SOURCES, enabledSources, type ImportSource } from "@/lib/import-
  *   PASSKEY_RP_NAME  set if present and not the empty string. The passkey
  *                    plugin treated `""` as "no name given" and used the
  *                    default, which is what an unset variable means here too.
+ *   DEFAULT_LOCALE   set if present and not blank, as it was read before this
+ *                    page had a field for it (`DEFAULT_LOCALE=""` meant no
+ *                    default). Set, it wins even when it names a language the
+ *                    build has no file for: it is then ignored, with one line
+ *                    in the log, and the field stays locked — English applies,
+ *                    as it did, rather than a row the page could not show as
+ *                    in force.
  *
  * Read per call, from the database, with no cache in between: a save applies
  * on the very next request without a restart, and there is no second copy to
@@ -87,19 +96,30 @@ const ImportSources = z
   .array(z.enum(IMPORT_SOURCES))
   .transform((list) => IMPORT_SOURCES.filter((s) => list.includes(s)));
 
+/**
+ * A language the build offers — a file in messages/ (src/i18n/catalogue.ts),
+ * read when the value is checked, so a language added or removed by a new
+ * image is what is accepted, with no list here. English is not stored: it is
+ * what an unset field means already.
+ */
+const OfferedLocale = z
+  .string()
+  .refine((code) => code !== SOURCE_LOCALE && offeredLocales().includes(code), { message: "not a language this build offers" });
+
 /** What the owner may save. A field left out is left as it is. */
 export const SettingsInput = z
   .object({
     passkeyRpName: DisplayName.nullable(),
     importSources: ImportSources,
     mailFromName: DisplayName.nullable(),
+    defaultLocale: OfferedLocale.nullable(),
   })
   .partial()
   .strict();
 export type SettingsInput = z.infer<typeof SettingsInput>;
 
 export type SettingKey = keyof z.infer<typeof SettingsInput>;
-export const SETTING_KEYS: readonly SettingKey[] = ["passkeyRpName", "importSources", "mailFromName"];
+export const SETTING_KEYS: readonly SettingKey[] = ["passkeyRpName", "importSources", "mailFromName", "defaultLocale"];
 
 export type Source = "env" | "db" | "default";
 export type Effective<T> = { value: T; source: Source; envVar: string };
@@ -111,6 +131,12 @@ export type EffectiveSettings = {
   mailFromName: Effective<string | null>;
   /** The sender as the transports are given it. */
   mailFrom: MailSender;
+  /**
+   * The language for whoever has not chosen one and whose browser asks for
+   * none the app has, and for mail to them (src/i18n/request.ts, `voiceFor`).
+   * `null`: English, the built-in default.
+   */
+  defaultLocale: Effective<Locale | null>;
 };
 
 export type MailSender =
@@ -124,6 +150,8 @@ export type SettingsRow = {
   passkeyRpName: string | null;
   importSources: string[];
   mailFromName: string | null;
+  /** Optional so a row from before the field was read (or a test's) still types. */
+  defaultLocale?: string | null;
 } | null;
 
 type Env = Record<string, string | undefined>;
@@ -163,7 +191,11 @@ export function parseMailFrom(raw: string): { name: string | null; address: stri
  * settings out. Exported so the suites can hold every combination to it
  * without standing a server up once per environment.
  */
-export function resolveSettings(row: SettingsRow, env: Env = process.env): EffectiveSettings {
+export function resolveSettings(
+  row: SettingsRow,
+  env: Env = process.env,
+  offered: readonly Locale[] = offeredLocales(),
+): EffectiveSettings {
   // --- the name an authenticator shows when a passkey is added
   const rpEnv = env.PASSKEY_RP_NAME;
   const rpStored = stored(DisplayName, row?.passkeyRpName, "passkeyRpName");
@@ -226,7 +258,43 @@ export function resolveSettings(row: SettingsRow, env: Env = process.env): Effec
     }
   }
 
-  return { passkeyRpName, importSources, mailFromName, mailFrom };
+  // --- the instance's default language (#103). Every value names a file in
+  // messages/ or is passed over: a language a later image dropped, or a row
+  // restored from one that had it, must not stop the app or blank its pages.
+  // One warning each, not one per request, since this is read on every page.
+  const localeEnv = env.DEFAULT_LOCALE?.trim();
+  let defaultLocale: Effective<Locale | null>;
+  if (localeEnv) {
+    let code: string | undefined;
+    try {
+      code = Intl.getCanonicalLocales(localeEnv)[0];
+    } catch {
+      code = undefined;
+    }
+    const known = code !== undefined && offered.includes(code);
+    if (!known) {
+      warnOnce(
+        `DEFAULT_LOCALE="${localeEnv}" is ignored: ` +
+          (code ? `this build has no messages/${code}.json.` : "it is not a language tag.") +
+          ` It offers ${offered.join(", ")}.`,
+      );
+    }
+    defaultLocale = { value: known ? code! : null, source: "env", envVar: "DEFAULT_LOCALE" };
+  } else {
+    const saved = row?.defaultLocale ?? null;
+    if (saved !== null && !offered.includes(saved)) {
+      warnOnce(
+        `the default language saved on the settings page, "${saved}", is ignored: this build has no ` +
+          `messages/${saved}.json. It offers ${offered.join(", ")}.`,
+      );
+    }
+    defaultLocale =
+      saved !== null && offered.includes(saved)
+        ? { value: saved, source: "db", envVar: "DEFAULT_LOCALE" }
+        : { value: null, source: "default", envVar: "DEFAULT_LOCALE" };
+  }
+
+  return { passkeyRpName, importSources, mailFromName, mailFrom, defaultLocale };
 }
 
 /** Prisma's "the table does not exist" and "the column does not exist". */
@@ -248,7 +316,7 @@ export async function effectiveSettings(): Promise<EffectiveSettings> {
   try {
     row = await db.instanceSettings.findUnique({
       where: { id: SETTINGS_ID },
-      select: { passkeyRpName: true, importSources: true, mailFromName: true },
+      select: { passkeyRpName: true, importSources: true, mailFromName: true, defaultLocale: true },
     });
   } catch (error) {
     const code = (error as { code?: unknown } | null)?.code;
@@ -263,6 +331,15 @@ export async function effectiveSettings(): Promise<EffectiveSettings> {
     row = null;
   }
   return resolveSettings(row);
+}
+
+/**
+ * The instance's default language, from wherever it is set — DEFAULT_LOCALE,
+ * then this page, then nothing (English) — for src/i18n/request.ts and for
+ * mail to somebody who has not chosen (`voiceFor` in email.ts).
+ */
+export async function instanceLocale(): Promise<Locale | null> {
+  return (await effectiveSettings()).defaultLocale.value;
 }
 
 /** The import sources switched on, from wherever they are set. */

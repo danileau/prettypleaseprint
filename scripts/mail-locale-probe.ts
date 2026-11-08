@@ -5,22 +5,24 @@
  *
  *   tsx --import ./scripts/_server-only.mjs scripts/mail-locale-probe.ts
  *
- * The stack under test ships English alone, so nobody there can be written to
- * in another language. This drives the app's own `notify` in process instead,
- * from the recipient's `preferredLocale` to the message in Mailpit, with a
- * catalogue it writes to `messages/xx.json` for the length of the run.
+ * Not through the languages the stack ships, whose words change as they are
+ * translated: this drives the app's own `notify` in process, from the
+ * recipient's `preferredLocale` to the message in Mailpit, with a catalogue it
+ * writes to `messages/vo.json` for the length of the run — one whose strings,
+ * and broken message, are the test's own. Volapük because it has to be a
+ * language the app would offer (Intl names it; `xx` it does not, and is left
+ * out like `notes.json`) and one no catalogue here will ever be.
  *
- * What this does not exercise is the built app: here `tsx` resolves the
- * catalogue import at run time from the file on disk, where the deployed
- * server finds it in the map the bundler made at build time. `full-test.sh`'s
+ * What this does not exercise is the built app: here `tsx` lists and reads
+ * messages/ from disk, where the deployed server finds the catalogues in the
+ * map the bundler made at build time (src/i18n/catalogue.ts). `full-test.sh`'s
  * `messages-bundled` step checks that map against messages/ in the built
- * image; nothing sends mail from the image in a second language until one
- * ships.
+ * image, and verify:auth serves every shipped language from it.
  *
- * `xx` is in no one's LOCALES, so it is added to the list here, in this
- * process only — after checking that, before it is added, the same file is
- * ignored: only a listed language is used. The file is gitignored, removed if
- * a killed run left it, and removed again on the way out.
+ * A language is a file, so the probe also says what `vo` was before the file
+ * existed — not a language: English — and after, with no other change. The
+ * file is gitignored, removed if a killed run left it, and removed again on
+ * the way out.
  *
  * Waits for each message to reach Mailpit before going on, because `notify`
  * sends without awaiting — the point of it — and exiting first would cut the
@@ -30,10 +32,12 @@ import "./_env";
 
 import { rmSync, writeFileSync } from "node:fs";
 
-const FIXTURE = "messages/xx.json";
+const FIXTURE = "messages/vo.json";
 
 async function main() {
   rmSync(FIXTURE, { force: true });
+  const { voiceFor } = await import("../src/lib/email");
+  const absent = (await voiceFor("vo")).lang;
   writeFileSync(
     FIXTURE,
     JSON.stringify({
@@ -51,10 +55,7 @@ async function main() {
     }),
   );
   try {
-    const { LOCALES } = await import("../src/i18n/locales");
-    const { voiceFor } = await import("../src/lib/email");
-    const unlisted = (await voiceFor("xx")).lang;
-    (LOCALES as unknown as string[]).push("xx");
+    const present = (await voiceFor("vo")).lang;
 
     const { notify } = await import("../src/lib/authz");
     const mailpit = process.env.MAILPIT_URL ?? "http://localhost:8025";
@@ -77,7 +78,7 @@ async function main() {
         await new Promise((r) => setTimeout(r, 200));
       }
     }
-    console.info(`PROBE ${JSON.stringify({ unlisted })}`);
+    console.info(`PROBE ${JSON.stringify({ absent, present })}`);
   } finally {
     rmSync(FIXTURE, { force: true });
   }

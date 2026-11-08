@@ -68,11 +68,11 @@ model User {
   banReason  String?
   banExpires DateTime?
 
-  /// The language this person chooses, as a code from LOCALES in
-  /// src/i18n/locales.ts; null is "no choice". Plain text rather than an enum,
-  /// so that dropping a language is not a migration: whatever reads it checks
-  /// the value against the list. Nothing reads or writes it yet — the choice
-  /// on /me will, in the order src/i18n/locales.ts gives.
+  /// The language this person chose on /me: the name of a file in messages/
+  /// (`fr` for messages/fr.json); null is "no choice". Plain text rather than
+  /// an enum, so that adding or dropping a language is not a migration:
+  /// whatever reads it checks the value against the files the build has, and
+  /// passes over one it no longer has (src/i18n/locales.ts).
   preferredLocale String?
 
   sessions Session[]
@@ -529,9 +529,10 @@ model Benefit {
 /// an operator can still pin a value from outside — `src/lib/settings.ts` has
 /// the rule, and is the only reader.
 ///
-/// `defaultLocale`, `defaultTheme` and `defaultSlicer` are held for #103, #105
-/// and #102, so those can read an instance default without a migration of
-/// their own. Nothing writes or reads them yet.
+/// `defaultLocale` is the instance's default language (#103): a file name
+/// from messages/, or NULL for English. `defaultTheme` and `defaultSlicer` are
+/// held for #105 and #102, so those can read an instance default without a
+/// migration of their own; nothing writes or reads them yet.
 model InstanceSettings {
   id            String   @id @default("instance")
   passkeyRpName String?

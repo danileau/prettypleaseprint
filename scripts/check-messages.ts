@@ -4,14 +4,14 @@
  *   npm run check:messages
  *
  * `messages/en.json` is the source of truth; every other file in messages/ is
- * a translation of it (`<xx>.json`). A translation drifts silently in both
- * directions: a key added in English renders in English for that language's
- * readers (the first translation lays its catalogue over English key by key,
- * which is right for the reader and invisible to everyone else), and a key
- * removed from English lingers in <xx>.json being translated and reviewed for
- * nothing. Nothing else
- * notices either — the typecheck only knows English, and the suites only read
- * English.
+ * a translation of it (`<code>.json`), and is offered by the app for being
+ * there — there is no other list (src/i18n/catalogue.ts). A translation
+ * drifts silently in both directions: a key added in English renders in
+ * English for that language's readers (each catalogue is laid over English key
+ * by key, which is right for the reader and invisible to everyone else), and a
+ * key removed from English lingers in <code>.json being translated and
+ * reviewed for nothing. Nothing else notices either — the typecheck only knows
+ * English, and the suites read a handful of each language's words, not all.
  *
  * With English alone there is no translation to hold against it: the run
  * still checks en.json itself and the client groups below, and passes.
@@ -45,6 +45,21 @@
  *             catalogues use the typographic ’ for exactly this reason.
  *   malformed a file that is not JSON, a key containing ".", a value that is
  *             neither a string nor a group
+ *   format    next-intl cannot format the message: an unclosed brace, a
+ *             `plural` with no `other`, a tag never closed. Each message is
+ *             formatted with a stand-in for every argument (`formatProblem`,
+ *             src/i18n/message-parts.ts). The app shows English for that key
+ *             meanwhile — the same test, run as it loads a catalogue.
+ *   name      the file's name is not a language (`languageProblem`,
+ *             src/i18n/locales.ts — the rule the app applies too): not a BCP 47
+ *             tag, not spelt the one way `Intl` writes it (`pt-BR`, not
+ *             `pt-br`), a code for no language (`und`), or one
+ *             `Intl.DisplayNames` has no name for (`notes`) — the picker on /me
+ *             lists a language by that name, in itself, and has nothing else
+ *             to show. The app leaves such a file out, with a warning in its
+ *             log; this is where it is caught before it ships.
+ *
+ * English is held to `format` and `quote` as well.
  *
  * And, once, for the source: every `useTranslations("…")` in a client
  * component names a group the browser is actually sent (see the end) — an
@@ -58,7 +73,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { CLIENT_GROUPS } from "../src/i18n/client-groups";
-import { partsOf } from "../src/i18n/message-parts";
+import { languageName, languageProblem } from "../src/i18n/locales";
+import { formatProblem, partsOf } from "../src/i18n/message-parts";
 
 const SENT: readonly string[] = Object.values(CLIENT_GROUPS).flat();
 
@@ -131,9 +147,16 @@ const translations = readdirSync(DIR)
   .filter((f) => f.endsWith(".json") && f !== `${SOURCE}.json`)
   .sort();
 
+/** "fr (Français)", as the picker on /me will show it. */
+const described = (file: string) => {
+  const code = file.replace(/\.json$/, "");
+  const name = languageProblem(code) === null ? languageName(code) : null;
+  return name ? `${code} (${name})` : code;
+};
+
 console.info(
   `check:messages — ${SOURCE}: ${source.leaves.size} key(s); ` +
-    `${translations.length} translation(s): ${translations.map((f) => f.replace(/\.json$/, "")).join(", ") || "none"}`,
+    `${translations.length} translation(s): ${translations.map(described).join(", ") || "none"}`,
 );
 
 for (const p of fatal) {
@@ -148,6 +171,13 @@ for (const [key, message] of source.leaves) {
     const text = `${key} — an ASCII apostrophe before { } or # starts an ICU quote; use ’`;
     console.error(`  error: ${SOURCE}: ${text}`);
     annotate("error", `${DIR}/${SOURCE}.json`, "ICU apostrophe", text);
+    errors++;
+  }
+  const problem = formatProblem(message, SOURCE);
+  if (problem) {
+    const text = `${key} — next-intl cannot format it (${problem})`;
+    console.error(`  error: ${SOURCE}: ${text}`);
+    annotate("error", `${DIR}/${SOURCE}.json`, "ICU format", text);
     errors++;
   }
 }
@@ -170,7 +200,13 @@ for (const file of translations) {
   const quote = section("quote — ASCII apostrophe before { } or #, use ’", "error");
   const malformed = section("malformed", "error");
   malformed.list.push(...problems);
-  const sections = [missing, stale, shape, malformed, empty, args, tagged, quote];
+  const named = section("name — the file name is how the app offers the language", "error");
+  const nameProblem = languageProblem(lang);
+  if (nameProblem) named.list.push(nameProblem);
+  const formats = section("format — next-intl cannot format it; the app shows English for it", "error");
+  // Formatted in its own language where it is one, for its plural rules.
+  const formatLocale = nameProblem ? SOURCE : lang;
+  const sections = [missing, stale, shape, named, malformed, empty, args, tagged, quote, formats];
 
   for (const [key, english] of source.leaves) {
     if (groups.has(key)) shape.list.push(`${key}  (a group here, a string in English)`);
@@ -185,6 +221,8 @@ for (const file of translations) {
       const gotTags = partsOf(translated).tags.join(", ");
       if (wantTags !== gotTags) tagged.list.push(`${key}  (English has <${wantTags}>, ${lang} has <${gotTags}>)`);
       if (QUOTE.test(translated)) quote.list.push(key);
+      const problem = translated.trim() === "" ? null : formatProblem(translated, formatLocale);
+      if (problem) formats.list.push(`${key}  (${problem})`);
     }
   }
   for (const key of leaves.keys()) {

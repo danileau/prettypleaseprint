@@ -1,5 +1,7 @@
 import { getTranslations } from "next-intl/server";
 
+import { offeredLocales } from "@/i18n/catalogue";
+import { SOURCE_LOCALE, languageName } from "@/i18n/locales";
 import { authMethods } from "@/lib/auth-methods";
 import { requireAdmin } from "@/lib/authz";
 import { ipSource } from "@/lib/client-ip";
@@ -47,6 +49,8 @@ export default async function SettingsPage({
   const error =
     outcome === "invalid" && fieldName === "importSources"
       ? t("result.invalidSources")
+      : outcome === "invalid" && fieldName === "defaultLocale"
+      ? t("result.invalidLocale")
       : outcome === "locked" || outcome === "invalid"
       ? t(`result.${outcome}`, { field: fieldName ? t(`fields.${fieldName}.label`) : t("result.aField") })
       : outcome === "unknown"
@@ -69,7 +73,7 @@ export default async function SettingsPage({
         ? t.rich("lockedBy", { mono, name: settings[key].envVar })
         : settings[key].source === "db"
           ? t("fromHere")
-          : settings[key].value === null
+          : key === "mailFromName" && settings[key].value === null
             ? t("fields.mailFromName.byDefaultNoName")
             : t("byDefault")}
     </p>
@@ -134,6 +138,31 @@ export default async function SettingsPage({
                   : t("fields.mailFromName.helpNoAddress")}
               </p>
               {origin("mailFromName")}
+            </div>
+
+            {/* The instance's default language (#103): every language this
+                build has but English, by its own name, as on /me — English
+                is the empty option, the built-in default, and is not stored. */}
+            <div className="mb-[22px]" data-setting="defaultLocale" data-locked={locked.has("defaultLocale")}>
+              <Label htmlFor="defaultLocale">{t("fields.defaultLocale.label")}</Label>
+              <select
+                id="defaultLocale"
+                name={locked.has("defaultLocale") ? undefined : "defaultLocale"}
+                defaultValue={settings.defaultLocale.value ?? ""}
+                disabled={locked.has("defaultLocale")}
+                className="w-full cursor-pointer rounded-card border-[3px] border-ink bg-cream-2 px-[12px] py-[10px] text-[15px] text-ink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <option value="">{t("fields.defaultLocale.builtIn")}</option>
+                {offeredLocales()
+                  .filter((code) => code !== SOURCE_LOCALE)
+                  .map((code) => (
+                    <option key={code} value={code} lang={code}>
+                      {languageName(code) ?? code}
+                    </option>
+                  ))}
+              </select>
+              <p className="m-0 mt-[6px] text-[13.5px] leading-[1.5] text-ink-2">{t("fields.defaultLocale.help")}</p>
+              {origin("defaultLocale")}
             </div>
 
             <fieldset

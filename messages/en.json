@@ -114,6 +114,9 @@
   "passwordsOff": {
     "refused": "Passwords are switched off on this instance, so there is none to set or reset."
   },
+  "time": {
+    "justNow": "just now"
+  },
   "me": {
     "sso": {
       "kicker": "Single sign-on",
@@ -137,6 +140,13 @@
       "off": "Off. Notifications are in your Activity panel and nowhere else.",
       "turnOff": "Stop emailing me",
       "turnOn": "Email them to me too"
+    },
+    "language": {
+      "heading": "Language",
+      "lead": "The language of these pages and of the emails sent to you. “Follow my browser” uses the first language your browser asks for that is offered here; emails, with no browser to ask, then use this instance’s default.",
+      "followBrowser": "Follow my browser",
+      "save": "Save",
+      "refused": "That language is not offered here, so nothing was changed."
     }
   },
   "adminSso": {
@@ -254,9 +264,11 @@
     "cleared": "(cleared a stored {value} that was not in force)",
     "none": "none",
     "noName": "no name",
+    "builtInLanguage": "English, the built-in default",
     "fields": {
       "passkeyRpName": "passkey name",
       "mailFromName": "mail sender name",
+      "defaultLocale": "default language",
       "importSources": "importing from"
     }
   },
@@ -279,6 +291,11 @@
         "noName": "No name — the address alone",
         "byDefaultNoName": "The default: no name, the address alone, as MAIL_FROM on the host gives it."
       },
+      "defaultLocale": {
+        "label": "Language for anybody who has not chosen one",
+        "help": "For a visitor whose browser asks for none of the languages this app has, and for mail to anybody who has not picked one on their profile — invitations included. Everyone can still choose their own.",
+        "builtIn": "English, the built-in default"
+      },
       "importSources": {
         "label": "Importing from a link",
         "option": "Let people paste a {source} link instead of uploading a file",
@@ -294,6 +311,7 @@
       "locked": "{field} is set on the host, so it cannot be changed here. Nothing was saved.",
       "invalid": "{field} cannot be saved like that: use at most 64 characters, on one line, without \" < > \\ or invisible formatting characters. Nothing was saved.",
       "invalidSources": "That is not a site this app can import from. Nothing was saved.",
+      "invalidLocale": "That is not a language this app has. Nothing was saved.",
       "unknown": "That form named a setting this page does not have. Nothing was saved.",
       "aField": "A setting"
     },
