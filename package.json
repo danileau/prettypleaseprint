@@ -2,6 +2,9 @@
   "name": "pretty-please-print",
   "version": "0.4.0",
   "private": true,
+  "engines": {
+    "npm": "^10"
+  },
   "description": "Invite-only 3D print requests for a small office — upload a model, follow it through the print stages.",
   "license": "AGPL-3.0-or-later",
   "author": "Danilo Licitra",

@@ -5,6 +5,13 @@
 # grouped weekly to keep the noise down; they still go through CI.
 version: 2
 updates:
+  # Which npm writes the lockfile is not set here: Dependabot reads it from
+  # `engines.npm` in package.json. Without that it runs its own image's npm
+  # (11, and 12 on dependabot-core's main), which leaves out an optional peer
+  # entry that the npm 10 bundled with Node 22 insists on. The grouped PR then
+  # fails `npm ci` in CI and in the Dockerfile ("Missing: @swc/helpers@0.5.24
+  # from lock file", #114, #125, #127). `engines.npm` follows the Node major,
+  # like @types/node below: Dockerfile, ci.yml and package.json move together.
   - package-ecosystem: npm
     directory: /
     schedule:
