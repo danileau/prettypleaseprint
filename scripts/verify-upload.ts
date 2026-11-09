@@ -652,9 +652,25 @@ async function main() {
 
   section("model page url");
 
-  let mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "https://example.com/model" });
+  let mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), {});
+  let mplPayload = mplUp.status === 200 ? await mplUp.json() : null;
+  const emptyMplStory = await db.story.findFirst({ where: { id: mplPayload?.id } });
+  check("an empty model page link is stored as null",
+        mplUp.status === 200 && emptyMplStory?.modelPageUrl === null,
+        `status ${mplUp.status}, modelPageUrl ${JSON.stringify(emptyMplStory?.modelPageUrl)}`);
+  const emptyMplApi = emptyMplStory
+    ? await aylaB.raw(`${APP}/api/stories/${emptyMplStory.id}`)
+    : null;
+  const emptyMplResource = emptyMplApi
+    ? await emptyMplApi.json() as { modelPageUrl?: string | null }
+    : null;
+  check("the story API returns null when there is no model page link",
+        emptyMplApi?.status === 200 && emptyMplResource?.modelPageUrl === null,
+        `status ${emptyMplApi?.status}, modelPageUrl ${JSON.stringify(emptyMplResource?.modelPageUrl)}`);
+
+  mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "https://example.com/model" });
   check("the model page url is set correctly", mplUp.status === 200, "upload did not succeed or the model page url was not accepted");
-  let mplPayload = mplUp.status === 200 ? await mplUp.json() : { error: await mplUp.text() };
+  mplPayload = mplUp.status === 200 ? await mplUp.json() : { error: await mplUp.text() };
   const mplStory = await db.story.findFirst({ where: { id: mplPayload.id } });
   check("the model page url is stored on the ticket", mplStory?.modelPageUrl === "https://example.com/model", mplStory?.modelPageUrl || "");  
   if (!mplStory) throw new Error("Cannot check the model page link without the uploaded ticket.");
@@ -707,7 +723,6 @@ async function main() {
   mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "javascript:alert(1)" });
   mplPayload = mplUp.status === 400 ? await mplUp.json() : null;
   check("the model page url is rejected when attempting to run JavaScript", mplUp.status === 400 && mplPayload.error === "The model page link must use https.", `status ${mplUp.status}, error: ${mplPayload.error}`);
-
 
   console.info(
     `\n${passed} checks passed, ${failures.length} failed` +
