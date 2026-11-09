@@ -37,6 +37,8 @@ export type AuditAction =
   | "password.reset_completed"
   | "access.revoked"
   | "access.restored"
+  // the instance's own settings (/admin/settings)
+  | "settings.changed"
   // work
   | "story.created"
   | "upload.rejected"
@@ -84,33 +86,39 @@ type RecordInput = {
 };
 
 /**
+ * The row `record` writes, built but not written — for a change that must not
+ * happen without its row, which writes both in one transaction instead
+ * (`saveSettingsAction` in src/app/admin/settings/actions.ts does).
+ */
+export async function auditRow(input: RecordInput) {
+  let ip: string | null = null;
+  let userAgent: string | null = null;
+  try {
+    const h = await headers();
+    ip = clientIp(h);
+    userAgent = h.get("user-agent")?.slice(0, 300) ?? null;
+  } catch {
+    // Outside a request (a cron, a seed) — the trail still gets the event.
+  }
+  return {
+    action: input.action,
+    actorId: input.actor?.id ?? null,
+    actorEmail: input.actor?.email ?? null,
+    subject: input.subject ?? null,
+    ip,
+    userAgent,
+    detail: (input.detail ?? undefined) as never,
+  };
+}
+
+/**
  * Best effort by design: a failure to write the trail must not fail the
  * action the user asked for. It is logged loudly instead, so a broken trail
  * is noisy rather than silent.
  */
 export async function record(input: RecordInput): Promise<void> {
   try {
-    let ip: string | null = null;
-    let userAgent: string | null = null;
-    try {
-      const h = await headers();
-      ip = clientIp(h);
-      userAgent = h.get("user-agent")?.slice(0, 300) ?? null;
-    } catch {
-      // Outside a request (a cron, a seed) — the trail still gets the event.
-    }
-
-    await db.auditEvent.create({
-      data: {
-        action: input.action,
-        actorId: input.actor?.id ?? null,
-        actorEmail: input.actor?.email ?? null,
-        subject: input.subject ?? null,
-        ip,
-        userAgent,
-        detail: (input.detail ?? undefined) as never,
-      },
-    });
+    await db.auditEvent.create({ data: await auditRow(input) });
   } catch (error) {
     console.error("[audit] failed to record", input.action, error);
   }

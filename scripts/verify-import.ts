@@ -3,13 +3,15 @@
  *
  *   npm run verify:import
  *
- * Needs the app running with `IMPORT_SOURCES=printables` and pointed at the
- * stand-in for Printables — `docker-compose.test.yml` does both, and
- * `scripts/stubs/printables-stub.mjs` says why a stand-in rather than the real
- * site. Against a host-run app:
+ * Needs the app pointed at the stand-in for Printables —
+ * `docker-compose.test.yml` does that, and `scripts/stubs/printables-stub.mjs`
+ * says why a stand-in rather than the real site. Importing itself is switched
+ * on here the way the owner does it, in the settings row (#104), and the row
+ * is put back as it was afterwards; an app that pins IMPORT_SOURCES must pin
+ * it to `printables`. Against a host-run app:
  *
  *   node scripts/stubs/printables-stub.mjs &
- *   IMPORT_SOURCES=printables IMPORT_PRINTABLES_BASE=http://localhost:4010 npm start
+ *   IMPORT_PRINTABLES_BASE=http://localhost:4010 npm start
  *
  * Most of this is about refusals. Importing is the one place the app makes a
  * request to somebody else's server because a requester asked, so what matters is less that a good link
@@ -235,12 +237,28 @@ async function main() {
   const rubenB = await signIn(admin);
   const anon = new Browser();
 
+  // Switched on the way the owner does it: the settings row. Whatever was in
+  // the row is put back when this run ends, however it ends.
+  const savedSettings = await db.instanceSettings.findUnique({ where: { id: "instance" } });
+  restoreSettings = async () => {
+    if (savedSettings) {
+      await db.instanceSettings.update({ where: { id: "instance" }, data: { importSources: savedSettings.importSources } });
+    } else {
+      await db.instanceSettings.deleteMany({ where: { id: "instance" } });
+    }
+  };
+  await db.instanceSettings.upsert({
+    where: { id: "instance" },
+    create: { id: "instance", importSources: ["printables"] },
+    update: { importSources: ["printables"] },
+  });
+
   const catalog = await (await aylaB.raw(`${APP}/api/catalog`)).json();
   if (!Array.isArray(catalog.importSources) || !catalog.importSources.includes("printables")) {
     throw new Error(
-      "This app does not have importing switched on, so there is nothing to verify.\n" +
-        "Start it with IMPORT_SOURCES=printables and IMPORT_PRINTABLES_BASE pointing at the stand-in\n" +
-        "(docker-compose.test.yml sets both).",
+      "Importing is still off after switching it on in the settings row, so there is nothing to verify.\n" +
+        "Is IMPORT_SOURCES set on the app (it wins over the row)? Leave it unset, or set it to printables,\n" +
+        "and point IMPORT_PRINTABLES_BASE at the stand-in (docker-compose.test.yml does).",
     );
   }
   check("the catalogue says importing is on, and from where", catalog.importSources.join() === "printables");
@@ -483,6 +501,24 @@ async function main() {
         !tampered.includes("javascript:alert") && !tampered.includes("Imported from") &&
         tamperedApi.source === null, JSON.stringify(tamperedApi.source));
 
+  // ── switched off again ──────────────────────────────────────────────────
+  section("switched off on the settings page");
+  const pinnedByEnv = (await (await rubenB.raw(`${APP}/admin/settings`)).text())
+    .includes('data-setting="importSources" data-locked="true"');
+  if (pinnedByEnv) {
+    console.info("  skip  IMPORT_SOURCES is set on the app, so the settings row cannot switch it off");
+  } else {
+    await db.instanceSettings.update({ where: { id: "instance" }, data: { importSources: [] } });
+    await resetHits();
+    const off = await aylaB.post("/api/import/files", { url: link(3161, "3d-benchy") });
+    const offHits = await hits();
+    check("the next request is refused as switched off — no restart", off.status === 501, `status ${off.status}`);
+    check("and the site is not contacted", offHits.graphql + offHits.files + offHits.elsewhere === 0, JSON.stringify(offHits));
+    check("the catalogue says so", ((await (await aylaB.raw(`${APP}/api/catalog`)).json()).importSources ?? [1]).length === 0);
+    check("and the request form no longer offers it",
+          !rendered(await (await aylaB.raw(`${APP}/upload`)).text()).includes("paste a Printables link"));
+  }
+
   console.info(
     `\n${passed} checks passed, ${failures.length} failed` +
       (failures.length ? `:\n  - ${failures.join("\n  - ")}` : ""),
@@ -490,5 +526,11 @@ async function main() {
   process.exitCode = failures.length ? 1 : 0;
 }
 
+/** Puts the settings row back as the run found it; set once the run has changed it. */
+let restoreSettings: (() => Promise<void>) | null = null;
+
 main().catch((e) => { console.error(e); process.exitCode = 1; })
-      .finally(() => db.$disconnect());
+      .finally(async () => {
+        await restoreSettings?.().catch((e) => { console.error("could not restore the settings row", e); process.exitCode = 1; });
+        await db.$disconnect();
+      });

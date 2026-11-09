@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 import type { Prisma } from "@prisma/client";
 
 import { db } from "@/lib/db";
@@ -28,7 +29,7 @@ export const dynamic = "force-dynamic";
  * new is recorded for them.
  */
 
-type Lens = "all" | "access" | "uploads";
+type Lens = "all" | "access" | "uploads" | "settings";
 
 const LENSES: Array<{ key: Lens; label: string; actions?: string[] }> = [
   { key: "all", label: "Everything" },
@@ -49,6 +50,8 @@ const LENSES: Array<{ key: Lens; label: string; actions?: string[] }> = [
       "story.declined", "story.flagged", "story.priority_changed", "file.downloaded",
     ],
   },
+  // What the owner changed about the instance itself (#104).
+  { key: "settings", label: "Settings", actions: ["settings.changed"] },
 ];
 
 /**
@@ -81,7 +84,7 @@ export default async function AuditPage({
 
   const where: Prisma.AuditEventWhereInput = actions ? { action: { in: actions } } : {};
 
-  const [events, refusalsToday, refusalPanel, stagePanel, mixPanel] = await Promise.all([
+  const [events, refusalsToday, refusalPanel, stagePanel, mixPanel, tSettings] = await Promise.all([
     db.auditEvent.findMany({ where, orderBy: { at: "desc" }, take: 200 }),
     db.auditEvent.count({
       where: {
@@ -92,6 +95,7 @@ export default async function AuditPage({
     refusals(),
     stages(),
     mix(),
+    getTranslations("auditSettings"),
   ]);
 
   return (
@@ -177,7 +181,7 @@ export default async function AuditPage({
                   <td className="px-[17.6px] py-[11px] align-top text-[13.5px]">
                     <span className="font-mono text-[12.5px]">{e.subject ?? "—"}</span>
                     {e.detail != null && (
-                      <Detail detail={e.detail as Record<string, unknown>} />
+                      <Detail detail={e.detail as Record<string, unknown>} t={tSettings} />
                     )}
                   </td>
                   <td className="px-[17.6px] py-[11px] align-top font-mono text-[12px] text-ink-3">
@@ -199,15 +203,51 @@ export default async function AuditPage({
 }
 
 /** The few fields worth showing inline; the rest stay in the database. */
-function Detail({ detail }: { detail: Record<string, unknown> }) {
+function Detail({ detail, t }: { detail: Record<string, unknown>; t: SettingsTranslator }) {
   const interesting = ["reason", "title", "filename", "format", "dims", "role"];
   const shown = interesting
     .filter((k) => detail[k] != null)
     .map((k) => `${k}: ${String(detail[k])}`);
-  if (shown.length === 0) return null;
+  const changes = detail.changes;
+  const hasChanges = changes != null && typeof changes === "object" && !Array.isArray(changes);
+  if (shown.length === 0 && !hasChanges) return null;
   return (
     <span className="mt-[3px] block text-[12.5px] text-ink-3">
       {shown.join(" · ")}
+      {hasChanges && <SettingsChanges changes={changes as Record<string, unknown>} t={t} />}
+    </span>
+  );
+}
+
+type SettingsTranslator = Awaited<ReturnType<typeof getTranslations<"auditSettings">>>;
+
+/**
+ * A `settings.changed` row's changes, field by field: what was in force
+ * before, and after. The whole point of the row (#104) is that the owner can
+ * see what was switched, so the values are shown, not just the field names.
+ */
+function SettingsChanges({ changes, t }: { changes: Record<string, unknown>; t: SettingsTranslator }) {
+  const show = (value: unknown): string =>
+    value === null || value === undefined
+      ? t("noName")
+      : Array.isArray(value)
+        ? value.length
+          ? value.map(String).join(", ")
+          : t("none")
+        : `“${String(value)}”`;
+  const label = (field: string): string =>
+    field === "passkeyRpName" || field === "mailFromName" || field === "importSources" ? t(`fields.${field}`) : field;
+  return (
+    <span className="block" data-audit-changes>
+      {Object.entries(changes).map(([field, raw]) => {
+        const change = (raw ?? {}) as { from?: unknown; to?: unknown; cleared?: unknown };
+        return (
+          <span key={field} className="block">
+            {t("change", { field: label(field), from: show(change.from), to: show(change.to) })}
+            {change.cleared !== undefined && <> {t("cleared", { value: show(change.cleared) })}</>}
+          </span>
+        );
+      })}
     </span>
   );
 }

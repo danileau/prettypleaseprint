@@ -2,6 +2,7 @@ import { Resend } from "resend";
 import nodemailer from "nodemailer";
 
 import { isBuildPhase } from "@/lib/runtime";
+import { effectiveSettings, senderHeader, type MailSender } from "@/lib/settings";
 import { catalogueFor, translatorFor, type Messages, type Translator } from "@/i18n/catalogue";
 
 /**
@@ -45,7 +46,15 @@ if (!isBuildPhase && process.env.NODE_ENV === "production" && !mailConfigured())
   );
 }
 
-const from = process.env.MAIL_FROM ?? "Pretty Please Print <printer@example.org>";
+/**
+ * Who mail is from, read per message rather than once at load: the address is
+ * MAIL_FROM's, and the display name is the owner's to change on
+ * /admin/settings, unless MAIL_FROM already names one — see
+ * `src/lib/settings.ts`. A save applies to the next message sent.
+ */
+async function sender(): Promise<MailSender> {
+  return (await effectiveSettings()).mailFrom;
+}
 
 /**
  * What the owner is shown about where mail goes — and nothing they are not.
@@ -60,7 +69,7 @@ export type MailServer =
   | { kind: "resend" }
   | null;
 
-export function mailStatus(): { transport: Transport; from: string; server: MailServer } {
+export async function mailStatus(): Promise<{ transport: Transport; from: string; server: MailServer }> {
   const transport = mailTransport();
   let server: MailServer = null;
   if (transport === "smtp") {
@@ -72,7 +81,7 @@ export function mailStatus(): { transport: Transport; from: string; server: Mail
     }
   }
   if (transport === "resend") server = { kind: "resend" };
-  return { transport, from, server };
+  return { transport, from: senderHeader(await sender()), server };
 }
 
 export type Mail = { to: string; subject: string; html: string; text: string };
@@ -85,7 +94,7 @@ export async function sendMail(mail: Mail): Promise<boolean> {
   switch (mailTransport()) {
     case "resend": {
       const resend = new Resend(process.env.RESEND_API_KEY!);
-      const { error } = await resend.emails.send({ from, ...mail });
+      const { error } = await resend.emails.send({ from: senderHeader(await sender()), ...mail });
       if (error) throw new Error(`Resend refused the message: ${error.message}`);
       return true;
     }
@@ -101,7 +110,13 @@ export async function sendMail(mail: Mail): Promise<boolean> {
         greetingTimeout: 10_000,
         socketTimeout: 20_000,
       });
-      await t.sendMail({ from, ...mail });
+      // An object rather than a string, so nodemailer does the quoting and
+      // the encoding of a name that is not plain ASCII.
+      const from = await sender();
+      await t.sendMail({
+        from: from.kind === "verbatim" ? from.header : { name: from.name, address: from.address },
+        ...mail,
+      });
       return true;
     }
     case "none":
