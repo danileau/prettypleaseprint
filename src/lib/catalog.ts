@@ -75,7 +75,7 @@ export const WishSchema = z.object({
   tip: z.string().trim().min(1, "Pick what's in it for them.").max(80, "That tip is oddly long."),
   note: z.string().trim().max(2000, "That note is very long.").optional().default(""),
   modelPageUrl: z
-    .union([
+    .preprocess((v) => (typeof v === "string" ? v.trim() : v), z.union([
       z
         .string()
         .trim()
@@ -112,7 +112,7 @@ export const WishSchema = z.object({
         }),
       z.literal(""),
     ])
-    .nullish()
+      .nullish())
     .transform((v) => v || null),
   // Optional free-text print settings (FRR-103 option A). Shown to the owner so
   // slicer specifics live on the ticket rather than in a chat thread.

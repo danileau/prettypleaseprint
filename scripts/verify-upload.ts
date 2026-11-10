@@ -671,9 +671,9 @@ async function main() {
   mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "https://example.com/model" });
   check("the model page url is set correctly", mplUp.status === 200, "upload did not succeed or the model page url was not accepted");
   mplPayload = mplUp.status === 200 ? await mplUp.json() : { error: await mplUp.text() };
-  const mplStory = await db.story.findFirst({ where: { id: mplPayload.id } });
-  check("the model page url is stored on the ticket", mplStory?.modelPageUrl === "https://example.com/model", mplStory?.modelPageUrl || "");  
+  let mplStory = await db.story.findFirst({ where: { id: mplPayload.id } });
   if (!mplStory) throw new Error("Cannot check the model page link without the uploaded ticket.");
+  check("the model page url is stored on the ticket", mplStory?.modelPageUrl === "https://example.com/model", mplStory?.modelPageUrl || "");
 
   const mplPage = await aylaB.go(`${APP}/story/${mplStory.id}`);
   const mplHtml = rendered(await mplPage.text());
@@ -696,12 +696,12 @@ async function main() {
 
   let mplAgain = await requeue(aylaB, mplStory.id, {});
   mplPayload = mplAgain.status === 201 ? await mplAgain.json() : null;
-  let mplCopy = await db.story.findFirst({ where: { id: mplPayload.story.id } });
+  let mplCopy = await db.story.findFirst({ where: { id: mplPayload?.story?.id || -1 } });
   check("the model page url is preserved after requeue", mplCopy?.modelPageUrl === mplStory?.modelPageUrl, mplCopy?.modelPageUrl || "");
 
   mplAgain = await requeue(aylaB, mplStory.id, { modelPageUrl: "https://example.com/new-model" });
   mplPayload = mplAgain.status === 201 ? await mplAgain.json() : null;
-  mplCopy = await db.story.findFirst({ where: { id: mplPayload.story.id } });
+  mplCopy = await db.story.findFirst({ where: { id: mplPayload?.story?.id || -1 } });
   check("the model page url is updated after requeue", mplCopy?.modelPageUrl === "https://example.com/new-model", mplCopy?.modelPageUrl || "");
 
   mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "bob" });
@@ -712,9 +712,13 @@ async function main() {
   mplPayload = mplUp.status === 400 ? await mplUp.json() : null;
   check("the model page url is rejected for using an HTTP URL", mplUp.status === 400 && mplPayload.error === "The model page link must use https.", `status ${mplUp.status}, error: ${mplPayload.error}`);
 
-  mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "https://user:password@example.com/model" });
+  mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "https://printables.com@evil.example/" });
   mplPayload = mplUp.status === 400 ? await mplUp.json() : null;
-  check("the model page url is rejected for including credentials in the URL", mplUp.status === 400 && mplPayload.error === "The model page link must not include a username or password.", `status ${mplUp.status}, error: ${mplPayload.error}`);
+  check("the model page url is rejected for including username in the URL", mplUp.status === 400 && mplPayload.error === "The model page link must not include a username or password.", `status ${mplUp.status}, error: ${mplPayload.error}`);
+
+  mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "https://foo:bar@example.com/model" });
+  mplPayload = mplUp.status === 400 ? await mplUp.json() : null;
+  check("the model page url is rejected for including username and password in the URL", mplUp.status === 400 && mplPayload.error === "The model page link must not include a username or password.", `status ${mplUp.status}, error: ${mplPayload.error}`);
 
   mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "https://example.com/model/" + "a".repeat(2000) });
   mplPayload = mplUp.status === 400 ? await mplUp.json() : null;
@@ -723,6 +727,13 @@ async function main() {
   mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "javascript:alert(1)" });
   mplPayload = mplUp.status === 400 ? await mplUp.json() : null;
   check("the model page url is rejected when attempting to run JavaScript", mplUp.status === 400 && mplPayload.error === "The model page link must use https.", `status ${mplUp.status}, error: ${mplPayload.error}`);
+
+  mplUp = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22), { modelPageUrl: "     " });
+  check("the model page url is saved as null when all spaces", mplUp.status === 200, `status ${mplUp.status}, error: ${mplPayload.error}`);
+  mplPayload = mplUp.status === 200 ? await mplUp.json() : { error: await mplUp.text() };
+  mplStory = await db.story.findFirst({ where: { id: mplPayload.id } });
+  if (!mplStory) throw new Error("Cannot check the model page link without the uploaded ticket.");
+  check("the model page url is stored as null on the ticket", mplStory?.modelPageUrl === null, mplStory?.modelPageUrl || "");
 
   console.info(
     `\n${passed} checks passed, ${failures.length} failed` +
