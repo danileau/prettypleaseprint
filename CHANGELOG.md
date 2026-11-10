@@ -7,12 +7,15 @@ Notable changes. Every entry names a released version; deployments pin
 
 ### Upgrading from v0.4.0
 
-- **2 database migrations run by themselves**, in the `migrate` container:
-  `20261105120000_notify_by_email` adds one column with a default, and
-  `20261106120000_instance_settings` adds one table, empty. Nothing else.
-  Both were tested together old → new → old → new on one database with the
-  published v0.4.0 images, so the deploy wizard's automatic rollback still
-  lands on a working app.
+- **3 database migrations run by themselves**, in the `migrate` container:
+
+  - `20261105120000_notify_by_email` adds one column with a default
+  - `20261106120000_instance_settings` adds one table, empty
+  - `20261110120000_model_page_url` adds one nullable column with no default
+
+  Nothing else. All were tested together old → new → old → new on one database
+  with the published v0.4.0 images, so the deploy wizard's automatic rollback
+  still lands on a working app.
 - **Your `.env.docker` keeps its meaning.** Until the owner saves something
   under **Settings**, the app does exactly what it did on v0.4.0 with the same
   `.env.docker`: the same passkey name, mail sent exactly as `MAIL_FROM` is
@@ -140,6 +143,10 @@ Notable changes. Every entry names a released version; deployments pin
   [Setting up mail](docs/deployment.md#setting-up-mail) has the SMTP details,
   including the one that catches everybody — an `@` in the username has to be
   `%40`.
+
+- **"Link to model page" field on requests** (#101, #113). Adds an optional
+  field for a link to the model source site, allowing the owner to get
+  alternate files or printing tips from the original source.
 
 ### Changed
 
