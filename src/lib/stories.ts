@@ -619,8 +619,8 @@ export async function withdrawStory(actor: Actor, id: number) {
  * tickets — a finished one, a declined one, anything — carrying the wish
  * across, with whatever the requester changed on the way: `changes` may name
  * any wish field (title, material, colorName, quantity, tip, note,
- * printSettings, modelPageUrl) and the rest are taken from the old ticket. The 
- * file is the one thing that cannot change; a different model is a different 
+ * printSettings, modelPageUrl) and the rest are taken from the old ticket. The
+ * file is the one thing that cannot change; a different model is a different
  * request.
  *
  * The file is *copied*, not shared: a fresh object under a generated key, so
