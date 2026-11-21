@@ -158,6 +158,16 @@ Notable changes. Every entry names a released version; deployments pin
   the probe still uses the stack's Mailpit on `:1025`, which is what CI and
   `full-test.sh` read. It never uses `SMTP_URL`, which on a developer's
   machine can be a real relay.
+- **Known vulnerabilities in dependencies and the image are patched.**
+  `next` 15.5.28 → 15.5.29 (GHSA-7qx7-33qx-rqx2, GHSA-f3mh-rxg3-f5g2,
+  GHSA-pc58-hwjq-p385); `nodemailer` 10.1.1 → 10.6.1 (three address-parser
+  advisories that could add a recipient the header does not name:
+  GHSA-8c8m-p3m8-cjg8, GHSA-m943-m63m-w62w, GHSA-85x2-q946-cp5h); and Prisma's
+  `effect` forced to 3.22.5 (ReDoS, GHSA-7589-6fvf-x4pw — a build/migrate-time
+  dependency, and Prisma 6.19.3 is the newest 6.x). Every image stage now runs
+  `apk upgrade`, which picks up the fixed OpenSSL (3.5.9-r1) and zlib (1.4-r0)
+  the `node:22-alpine` base did not yet carry. `npm audit` and a Trivy scan of
+  the built image both report nothing.
 
 ## v0.4.0
 

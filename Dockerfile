@@ -16,7 +16,7 @@ WORKDIR /app
 
 # Prisma's query engine is a native binary: it needs OpenSSL, and glibc shims
 # on Alpine.
-RUN apk add --no-cache openssl libc6-compat
+RUN apk upgrade --no-cache && apk add --no-cache openssl libc6-compat
 
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -24,7 +24,7 @@ RUN npm ci
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS builder
 WORKDIR /app
-RUN apk add --no-cache openssl libc6-compat
+RUN apk upgrade --no-cache && apk add --no-cache openssl libc6-compat
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -50,7 +50,7 @@ RUN npm run build
 # would ship well over a gigabyte to apply one migration.
 FROM node:22-alpine AS migrator
 WORKDIR /app
-RUN apk add --no-cache openssl libc6-compat
+RUN apk upgrade --no-cache && apk add --no-cache openssl libc6-compat
 
 # Exactly three packages, not the whole dependency tree: the seed imports
 # @prisma/client and nothing else, and installing the app's manifest here
@@ -117,7 +117,7 @@ CMD ["sh", "-c", "mkdir -p /uploads && chown 1001:1001 /uploads && ./node_module
 # a MinIO data directory left.
 FROM node:22-alpine AS storage-migrator
 WORKDIR /app
-RUN apk add --no-cache openssl libc6-compat
+RUN apk upgrade --no-cache && apk add --no-cache openssl libc6-compat
 
 # Four packages, generated the same way the migrator's three are, and for the
 # same reason its comment gives: installing the app's manifest would drag in
@@ -172,7 +172,7 @@ CMD ["./node_modules/.bin/tsx", "scripts/export-storage.ts"]
 FROM node:22-alpine AS runner
 WORKDIR /app
 
-RUN apk add --no-cache openssl libc6-compat
+RUN apk upgrade --no-cache && apk add --no-cache openssl libc6-compat
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
