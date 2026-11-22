@@ -5,6 +5,15 @@
 # grouped weekly to keep the noise down; they still go through CI.
 version: 2
 updates:
+  # `@swc/helpers` is a devDependency that nothing here imports. It is there
+  # for the lockfile: next pins 0.5.15, @swc/core (under next-intl) has an
+  # optional peer on >=0.5.17, and the npm Dependabot runs (12) leaves that
+  # nested optional entry out while the npm 10 bundled with Node 22 refuses
+  # to `npm ci` without it ("Missing: @swc/helpers@0.5.24 from lock file",
+  # #125, #127, #131). Declared, both write the same tree, with no npm pin to
+  # cost the cooldown (npm 10 has no --min-release-age). next keeps its own
+  # 0.5.15. Remove it once CI and the Dockerfile are on an npm that accepts
+  # such a lockfile (11 and 12 do).
   - package-ecosystem: npm
     directory: /
     schedule:
