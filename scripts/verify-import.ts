@@ -321,6 +321,9 @@ async function main() {
 
   const story = await db.story.findFirst({ where: { uploaderId: ayla.id }, orderBy: { id: "desc" } });
   check("a story row exists, owned by the person who asked", story?.uploaderId === ayla.id && story?.status === "Requested");
+  check("import without a model page link leaves it null",
+        story?.modelPageUrl === null && payload.story?.modelPageUrl === null,
+        `database ${JSON.stringify(story?.modelPageUrl)}, response ${JSON.stringify(payload.story?.modelPageUrl)}`);
   check("the filename is the site's, the size is what arrived",
         story?.filename === "benchy.stl" && story?.fileSize === 684, `${story?.filename} ${story?.fileSize}`);
   check("dimensions were measured from the fetched bytes", story?.dims === "40 × 20 × 10 mm", story?.dims ?? "");

@@ -206,6 +206,7 @@ export function storyResource(story: StoryRow) {
     commentCount: story._count.comments,
     createdAt: story.createdAt.toISOString(),
     updatedAt: story.updatedAt.toISOString(),
+    modelPageUrl: story.modelPageUrl,
   };
 }
 

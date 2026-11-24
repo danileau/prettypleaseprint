@@ -148,6 +148,7 @@ export const STORY_FIELDS = {
   uploaderId: true,
   uploader: { select: { id: true, name: true, initials: true } },
   _count: { select: { comments: true } },
+  modelPageUrl: true,
 } satisfies Prisma.StorySelect;
 
 export type StoryRow = Prisma.StoryGetPayload<{ select: typeof STORY_FIELDS }>;
@@ -618,8 +619,9 @@ export async function withdrawStory(actor: Actor, id: number) {
  * tickets — a finished one, a declined one, anything — carrying the wish
  * across, with whatever the requester changed on the way: `changes` may name
  * any wish field (title, material, colorName, quantity, tip, note,
- * printSettings) and the rest are taken from the old ticket. The file is the
- * one thing that cannot change; a different model is a different request.
+ * printSettings, modelPageUrl) and the rest are taken from the old ticket. The
+ * file is the one thing that cannot change; a different model is a different
+ * request.
  *
  * The file is *copied*, not shared: a fresh object under a generated key, so
  * the new ticket and the old one own independent geometry and withdrawing
@@ -639,6 +641,7 @@ export async function requeueStory(
       colorName: true, tip: true, note: true, printSettings: true,
       filename: true, fileSize: true,
       mimeType: true, storageKey: true, dims: true, sourceUrl: true, uploaderId: true,
+      modelPageUrl: true
     },
   });
   if (!src) throw problem(404, "That ticket no longer exists.");
@@ -663,6 +666,7 @@ export async function requeueStory(
     tip: pick("tip"),
     note: pick("note"),
     printSettings: pick("printSettings"),
+    modelPageUrl: pick("modelPageUrl"),
   });
   if (!parsed.success) {
     throw problem(400, parsed.error.issues[0]?.message ?? "Check the form.");
@@ -723,6 +727,7 @@ export async function requeueStory(
       // The same model from the same place; a reprint did not stop having come
       // from there.
       sourceUrl: src.sourceUrl,
+      modelPageUrl: wish.modelPageUrl,
     },
     select: { id: true },
   });
@@ -731,7 +736,7 @@ export async function requeueStory(
   // Which fields differ from the old ticket — names only, for the trail. The
   // values are on the two tickets, and a note is not something to copy into
   // a log.
-  const changed = (["title", "material", "colorName", "quantity", "priority", "tip", "note", "printSettings"] as const)
+  const changed = (["title", "material", "colorName", "quantity", "priority", "tip", "note", "printSettings", "modelPageUrl"] as const)
     .filter((key) => (key === "title" ? title : wish[key]) !== src[key]);
 
   const owner = await printerOwner();

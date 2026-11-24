@@ -146,6 +146,7 @@ export async function openRequest(
         storageKey: key,
         dims: inspection.dims,
         sourceUrl: origin?.url ?? null,
+        modelPageUrl: wish.modelPageUrl,
       },
     });
   } catch (error) {

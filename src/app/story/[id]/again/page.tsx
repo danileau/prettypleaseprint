@@ -78,6 +78,7 @@ export default async function PrintAgainPage({
               tip: story.tip,
               note: story.note,
               printSettings: story.printSettings,
+              modelPageUrl: story.modelPageUrl,
             }}
           />
         ) : (
