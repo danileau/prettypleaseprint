@@ -52,6 +52,13 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   serverExternalPackages: ["@prisma/client", "nodemailer"],
+  // The catalogues are in the bundle, which is where the server finds them
+  // (src/i18n/catalogue.ts). Its fallback for tsx reads messages/ from disk,
+  // and file tracing follows that read and would copy the directory into the
+  // standalone output too: a second copy the server never reads, that a host
+  // could edit in the container to no effect. Left out so the image holds the
+  // languages in one place.
+  outputFileTracingExcludes: { "*": ["messages/**"] },
   experimental: {
     /**
      * Let an upload actually be as large as the app says it is.

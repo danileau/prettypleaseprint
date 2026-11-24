@@ -6,10 +6,39 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/authz";
+import { requireAdmin, requireUser } from "@/lib/authz";
 import { requireFreshAuth } from "@/lib/reauth";
 import { record } from "@/lib/audit";
 import { OIDC_PROVIDER_ID, authMethods, oidcConfig } from "@/lib/auth-methods";
+import { offeredLocales } from "@/i18n/catalogue";
+
+/**
+ * Your own language, from the picker on /me: a code from messages/, or empty
+ * for "Follow my browser", stored as null.
+ *
+ * Yours only: the id comes from the session, never from the form. And only a
+ * language this build offers — the same `offeredLocales` the picker lists — so
+ * a value the page never offered is refused whole, nothing saved, rather than
+ * stored to be passed over on every request after. That is a crafted request,
+ * or a page left open across an upgrade that removed the language; either way
+ * the page says nothing changed.
+ *
+ * Not on the audit trail, unlike switching emails off: it changes how pages
+ * read to the one person who chose it, and nothing about who can do what or
+ * where their data goes.
+ */
+export async function setLanguageAction(formData: FormData): Promise<void> {
+  const user = await requireUser("/me");
+  const value = formData.get("locale");
+  if (typeof value !== "string" || (value !== "" && !offeredLocales().includes(value))) {
+    redirect("/me?language=refused#language");
+  }
+  await db.user.update({ where: { id: user.id }, data: { preferredLocale: value === "" ? null : value } });
+  revalidatePath("/me");
+  // Back to the picker, which the next render reads in the language just
+  // chosen — that is the confirmation.
+  redirect("/me#language");
+}
 
 /**
  * Connect the single sign-on provider to the printer owner's account.

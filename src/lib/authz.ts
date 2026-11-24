@@ -48,8 +48,14 @@ export {
  * session they already hold — that one keeps working until it expires.
  * Revoking access deletes those sessions, and this is the belt to that
  * braces: a session that somehow survives still resolves to nobody.
+ *
+ * `cache`d for the request, as `printerName` below is: next-intl's request
+ * configuration (src/i18n/request.ts) asks who is reading, to find their
+ * language, and so does the page, and one request is one session read. It is
+ * React's per-request cache, not a copy kept between requests, so a session
+ * revoked or a ban applied is in effect from the next request.
  */
-export async function currentUser(): Promise<Actor | null> {
+export const currentUser = cache(async (): Promise<Actor | null> => {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) return null;
 
@@ -68,7 +74,7 @@ export async function currentUser(): Promise<Actor | null> {
     initials: u.initials ?? "??",
     role: u.role === "admin" ? "admin" : "client",
   };
-}
+});
 
 /**
  * Gate for any page or action that needs an account. Sends people to sign-in

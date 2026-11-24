@@ -1,4 +1,16 @@
-import { getMessages } from "next-intl/server";
+import { getLocale, getMessages, getTranslations } from "next-intl/server";
+
+/**
+ * What `relativeTime` (src/lib/catalog.ts) needs to write in this request's
+ * language: the locale for `Intl.RelativeTimeFormat`, and the catalogue's
+ * words for the first 45 seconds. Read on the server, where the times are
+ * formatted — the header hands its menu finished strings, so nothing about
+ * time goes to the browser as a message.
+ */
+export async function relativeTimeVoice(): Promise<{ locale: string; justNow: string }> {
+  const [locale, t] = await Promise.all([getLocale(), getTranslations("time")]);
+  return { locale, justNow: t("justNow") };
+}
 
 /**
  * This request's messages, cut down to the groups one screen's client

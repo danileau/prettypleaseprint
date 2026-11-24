@@ -20,8 +20,9 @@ import "./_env";
  *
  * Which field is locked is the running app's environment's to say, and the
  * suite follows the page: the test stack pins PASSKEY_RP_NAME (so a locked
- * field, and a forged save of it, are covered) and leaves IMPORT_SOURCES unset
- * and MAIL_FROM a bare address (so the owner's path is covered for those). Run
+ * field, and a forged save of it, are covered) and leaves IMPORT_SOURCES and
+ * DEFAULT_LOCALE unset and MAIL_FROM a bare address (so the owner's path is
+ * covered for those). Run
  * it against other environments too when changing this.
  *
  * Also renames the settings table away for a moment, to check the app keeps
@@ -40,6 +41,8 @@ import {
   senderHeader,
   SettingsInput,
 } from "../src/lib/settings";
+import { offeredLocales } from "../src/i18n/catalogue";
+import { SOURCE_LOCALE, languageName } from "../src/i18n/locales";
 import { ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
@@ -108,6 +111,15 @@ class Browser {
       const v = /value="([^"]*)"/.exec(tag)?.[1] ?? "";
       if (!n || (n === "fields" && !keepFields)) continue;
       body.append(unescapeHtml(n), unescapeHtml(v));
+    }
+    // A select sends its selected option, or its first: what a browser sends
+    // for one the person did not touch. A disabled one has no name here.
+    for (const [, attrs, options] of form.matchAll(/<select\b([^>]*)>([\s\S]*?)<\/select>/g)) {
+      const n = /name="([^"]*)"/.exec(attrs!)?.[1];
+      if (!n) continue;
+      const all = [...options!.matchAll(/<option\b([^>]*)>/g)].map((m) => m[1]!);
+      const chosen = all.find((o) => /\sselected=""/.test(o)) ?? all[0] ?? "";
+      body.append(unescapeHtml(n), unescapeHtml(/value="([^"]*)"/.exec(chosen)?.[1] ?? ""));
     }
     for (const [k, v] of Object.entries(values)) {
       body.delete(k);
@@ -315,6 +327,45 @@ function theRule() {
         senderHeader(tampered.mailFrom));
   check("a stored source this version does not know is ignored, not fatal",
         tampered.importSources.value.join() === "printables");
+
+  // The instance's default language (#103): the files in messages/ are the
+  // choices, so the checks take theirs from there rather than naming one.
+  const other = offeredLocales().find((c) => c !== SOURCE_LOCALE);
+  const noLanguage = resolveSettings(null, {});
+  check("with nothing set, the default language is none: English",
+        noLanguage.defaultLocale.value === null && noLanguage.defaultLocale.source === "default");
+  if (other) {
+    const saved = resolveSettings({ ...stored, defaultLocale: other }, {});
+    check(`a saved language ("${other}") applies where the environment is silent`,
+          saved.defaultLocale.value === other && saved.defaultLocale.source === "db" && !lockedFields(saved).has("defaultLocale"));
+    const pinnedLanguage = resolveSettings({ ...stored, defaultLocale: other }, { DEFAULT_LOCALE: SOURCE_LOCALE });
+    check("DEFAULT_LOCALE beats the saved one, and locks the field",
+          pinnedLanguage.defaultLocale.value === SOURCE_LOCALE && pinnedLanguage.defaultLocale.source === "env" &&
+          lockedFields(pinnedLanguage).has("defaultLocale"));
+    check("an empty DEFAULT_LOCALE is not set, as before this page",
+          resolveSettings({ ...stored, defaultLocale: other }, { DEFAULT_LOCALE: " " }).defaultLocale.source === "db");
+    check("the form takes a language the build has", SettingsInput.safeParse({ defaultLocale: other }).success);
+  } else {
+    console.info("  skip  messages/ holds English alone — no language to save as a default");
+  }
+  const warned: string[] = [];
+  const realWarn = console.warn;
+  console.warn = (...args: unknown[]) => void warned.push(args.join(" "));
+  try {
+    const gone = () => resolveSettings({ ...stored, defaultLocale: "qaa" }, {});
+    check("a saved language whose file is gone is ignored: English, not fatal",
+          gone().defaultLocale.value === null && gone().defaultLocale.source === "default");
+    check("…with one warning in the log, not one per request",
+          warned.filter((w) => w.includes('saved on the settings page, "qaa", is ignored')).length === 1, warned.join(" | "));
+    const pinnedGone = resolveSettings({ ...stored, defaultLocale: other ?? null }, { DEFAULT_LOCALE: "qaa" });
+    check("DEFAULT_LOCALE naming no file is ignored too, and still locks the field — English, not the saved one",
+          pinnedGone.defaultLocale.value === null && lockedFields(pinnedGone).has("defaultLocale"));
+  } finally {
+    console.warn = realWarn;
+  }
+  for (const forged of ["qaa", "../en", "EN", SOURCE_LOCALE, ""]) {
+    check(`the form refuses ${JSON.stringify(forged)} as a language to store`, !SettingsInput.safeParse({ defaultLocale: forged }).success);
+  }
 }
 
 async function main() {
@@ -530,6 +581,69 @@ async function main() {
     page = await settingsPage(owner);
     await owner.save(page, { importSources: [] });
     check("and off again", (await catalogSources(client))?.length === 0 && (await changedRows()).length === auditBefore + 3);
+  }
+
+  // ------------------------------------------------------------------
+  section("the default language");
+  page = await settingsPage(owner);
+  const languages = offeredLocales().filter((c) => c !== SOURCE_LOCALE);
+  const languageAudit = (await changedRows()).length;
+  const select = /<select\b[^>]*id="defaultLocale"[\s\S]*?<\/select>/.exec(page)?.[0] ?? "";
+  const choices = [...select.matchAll(/<option\b[^>]*value="([^"]*)"[^>]*>([^<]*)</g)].map((m) => [m[1]!, unescapeHtml(m[2]!)]);
+  check("its choices are English, the built-in default, then every other file in messages/ by its own name",
+        JSON.stringify(choices.map(([c]) => c)) === JSON.stringify(["", ...languages]) &&
+        choices[0]?.[1] === "English, the built-in default" && choices.slice(1).every(([c, n]) => n === languageName(c!)),
+        JSON.stringify(choices));
+  if (isLocked(page, "defaultLocale")) {
+    check("DEFAULT_LOCALE is set, so the field is locked and says by what",
+          page.includes("DEFAULT_LOCALE") && /<select\b[^>]*id="defaultLocale"[^>]*disabled/.test(page));
+    const forged = await owner.save(page, { fields: ["defaultLocale"], defaultLocale: languages[0] ?? "qaa" });
+    check("a save that names it anyway is refused", landed(forged).includes("result=locked") && landed(forged).includes("field=defaultLocale"),
+          landed(forged));
+    check("and nothing was stored or audited", (await row())?.defaultLocale == null && (await changedRows()).length === languageAudit);
+  } else if (languages.length === 0) {
+    console.info("  skip  messages/ holds English alone — no language to save");
+  } else {
+    const code = languages[0]!;
+    const unknown = await owner.save(page, { defaultLocale: "qaa" });
+    check("a language the build does not have is refused, in words about languages",
+          landed(unknown).includes("result=invalid") && landed(unknown).includes("field=defaultLocale"), landed(unknown));
+    check("…not in words about names",
+          (await (await owner.go(`${APP}${landed(unknown)}`)).text()).includes("not a language this app has"));
+    check("and nothing was stored", (await row())?.defaultLocale == null && (await changedRows()).length === languageAudit);
+
+    const saved = await owner.save(page, { defaultLocale: code });
+    check(`"${code}" is saved`, landed(saved).includes("result=saved") && (await row())?.defaultLocale === code, landed(saved));
+    const visitor = await (await new Browser().go(`${APP}/signin`, { headers: { "accept-language": "qaa" } })).text();
+    check("a visitor whose browser asks for nothing the app has gets it on the next request — no restart",
+          /<html\b[^>]*\blang="([^"]*)"/.exec(visitor)?.[1] === code);
+    const invitation = await (await owner.go(`${APP}/admin/mail/preview/invitation`)).text();
+    check("and an invitation, to somebody who has not chosen, is written in it", invitation.includes(`lang="${code}"`));
+    check("on the trail, before and after",
+          same(changesOf((await changedRows()).at(-1)), { defaultLocale: { from: null, to: code } }),
+          JSON.stringify((await changedRows()).at(-1)?.detail));
+    // In English on purpose: with a default saved, a browser asking for
+    // nothing in particular (`*`, what fetch sends) now gets that language.
+    const audit = await (await owner.go(`${APP}/admin/audit?lens=settings`, { headers: { "accept-language": "en" } })).text();
+    check("and the audit page names the languages, not their codes",
+          unescapeHtml(audit).includes(`default language: English, the built-in default → “${languageName(code)}”`),
+          (unescapeHtml(audit).match(/default language:[^<]*/) ?? ["nothing"])[0]);
+    page = await settingsPage(owner);
+    check("the page opens on it", new RegExp(`<option[^>]*value="${code}"[^>]*selected`).test(page));
+    const again = await owner.save(page, {});
+    check("saving it unchanged writes nothing", landed(again).includes("result=unchanged"), landed(again));
+
+    // A language a later image dropped: not in force, and cleared — on the trail.
+    await db.instanceSettings.update({ where: { id: "instance" }, data: { defaultLocale: "qaa" } });
+    page = await settingsPage(owner);
+    const cleared = await owner.save(page, { defaultLocale: "" });
+    const last = (await changedRows()).at(-1);
+    check("clearing a saved language whose file is gone clears it, and says what was cleared",
+          (await row())?.defaultLocale === null && changesOf(last)?.defaultLocale?.cleared === "qaa", JSON.stringify(last?.detail));
+
+    await owner.save(await settingsPage(owner), { defaultLocale: code });
+    await owner.save(await settingsPage(owner), { defaultLocale: SOURCE_LOCALE });
+    check("choosing English stores nothing: it is the built-in default", (await row())?.defaultLocale === null);
   }
 
   // ------------------------------------------------------------------

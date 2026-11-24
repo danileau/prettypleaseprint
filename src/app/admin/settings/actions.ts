@@ -6,6 +6,8 @@ import { auditRow } from "@/lib/audit";
 import { requireAdmin } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { requireFreshAuth } from "@/lib/reauth";
+import { offeredLocales } from "@/i18n/catalogue";
+import { SOURCE_LOCALE } from "@/i18n/locales";
 import {
   DisplayName,
   SETTINGS_ID,
@@ -57,6 +59,11 @@ function ignored(field: SettingKey, before: Stored): unknown {
   if (field === "importSources") {
     const unknown = before.importSources.filter((s) => !knownSources([s]).length);
     return unknown.length ? unknown : undefined;
+  }
+  if (field === "defaultLocale") {
+    // A language whose file a later image no longer has.
+    const value = before.defaultLocale ?? null;
+    return value !== null && !offeredLocales().includes(value) ? value : undefined;
   }
   const value = before[field];
   return value !== null && !DisplayName.safeParse(value).success ? value : undefined;
@@ -110,7 +117,9 @@ export async function saveSettingsAction(formData: FormData): Promise<void> {
     raw[field] =
       field === "importSources"
         ? formData.getAll("importSources").map(String)
-        : text(formData, field, unsaved[field].value);
+        : // The language select's empty option is English, the built-in
+          // default; "en" itself means the same, and is not stored either.
+          text(formData, field, field === "defaultLocale" ? SOURCE_LOCALE : unsaved[field].value);
   }
   const parsed = SettingsInput.safeParse(raw);
   if (!parsed.success) back("invalid", parsed.error.issues[0]?.path[0] as SettingKey | undefined);
@@ -125,7 +134,8 @@ export async function saveSettingsAction(formData: FormData): Promise<void> {
         INSERT INTO "instanceSettings" ("id", "updatedAt") VALUES (${SETTINGS_ID}, now())
         ON CONFLICT ("id") DO NOTHING`;
       const [row] = await tx.$queryRaw<Stored[]>`
-        SELECT "passkeyRpName", COALESCE("importSources", ARRAY[]::TEXT[]) AS "importSources", "mailFromName"
+        SELECT "passkeyRpName", COALESCE("importSources", ARRAY[]::TEXT[]) AS "importSources", "mailFromName",
+               "defaultLocale"
         FROM "instanceSettings" WHERE "id" = ${SETTINGS_ID} FOR UPDATE`;
       const before: Stored = row!;
       const next: Stored = { ...before, ...input };

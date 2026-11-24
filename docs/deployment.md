@@ -531,9 +531,9 @@ read what goes out under your name before anybody receives it. With
 `AUTH_METHODS` leaving `local` out there are no passwords, so no reset is sent
 and none is shown.
 
-Mail is English, as the app is. Once another language ships, each person's
-mail follows their own, and an invitation — to somebody who has not chosen
-yet — the instance's default
+Each person's mail is written in the language they chose on their profile;
+an invitation, and mail to anybody who has not chosen, in the instance's
+default — [set under Settings, or by `DEFAULT_LOCALE`](#language), else English
 ([Translation](i18n.md#e-mail-is-written-in-the-recipients-language)).
 
 Two things that are not failures:
@@ -700,7 +700,7 @@ latter.
 | `OIDC_ISSUER` | — | Required with `oidc`. The provider's issuer URL; the discovery document is read from `<OIDC_ISSUER>/.well-known/openid-configuration`, trailing slashes dropped. Must be `https://` — plain `http://` is allowed only for `localhost`, `127.0.0.1` and `[::1]`, or with `OIDC_ALLOW_INSECURE_ISSUER`. Must be the `issuer` the document names. Part of every identity's key: see [changing it](#changing-oidc_issuer). |
 | `OIDC_CLIENT_ID` | — | Required with `oidc`. Also the audience every ID token must name. |
 | `OIDC_CLIENT_SECRET` | — | Required with `oidc`. |
-| `OIDC_NAME` | unset | What the screens call the provider: "Sign in with *the office login*", and *Continue with*, *Confirm with*, *Connect* on the invitation page, `/reauth` and `/me`. Unset, they say "single sign-on". |
+| `OIDC_NAME` | unset | What the screens call the provider: "Sign in with *the office login*", and *Continue with*, *Confirm with*, *Connect* on the invitation page, `/reauth` and `/me`. Unset, they say "single sign-on". It goes into those sentences as written, in every language the app speaks, so a proper name (*Authentik*, *Google*) reads better than a phrase in one language. |
 | `OIDC_SIGNUP` | `invite` | `invite`: a new account still needs a pending invitation for the verified address. `open`: anyone the provider signs in with a verified address gets a `client` account, invited or not — the invite-only rule is off for this door. |
 | `OIDC_PROMPT` | unset | `login`, `select_account` or `consent`, sent as `prompt` on an ordinary sign-in. `login` makes the provider ask for credentials every time, which is what a shared machine wants. Every ordinary sign-in sends exactly this — a request cannot replace it or add to it. Whether the provider then really asks is up to the provider; what decides whether a sign-in counts as recent is `auth_time`. Re-authentication and connecting always send `login` with `max_age=0`, whatever this says. |
 | `OIDC_ALLOW_INSECURE_ISSUER` | unset | `true` lets the issuer be plain `http://`. It exists for the test stand-in, which has no certificate. **Never set it on a deployed host.** |
@@ -892,6 +892,7 @@ owner changes them in the app, under **Settings** (`/admin/settings`):
 - the name an authenticator shows when somebody adds a passkey
   (`PASSKEY_RP_NAME`),
 - the name mail is sent under — the address stays in `MAIL_FROM`,
+- the language for anybody who has not chosen one ([`DEFAULT_LOCALE`](#language)),
 - whether people can import from a link (`IMPORT_SOURCES`).
 
 A change applies to the next request. Saving asks the owner to confirm who
@@ -918,6 +919,34 @@ v0.4.0 does not know the table: importing goes off unless `IMPORT_SOURCES`
 turns it on, and the passkey and mail names go back to what `.env.docker`
 says, or the defaults. The row stays in the database, and the choices come
 back with the upgrade.
+
+### Language
+
+Nothing to set. Each person picks a language on their profile, and somebody who
+has not — or is not signed in — gets the first language their browser asks for
+that the app has, then English. The languages are the files in `messages/` of
+the source the image was built from; the profile page lists them.
+
+What comes before English — for visitors whose browser asks for none of them,
+and for mail to anybody who has not chosen, invitations included — is the
+owner's to choose, under **Settings** (*Language for anybody who has not chosen
+one*), from the same languages, each by its own name. It applies to the next
+request, and is on the audit trail like the page's other settings.
+
+To pin it from outside instead, set the variable; the field is then shown
+locked, as for the others:
+
+```sh
+DEFAULT_LOCALE="fr"
+```
+
+The code is a file's name without `.json`. One the image does not have is
+ignored rather than stopping the app — `[i18n] DEFAULT_LOCALE="…" is ignored`
+in the app's log, once, with the codes it does have — and the field stays
+locked, so the instance is in English, not down. A language saved on the page
+whose file a later image no longer has is passed over the same way. A language
+cannot be added to a running container: it is built in, so it comes with an
+image.
 
 ### What to back up
 

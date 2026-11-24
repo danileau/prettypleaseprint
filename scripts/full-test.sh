@@ -587,10 +587,10 @@ no_npm_in_images() {
   done
   echo "neither image ships npm"
 }
-# Mail is written in its recipient's language by importing messages/<code>.json
-# at run time (src/i18n/catalogue.ts), which the bundler can only honour for
-# the files it saw at build time. This holds the built app to the checkout:
-# the server bundle's map of catalogues names every messages/*.json.
+# The languages the app offers are the files in messages/, as the bundler found
+# them at build time (src/i18n/catalogue.ts): the image has no messages/
+# directory, only that map. This holds the built app to the checkout: the
+# server bundle's map of catalogues names every messages/*.json.
 messages_bundled() {
   local want got
   want="$(cd messages && ls ./*.json | sort -u)"

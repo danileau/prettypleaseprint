@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
+import { languageName } from "@/i18n/locales";
 import { relativeTime } from "@/lib/catalog";
 import { AppHeader } from "@/components/app-header";
 import { AuditDashboard } from "@/components/audit-dashboard";
@@ -227,6 +228,12 @@ type SettingsTranslator = Awaited<ReturnType<typeof getTranslations<"auditSettin
  * see what was switched, so the values are shown, not just the field names.
  */
 function SettingsChanges({ changes, t }: { changes: Record<string, unknown>; t: SettingsTranslator }) {
+  // A language by its own name, as the settings page and /me show it; nothing
+  // stored is English, the built-in default.
+  const language = (value: unknown): string =>
+    value === null || value === undefined
+      ? t("builtInLanguage")
+      : `“${languageName(String(value)) ?? String(value)}”`;
   const show = (value: unknown): string =>
     value === null || value === undefined
       ? t("noName")
@@ -236,15 +243,18 @@ function SettingsChanges({ changes, t }: { changes: Record<string, unknown>; t: 
           : t("none")
         : `“${String(value)}”`;
   const label = (field: string): string =>
-    field === "passkeyRpName" || field === "mailFromName" || field === "importSources" ? t(`fields.${field}`) : field;
+    field === "passkeyRpName" || field === "mailFromName" || field === "importSources" || field === "defaultLocale"
+      ? t(`fields.${field}`)
+      : field;
   return (
     <span className="block" data-audit-changes>
       {Object.entries(changes).map(([field, raw]) => {
         const change = (raw ?? {}) as { from?: unknown; to?: unknown; cleared?: unknown };
+        const value = field === "defaultLocale" ? language : show;
         return (
           <span key={field} className="block">
-            {t("change", { field: label(field), from: show(change.from), to: show(change.to) })}
-            {change.cleared !== undefined && <> {t("cleared", { value: show(change.cleared) })}</>}
+            {t("change", { field: label(field), from: value(change.from), to: value(change.to) })}
+            {change.cleared !== undefined && <> {t("cleared", { value: value(change.cleared) })}</>}
           </span>
         );
       })}

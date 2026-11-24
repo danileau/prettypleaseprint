@@ -89,11 +89,31 @@ export type Wish = z.infer<typeof WishSchema>;
 /** "4 prints" / "1 print" */
 export const quantityText = (n: number) => `${n} ${n === 1 ? "print" : "prints"}`;
 
-/** Relative time, the way every card in the handoff shows it. */
-export function relativeTime(date: Date): string {
+/**
+ * Relative time, the way every card in the handoff shows it.
+ *
+ * In English unless `voice` names another language: then the same thresholds,
+ * with `Intl.RelativeTimeFormat` in that language and the catalogue's
+ * `time.justNow` for the first 45 seconds. Words from the catalogue rather
+ * than Intl's own `numeric: "auto"` for zero ("now", "maintenant"), because the
+ * English here is not Intl's either: "just now" is this app's phrase, and its
+ * translation is a translator's choice (*à l’instant*, docs/glossary/fr.md),
+ * not whatever the runtime's data says. Pure, so the caller brings the words:
+ * `relativeTimeVoice()` in src/i18n/server.ts.
+ *
+ * Only what is on the catalogue passes a voice — so far the header's Activity
+ * menu. Every other caller is a page still written in English, /me's list of
+ * orders included, and calls this without one, so a date there stays English
+ * beside the English around it until that page moves onto the catalogue
+ * (docs/i18n.md). With no voice, or an English one, the output is exactly what
+ * it was before languages existed.
+ */
+export function relativeTime(date: Date, voice?: { locale: string; justNow: string }): string {
+  const other = voice && voice.locale !== "en" ? voice : null;
+  const justNow = other ? other.justNow : "just now";
   const diff = date.getTime() - Date.now();
   const abs = Math.abs(diff);
-  if (abs < 45_000) return "just now";
+  if (abs < 45_000) return justNow;
   const units: [number, Intl.RelativeTimeFormatUnit][] = [
     [86_400_000 * 365, "year"],
     [86_400_000 * 30, "month"],
@@ -102,11 +122,11 @@ export function relativeTime(date: Date): string {
     [3_600_000, "hour"],
     [60_000, "minute"],
   ];
-  const fmt = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  const fmt = new Intl.RelativeTimeFormat(other ? other.locale : "en", { numeric: "auto" });
   for (const [ms, unit] of units) {
     if (abs >= ms) return fmt.format(Math.round(diff / ms), unit);
   }
-  return "just now";
+  return justNow;
 }
 
 // ---------------------------------------------------------------------------
